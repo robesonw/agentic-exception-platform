@@ -1,0 +1,21 @@
+# Core Framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+numpy>=1.26.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# Code Quality
+black>=23.11.0
+ruff>=0.1.6
+mypy>=1.7.0
+
+# Optional Dependencies (for future use)
+pydantic-settings>=2.1.0  # For configuration management (not currently used)
+httpx>=0.25.0             # For HTTP client calls (not currently used)
+python-dotenv>=1.0.0      # For environment variable management (not currently used)
+

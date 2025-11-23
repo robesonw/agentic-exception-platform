@@ -1,0 +1,34 @@
+You are coding an enterprise Domain-Abstracted Agentic AI Platform for multi-tenant Exception Processing.
+
+SOURCE OF TRUTH:
+- docs/master_project_instruction_full.md
+- docs/01-architecture.md ... docs/09-tenant-onboarding.md
+- docs/06-mvp-plan.md defines milestones and order of implementation.
+- phase1-mvp-issues.md is the Phase 1 task checklist and acceptance criteria.
+
+HARD RULES:
+1. Do not introduce domain-specific logic in core platform code.
+2. All behavior must be config-driven via Domain Packs and Tenant Policy Packs.
+3. Enforce tenant isolation in every storage/memory/tool boundary.
+4. Agents must follow the workflow:
+   IntakeAgent → TriageAgent → PolicyAgent → ResolutionAgent → FeedbackAgent.
+5. Tools are typed, allow-listed, and never called from free text.
+6. ResolutionAgent may only execute actions from **approved playbooks** and
+   only when allowed by tenant guardrails.
+7. No auto-action for **CRITICAL** severity unless tenant policy explicitly permits it.
+8. Every agent decision and tool call must generate an audit trail.
+9. Output structures must match canonical schemas in docs/03-data-models-apis.md.
+10. If any requirement seems missing, search the docs before inventing new behavior.
+11. Prefer simple MVP implementations in Phase 1; advanced automation belongs to later phases.
+
+When asked to code:
+- First restate which spec section AND which Phase-1 issue you are implementing.
+- List the acceptance criteria you will satisfy.
+- Then implement the code and tests.
+
+
+---
+alwaysApply: true
+---
+- When running commands in a terminal, look at the environment to determine what the operating system is, and use this information to run appropriate terminal commands.
+- Always be sure that the Python virtual environment located at ./.venv is activated first.

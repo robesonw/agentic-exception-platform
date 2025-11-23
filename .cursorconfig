@@ -1,0 +1,89 @@
+# .cursorconfig — Project Context & Operating Rules
+# Agentic Exception Processing Platform (Phase 1 MVP, Python)
+
+project:
+  name: "agentic-exception-platform"
+  phase: "Phase 1 MVP"
+  language: "Python"
+  stack:
+    api: "FastAPI"
+    schemas: "pydantic v2"
+    tests: "pytest"
+    storage_mvp: "in-memory + JSONL audit"
+    rag_mvp: "FAISS or in-memory stubs (Phase 1 only)"
+  goal:
+    "Build a domain-abstracted, multi-tenant agentic AI platform for exception processing.
+     No domain logic in core. Domain behavior only via Domain Packs + Tenant Policy Packs."
+
+authoritative_specs:
+  # Always treat these as the source of truth before making design choices.
+  - "docs/master_project_instruction_full.md"
+  - "docs/01-architecture.md"
+  - "docs/02-modules-components.md"
+  - "docs/03-data-models-apis.md"
+  - "docs/04-agent-templates.md"
+  - "docs/05-domain-pack-schema.md"
+  - "docs/06-mvp-plan.md"
+  - "docs/07-test-plan.md"
+  - "docs/08-security-compliance.md"
+  - "docs/09-tenant-onboarding.md"
+  - "phase1-mvp-issues.md"  # Cursor-generated Phase 1 issue checklist
+
+mvp_dependency_order:
+  # Implement in this order unless explicitly told otherwise.
+  1: "Canonical schemas/models (ExceptionRecord, DomainPack, TenantPolicyPack, Agent contracts)"
+  2: "Domain Pack loader + registry"
+  3: "Tenant Policy loader + registry"
+  4: "Tool registry + allow-list enforcement"
+  5: "Audit trail (JSONL)"
+  6: "Agents (Intake, Triage, Policy, Resolution, Feedback)"
+  7: "Orchestrator pipeline runner"
+  8: "Exception ingestion API"
+  9: "RAG stubs + per-tenant index"
+  10: "Metrics / observability"
+  11: "End-to-end tests"
+
+hard_rules:
+  - "No domain-specific logic in core platform code."
+  - "All actions must be tool-driven and allow-listed per tenant."
+  - "Agents must only exchange structured JSON contracts."
+  - "Pipeline order is fixed:
+     IntakeAgent → TriageAgent → PolicyAgent → ResolutionAgent → FeedbackAgent."
+  - "No auto-actions on CRITICAL unless tenant policy explicitly allows."
+  - "Every agent decision and tool call must emit an audit record."
+  - "If a requirement seems missing, search authoritative_specs first."
+  - "Prefer minimal viable implementations in Phase 1; advanced learning is Phase 3."
+
+coding_conventions:
+  python:
+    - "Use type hints everywhere."
+    - "Keep functions small and testable."
+    - "Raise explicit exceptions with clear messages for validation failures."
+    - "Use dataclasses only when pydantic models are not required."
+  tests:
+    - "pytest structure, no external network calls."
+    - "Provide fixtures using domainpacks/*.sample.json and tenantpacks/*.sample.json."
+    - "Aim for >80% coverage by end of Phase 1."
+
+expected_folders:
+  - "src/api"
+  - "src/models"
+  - "src/domainpack"
+  - "src/tenantpack"
+  - "src/tools"
+  - "src/agents"
+  - "src/orchestrator"
+  - "src/audit"
+  - "tests"
+  - "domainpacks"
+  - "tenantpacks"
+  - "docs"
+
+default_response_behavior:
+  # How Cursor should behave when you ask it to code.
+  - "First restate which spec section + issue you are implementing."
+  - "List acceptance criteria being satisfied."
+  - "Then implement the code."
+  - "Then add/adjust tests."
+  - "Finally summarize what changed and where."
+

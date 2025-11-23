@@ -1,0 +1,353 @@
+{
+  "domainName": "CapitalMarketsTrading",
+  "entities": {
+    "TradeOrder": {
+      "attributes": {
+        "orderId": {"type": "string", "required": true},
+        "tradeDate": {"type": "string", "required": true},
+        "trader": {"type": "string", "required": false},
+        "buySell": {"type": "string", "required": false},
+        "cusip": {"type": "string", "required": false},
+        "isin": {"type": "string", "required": false},
+        "price": {"type": "number", "required": false},
+        "quantity": {"type": "number", "required": false},
+        "broker": {"type": "string", "required": false},
+        "portfolio": {"type": "string", "required": false},
+        "strategy": {"type": "string", "required": false}
+      },
+      "relations": []
+    },
+    "Execution": {
+      "attributes": {
+        "execId": {"type": "string", "required": true},
+        "orderId": {"type": "string", "required": true},
+        "executionVenue": {"type": "string", "required": false},
+        "executionTime": {"type": "string", "required": false},
+        "price": {"type": "number", "required": false},
+        "qty": {"type": "number", "required": false},
+        "counterparty": {"type": "string", "required": false}
+      },
+      "relations": ["TradeOrder"]
+    },
+    "Allocation": {
+      "attributes": {
+        "allocId": {"type": "string", "required": true},
+        "orderId": {"type": "string", "required": true},
+        "accountId": {"type": "string", "required": false},
+        "allocQty": {"type": "number", "required": false},
+        "allocPrice": {"type": "number", "required": false},
+        "allocStatus": {"type": "string", "required": false}
+      },
+      "relations": ["TradeOrder"]
+    },
+    "Position": {
+      "attributes": {
+        "accountId": {"type": "string", "required": true},
+        "cusip": {"type": "string", "required": true},
+        "longShort": {"type": "string", "required": false},
+        "quantity": {"type": "number", "required": false},
+        "asOfDate": {"type": "string", "required": false},
+        "settleDate": {"type": "string", "required": false}
+      },
+      "relations": []
+    },
+    "CashMovement": {
+      "attributes": {
+        "cashId": {"type": "string", "required": true},
+        "accountId": {"type": "string", "required": true},
+        "currency": {"type": "string", "required": false},
+        "amount": {"type": "number", "required": false},
+        "valueDate": {"type": "string", "required": false},
+        "cashType": {"type": "string", "required": false}
+      },
+      "relations": []
+    },
+    "Settlement": {
+      "attributes": {
+        "settleId": {"type": "string", "required": true},
+        "orderId": {"type": "string", "required": true},
+        "counterparty": {"type": "string", "required": false},
+        "status": {"type": "string", "required": false},
+        "intendedSettleDate": {"type": "string", "required": false},
+        "actualSettleDate": {"type": "string", "required": false},
+        "failReason": {"type": "string", "required": false},
+        "ssiId": {"type": "string", "required": false}
+      },
+      "relations": ["TradeOrder"]
+    },
+    "RegReport": {
+      "attributes": {
+        "reportId": {"type": "string", "required": true},
+        "regType": {"type": "string", "required": false},
+        "tradeId": {"type": "string", "required": false},
+        "status": {"type": "string", "required": false},
+        "rejectReason": {"type": "string", "required": false},
+        "submittedAt": {"type": "string", "required": false}
+      },
+      "relations": []
+    },
+    "SecurityMaster": {
+      "attributes": {
+        "cusip": {"type": "string", "required": true},
+        "isin": {"type": "string", "required": false},
+        "sedol": {"type": "string", "required": false},
+        "issuer": {"type": "string", "required": false},
+        "securityType": {"type": "string", "required": false},
+        "coupon": {"type": "number", "required": false},
+        "maturity": {"type": "string", "required": false},
+        "currency": {"type": "string", "required": false},
+        "ratings": {"type": "array", "required": false}
+      },
+      "relations": []
+    }
+  },
+  "exceptionTypes": {
+    "MISMATCHED_TRADE_DETAILS": {
+      "description": "Execution details do not match the original trade order (price, qty, security, counterparty, or dates).",
+      "detectionRules": []
+    },
+    "FAILED_ALLOCATION": {
+      "description": "Allocations for a block trade failed or partially processed.",
+      "detectionRules": []
+    },
+    "POSITION_BREAK": {
+      "description": "Position quantity does not reconcile with trades + settlements.",
+      "detectionRules": []
+    },
+    "CASH_BREAK": {
+      "description": "Cash ledger does not match expected clearing amounts.",
+      "detectionRules": []
+    },
+    "SETTLEMENT_FAIL": {
+      "description": "Trade failed to settle by intended settle date.",
+      "detectionRules": []
+    },
+    "REG_REPORT_REJECTED": {
+      "description": "Regulatory report rejected due to missing/invalid fields.",
+      "detectionRules": []
+    },
+    "SEC_MASTER_MISMATCH": {
+      "description": "Security master identifiers/attributes inconsistent across systems.",
+      "detectionRules": []
+    }
+  },
+  "severityRules": [
+    { "condition": "exceptionType == 'POSITION_BREAK'", "severity": "CRITICAL" },
+    { "condition": "exceptionType == 'CASH_BREAK'", "severity": "HIGH" },
+    { "condition": "exceptionType == 'SETTLEMENT_FAIL'", "severity": "HIGH" },
+    { "condition": "exceptionType == 'SEC_MASTER_MISMATCH' && rawPayload.impact == 'ECONOMIC'", "severity": "MEDIUM" }
+  ],
+  "tools": {
+    "getOrder": {
+      "description": "Fetch original order by orderId.",
+      "parameters": {"orderId": {"type": "string", "required": true}},
+      "endpoint": "https://api.example.com/trades/getOrder"
+    },
+    "getExecutions": {
+      "description": "Fetch executions for given orderId.",
+      "parameters": {"orderId": {"type": "string", "required": true}},
+      "endpoint": "https://api.example.com/trades/getExecutions"
+    },
+    "getAllocations": {
+      "description": "Fetch allocations for given orderId.",
+      "parameters": {"orderId": {"type": "string", "required": true}},
+      "endpoint": "https://api.example.com/trades/getAllocations"
+    },
+    "getPositions": {
+      "description": "Fetch positions for accountId/cusip.",
+      "parameters": {"accountId": {"type": "string", "required": true}, "cusip": {"type": "string", "required": true}},
+      "endpoint": "https://api.example.com/positions/getPositions"
+    },
+    "getCashMovements": {
+      "description": "Fetch cash movements for accountId and date.",
+      "parameters": {"accountId": {"type": "string", "required": true}, "date": {"type": "string", "required": true}},
+      "endpoint": "https://api.example.com/cash/getCashMovements"
+    },
+    "getSettlement": {
+      "description": "Fetch settlement record for orderId.",
+      "parameters": {"orderId": {"type": "string", "required": true}},
+      "endpoint": "https://api.example.com/settlement/getSettlement"
+    },
+    "repairAllocation": {
+      "description": "Retry/repair allocations for a block trade.",
+      "parameters": {"orderId": {"type": "string", "required": true}},
+      "endpoint": "https://api.example.com/allocations/repairAllocation"
+    },
+    "triggerSettlementRetry": {
+      "description": "Retry settlement with corrected SSIs.",
+      "parameters": {"orderId": {"type": "string", "required": true}},
+      "endpoint": "https://api.example.com/settlement/triggerSettlementRetry"
+    },
+    "recalculatePosition": {
+      "description": "Recompute positions from trade + settlement history.",
+      "parameters": {"accountId": {"type": "string", "required": true}, "cusip": {"type": "string", "required": true}},
+      "endpoint": "https://api.example.com/positions/recalculatePosition"
+    },
+    "regenerateRegReport": {
+      "description": "Regenerate and resubmit a regulatory report.",
+      "parameters": {"tradeId": {"type": "string", "required": true}},
+      "endpoint": "https://api.example.com/regulatory/regenerateRegReport"
+    },
+    "openCase": {
+      "description": "Open a case in ops workflow.",
+      "parameters": {"caseType": {"type": "string", "required": true}, "payload": {"type": "object", "required": false}},
+      "endpoint": "https://api.example.com/workflow/openCase"
+    },
+    "assignCase": {
+      "description": "Assign case to a queue/group.",
+      "parameters": {"caseId": {"type": "string", "required": true}, "group": {"type": "string", "required": true}},
+      "endpoint": "https://api.example.com/workflow/assignCase"
+    },
+    "escalateCase": {
+      "description": "Escalate case to higher tier.",
+      "parameters": {"caseId": {"type": "string", "required": true}, "queue": {"type": "string", "required": true}},
+      "endpoint": "https://api.example.com/workflow/escalateCase"
+    }
+  },
+  "playbooks": [
+    {
+      "exceptionType": "MISMATCHED_TRADE_DETAILS",
+      "steps": [
+        {
+          "action": "Fetch trade order and executions using getOrder/getExecutions",
+          "parameters": {}
+        },
+        {
+          "action": "Compare price/qty/cusip/counterparty/tradeDate",
+          "parameters": {}
+        },
+        {
+          "action": "If mismatch is non-economic (formatting/enrichment): auto-correct booking attributes",
+          "parameters": {}
+        },
+        {
+          "action": "If mismatch is economic: openCase('FO_MO_TRADE_BREAK') with evidence and assign to MiddleOffice",
+          "parameters": {}
+        },
+        {
+          "action": "Rebook corrected trade or update attributes through approved tool",
+          "parameters": {}
+        },
+        {
+          "action": "Notify trader and middle office",
+          "parameters": {}
+        }
+      ]
+    },
+    {
+      "exceptionType": "FAILED_ALLOCATION",
+      "steps": [
+        {
+          "action": "Review allocations using getAllocations",
+          "parameters": {}
+        },
+        {
+          "action": "Retry allocations using repairAllocation(orderId)",
+          "parameters": {}
+        },
+        {
+          "action": "Validate all child allocations total = block quantity",
+          "parameters": {}
+        },
+        {
+          "action": "If still failing: openCase('ALLOCATION_FAIL') and assign to AllocationsOps",
+          "parameters": {}
+        }
+      ]
+    },
+    {
+      "exceptionType": "POSITION_BREAK",
+      "steps": [
+        {
+          "action": "Fetch positions and trade history evidence",
+          "parameters": {}
+        },
+        {
+          "action": "Identify missing/duplicate trade or settlement events",
+          "parameters": {}
+        },
+        {
+          "action": "Run recalculatePosition(accountId,cusip)",
+          "parameters": {}
+        },
+        {
+          "action": "If unresolved or severity CRITICAL: openCase('POSITION_BREAK') and escalate to BreaksReconTier2",
+          "parameters": {}
+        }
+      ]
+    },
+    {
+      "exceptionType": "SETTLEMENT_FAIL",
+      "steps": [
+        {
+          "action": "Fetch settlement details using getSettlement",
+          "parameters": {}
+        },
+        {
+          "action": "Classify failReason (SSI mismatch, counterparty reject, insufficient securities/cash)",
+          "parameters": {}
+        },
+        {
+          "action": "If SSI issue: triggerSettlementRetry(orderId)",
+          "parameters": {}
+        },
+        {
+          "action": "If aged beyond policy threshold: openCase('SETTLEMENT_FAIL') and assign to SettlementsTier2",
+          "parameters": {}
+        }
+      ]
+    },
+    {
+      "exceptionType": "REG_REPORT_REJECTED",
+      "steps": [
+        {
+          "action": "Fetch report + trade evidence",
+          "parameters": {}
+        },
+        {
+          "action": "Identify missing fields (LEI, UTI, venue, timestamps)",
+          "parameters": {}
+        },
+        {
+          "action": "Regenerate report using regenerateRegReport(tradeId)",
+          "parameters": {}
+        },
+        {
+          "action": "Resubmit and track status",
+          "parameters": {}
+        },
+        {
+          "action": "Notify RegulatoryOps",
+          "parameters": {}
+        }
+      ]
+    }
+  ],
+  "guardrails": {
+    "allowLists": [],
+    "blockLists": [],
+    "humanApprovalThreshold": 0.8
+  },
+  "testSuites": [
+    {
+      "input": {
+        "exceptionType": "MISMATCHED_TRADE_DETAILS",
+        "rawPayload": {"orderId": "ORD-001"}
+      },
+      "expectedOutput": {
+        "exceptionType": "MISMATCHED_TRADE_DETAILS",
+        "severity": "HIGH"
+      }
+    },
+    {
+      "input": {
+        "exceptionType": "FAILED_ALLOCATION",
+        "rawPayload": {"orderId": "ORD-002"}
+      },
+      "expectedOutput": {
+        "exceptionType": "FAILED_ALLOCATION",
+        "severity": "MEDIUM"
+      }
+    }
+  ]
+}

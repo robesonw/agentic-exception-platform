@@ -1,0 +1,56 @@
+{
+  "tenantId": "TENANT_FINANCE_001",
+  "domainName": "CapitalMarketsTrading",
+  "customSeverityOverrides": [
+    {
+      "exceptionType": "REG_REPORT_REJECTED",
+      "severity": "HIGH"
+    },
+    {
+      "exceptionType": "SEC_MASTER_MISMATCH",
+      "severity": "LOW"
+    }
+  ],
+  "customGuardrails": {
+    "allowLists": [],
+    "blockLists": [],
+    "humanApprovalThreshold": 0.75
+  },
+  "approvedTools": [
+    "getOrder",
+    "getExecutions",
+    "getAllocations",
+    "getPositions",
+    "getCashMovements",
+    "getSettlement",
+    "repairAllocation",
+    "triggerSettlementRetry",
+    "recalculatePosition",
+    "regenerateRegReport",
+    "openCase",
+    "assignCase",
+    "escalateCase"
+  ],
+  "humanApprovalRules": [
+    {
+      "severity": "CRITICAL",
+      "requireApproval": true
+    },
+    {
+      "severity": "HIGH",
+      "requireApproval": false
+    },
+    {
+      "severity": "MEDIUM",
+      "requireApproval": false
+    },
+    {
+      "severity": "LOW",
+      "requireApproval": false
+    }
+  ],
+  "retentionPolicies": {
+    "dataTTL": 90
+  },
+  "customPlaybooks": []
+}

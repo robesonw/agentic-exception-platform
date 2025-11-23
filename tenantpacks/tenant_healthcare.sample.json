@@ -1,0 +1,88 @@
+{
+    "tenantId": "TENANT_HEALTHCARE_042",
+    "tenantName": "RegionalHealthNetworkB",
+    "environment": "UAT",
+  
+    "workflowPolicies": {
+      "approvedBusinessProcesses": [
+        "PB01_VALIDATE_AUTH_AND_REPROCESS",
+        "PB02_PROVIDER_REMEDIATION",
+        "PB03_CODE_CORRECTION_WORKFLOW",
+        "PB04_PATIENT_MASTER_RECON"
+      ],
+      "severityOverrides": {
+        "CLAIM_CODE_MISMATCH": "HIGH",
+        "PATIENT_DEMOGRAPHIC_CONFLICT": "LOW"
+      },
+      "escalationQueue": "CareOpsTier2",
+      "agingThresholds": {
+        "CLAIM_MISSING_AUTH": "48h",
+        "PROVIDER_CREDENTIAL_EXPIRED": "24h",
+        "PHARMACY_DUPLICATE_THERAPY": "2h"
+      }
+    },
+  
+    "toolsAllowList": {
+      "dbQueries": [
+        "getAuthorization",
+        "getClaim",
+        "getPatient",
+        "getProviderCredential",
+        "getMedicationOrders"
+      ],
+      "apiActions": [
+        "attachAuthorizationToClaim",
+        "reprocessClaim",
+        "queueCodingReview",
+        "updateProviderCredential",
+        "flagMedicationOrder",
+        "notifyTeam"
+      ],
+      "workflowActions": [
+        "openCase",
+        "assignCase",
+        "escalateCase"
+      ]
+    },
+  
+    "guardrailOverrides": {
+      "requireHumanApprovalFor": ["PHARMACY_DUPLICATE_THERAPY"],
+      "escalateIfConfidenceBelow": 0.80
+    },
+  
+    "routingRules": [
+      {
+        "if": "exceptionType == 'CLAIM_MISSING_AUTH' || exceptionType == 'ELIGIBILITY_COVERAGE_LAPSE'",
+        "assignGroup": "BillingOps"
+      },
+      {
+        "if": "exceptionType == 'CLAIM_CODE_MISMATCH'",
+        "assignGroup": "ClinicalCodingOps"
+      },
+      {
+        "if": "exceptionType == 'PROVIDER_CREDENTIAL_EXPIRED'",
+        "assignGroup": "ProviderOps"
+      },
+      {
+        "if": "exceptionType == 'PHARMACY_DUPLICATE_THERAPY'",
+        "assignGroup": "PharmacySafety"
+      },
+      {
+        "if": "exceptionType == 'PATIENT_DEMOGRAPHIC_CONFLICT'",
+        "assignGroup": "PatientMasterOps"
+      }
+    ],
+  
+    "notificationPolicies": {
+      "channels": ["email", "teamsWebhook"],
+      "recipientsByGroup": {
+        "BillingOps": ["billing-ops@rhn-b.org"],
+        "ClinicalCodingOps": ["coding-ops@rhn-b.org"],
+        "ProviderOps": ["provider-ops@rhn-b.org"],
+        "PharmacySafety": ["pharmacy-safety@rhn-b.org"],
+        "PatientMasterOps": ["patient-master@rhn-b.org"],
+        "CareOpsTier2": ["careops-tier2@rhn-b.org"]
+      }
+    }
+  }
+  
