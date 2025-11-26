@@ -1,0 +1,50 @@
+{
+  "exception": {
+    "exceptionId": "a09aa541-e4a1-4cd7-ba5b-6967ea458d25",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "SettlementSystem",
+    "exceptionType": "SETTLEMENT_FAIL",
+    "severity": null,
+    "timestamp": "2025-11-25 00:04:02.713020+00:00",
+    "rawPayload": {
+      "orderId": "ORD-2024-003",
+      "intendedSettleDate": "2024-01-18",
+      "actualSettleDate": null,
+      "failReason": "SSI_MISMATCH",
+      "counterparty": "CPTY-ABC"
+    },
+    "normalizedContext": {
+      "pipelineId": "dfc97022-4149-4e24-9911-1969b8e11143",
+      "normalizedAt": "2025-11-25T00:04:02.713020+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as SETTLEMENT_FAIL",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: a09aa541-e4a1-4cd7-ba5b-6967ea458d25",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: SettlementSystem",
+          "Exception type: SETTLEMENT_FAIL",
+          "Warning: Exception type 'SETTLEMENT_FAIL' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: a09aa541-e4a1-4cd7-ba5b-6967ea458d25",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: SettlementSystem",
+      "Exception type: SETTLEMENT_FAIL",
+      "Warning: Exception type 'SETTLEMENT_FAIL' validated against domain pack"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-25T00:04:02.714024+00:00"
+}

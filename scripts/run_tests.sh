@@ -22,11 +22,11 @@ echo "  - XML: coverage.xml"
 
 # Check if coverage meets threshold
 echo ""
-echo "Checking coverage threshold (80%)..."
-coverage report --fail-under=80 || {
-    echo "WARNING: Coverage is below 80% threshold"
+echo "Checking coverage threshold (85%)..."
+coverage report --fail-under=85 || {
+    echo "ERROR: Coverage is below 85% threshold (Phase 2 requirement)"
     exit 1
 }
 
-echo "All tests passed and coverage threshold met!"
+echo "All tests passed and coverage threshold (85%) met!"
 

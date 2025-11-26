@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api.auth import get_api_key_auth
+from src.api.auth import Role, get_api_key_auth
 from src.api.main import app
 
 client = TestClient(app)
@@ -33,9 +33,14 @@ def sample_tenant_policy_path():
 @pytest.fixture(autouse=True)
 def setup_api_keys():
     """Set up API keys for tests."""
+    from src.api.middleware import get_rate_limiter
     auth = get_api_key_auth()
-    auth.register_api_key(FINANCE_API_KEY, "TENANT_FINANCE_001")
+    auth.register_api_key(FINANCE_API_KEY, "TENANT_FINANCE_001", Role.ADMIN)
+    auth.register_api_key(DEFAULT_API_KEY, "TENANT_001", Role.ADMIN)
+    limiter = get_rate_limiter()
     yield
+    # Reset rate limiter after each test
+    limiter._request_timestamps.clear()
     # Cleanup handled by auth fixture in other test files
 
 

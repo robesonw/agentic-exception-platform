@@ -1,0 +1,44 @@
+{
+  "exception": {
+    "exceptionId": "0a0766bc-8223-4c24-ac04-992dd69efb6a",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "ERP",
+    "exceptionType": null,
+    "severity": null,
+    "timestamp": "2025-11-26 02:03:48.295658+00:00",
+    "rawPayload": {
+      "error": "No exception type provided"
+    },
+    "normalizedContext": {
+      "pipelineId": "98bd82f8-b9e5-481f-83f2-e575819826bd",
+      "normalizedAt": "2025-11-26T02:03:48.295658+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized",
+        "confidence": 0.8,
+        "evidence": [
+          "Normalized exception ID: 0a0766bc-8223-4c24-ac04-992dd69efb6a",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: ERP",
+          "Warning: No exception type provided (will be inferred in triage)"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 0a0766bc-8223-4c24-ac04-992dd69efb6a",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: ERP",
+      "Warning: No exception type provided (will be inferred in triage)"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T02:03:48.295658+00:00"
+}

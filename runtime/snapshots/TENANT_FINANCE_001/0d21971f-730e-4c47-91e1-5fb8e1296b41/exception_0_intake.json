@@ -1,0 +1,46 @@
+{
+  "exception": {
+    "exceptionId": "4c7c48ec-a1ac-4c45-8e27-48bf093a0d55",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "ERP",
+    "exceptionType": "INVALID_TYPE",
+    "severity": null,
+    "timestamp": "2025-11-25 00:05:34.558641+00:00",
+    "rawPayload": {
+      "error": "Unknown error"
+    },
+    "normalizedContext": {
+      "pipelineId": "bc588ec9-49eb-4af0-86be-68d57f42cc05",
+      "normalizedAt": "2025-11-25T00:05:34.558641+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as INVALID_TYPE (validation errors)",
+        "confidence": 0.5,
+        "evidence": [
+          "Normalized exception ID: 4c7c48ec-a1ac-4c45-8e27-48bf093a0d55",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: ERP",
+          "Exception type: INVALID_TYPE",
+          "Error: Exception type 'INVALID_TYPE' not found in domain pack. Valid types: ['CASH_BREAK', 'FAILED_ALLOCATION', 'MISMATCHED_TRADE_DETAILS', 'POSITION_BREAK', 'REG_REPORT_REJECTED', 'SEC_MASTER_MISMATCH', 'SETTLEMENT_FAIL']"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 4c7c48ec-a1ac-4c45-8e27-48bf093a0d55",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: ERP",
+      "Exception type: INVALID_TYPE",
+      "Error: Exception type 'INVALID_TYPE' not found in domain pack. Valid types: ['CASH_BREAK', 'FAILED_ALLOCATION', 'MISMATCHED_TRADE_DETAILS', 'POSITION_BREAK', 'REG_REPORT_REJECTED', 'SEC_MASTER_MISMATCH', 'SETTLEMENT_FAIL']"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-25T00:05:34.559637+00:00"
+}

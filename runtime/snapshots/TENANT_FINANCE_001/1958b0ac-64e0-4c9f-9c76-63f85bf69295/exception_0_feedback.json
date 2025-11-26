@@ -1,0 +1,68 @@
+{
+  "exception": {
+    "exceptionId": "0a0766bc-8223-4c24-ac04-992dd69efb6a",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "ERP",
+    "exceptionType": null,
+    "severity": null,
+    "timestamp": "2025-11-26 02:03:48.295658+00:00",
+    "rawPayload": {
+      "error": "No exception type provided"
+    },
+    "normalizedContext": {
+      "pipelineId": "98bd82f8-b9e5-481f-83f2-e575819826bd",
+      "normalizedAt": "2025-11-26T02:03:48.295658+00:00",
+      "feedbackCapturedAt": "2025-11-26T02:03:48.296658+00:00",
+      "learningArtifacts": []
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "ESCALATED",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized",
+        "confidence": 0.8,
+        "evidence": [
+          "Normalized exception ID: 0a0766bc-8223-4c24-ac04-992dd69efb6a",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: ERP",
+          "Warning: No exception type provided (will be inferred in triage)"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "feedback": {
+        "decision": "FEEDBACK_CAPTURED",
+        "confidence": 1.0,
+        "evidence": [
+          "Exception ID: 0a0766bc-8223-4c24-ac04-992dd69efb6a",
+          "Resolution status: ESCALATED",
+          "Feedback captured at: 2025-11-26T02:03:48.296658+00:00",
+          "No resolution plan (non-actionable or escalated)",
+          "Learning artifacts: 0 (MVP placeholder)",
+          "Final status: ESCALATED"
+        ],
+        "nextStep": "complete"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 0a0766bc-8223-4c24-ac04-992dd69efb6a",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: ERP",
+      "Warning: No exception type provided (will be inferred in triage)",
+      "TriageAgent failed: Could not classify exception type. Available types: ['CASH_BREAK', 'FAILED_ALLOCATION', 'MISMATCHED_TRADE_DETAILS', 'POSITION_BREAK', 'REG_REPORT_REJECTED', 'SEC_MASTER_MISMATCH', 'SETTLEMENT_FAIL']",
+      "Exception ID: 0a0766bc-8223-4c24-ac04-992dd69efb6a",
+      "Resolution status: ESCALATED",
+      "Feedback captured at: 2025-11-26T02:03:48.296658+00:00",
+      "No resolution plan (non-actionable or escalated)",
+      "Learning artifacts: 0 (MVP placeholder)",
+      "Final status: ESCALATED"
+    ],
+    "errors": [
+      "TriageAgent failed: Could not classify exception type. Available types: ['CASH_BREAK', 'FAILED_ALLOCATION', 'MISMATCHED_TRADE_DETAILS', 'POSITION_BREAK', 'REG_REPORT_REJECTED', 'SEC_MASTER_MISMATCH', 'SETTLEMENT_FAIL']"
+    ]
+  },
+  "timestamp": "2025-11-26T02:03:48.297659+00:00"
+}

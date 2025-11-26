@@ -26,6 +26,7 @@ class ResolutionStatus(str, Enum):
     IN_PROGRESS = "IN_PROGRESS"
     RESOLVED = "RESOLVED"
     ESCALATED = "ESCALATED"
+    PENDING_APPROVAL = "PENDING_APPROVAL"  # Phase 2: Waiting for human approval
 
 
 class AuditEntry(BaseModel):

@@ -968,3 +968,1158 @@ Tests:
 - Ensure all tests pass in CI/local.
 
 Acceptance criteria must match Issue 21.
+
+
+
+
+
+Recommended Cursor Prompt for Phase 2 Task Checklist
+
+Paste this exact prompt into Cursor:
+
+Read docs/06-mvp-plan.md and identify all requirements that belong to Phase 2 (beyond the Phase 1 MVP implementation that is already completed). 
+
+Using the same formatting style as phase1-mvp-issues.md, generate a new file in the repo:
+
+  .github/ISSUE_TEMPLATE/phase2-mvp-issues.md
+
+This file must contain:
+- A full Phase 2 task breakdown
+- Grouped by functional areas
+- Each with (#) identifiers like in Phase 1
+- Clear acceptance criteria
+- Direct references to the relevant sections in docs/06-mvp-plan.md
+- DO NOT duplicate Phase 1 tasks
+- DO NOT modify phase1-mvp-issues.md
+
+Phase 2 should include:
+- Advanced RAG (vector DB, embedding provider, semantic search)
+- Tool execution engine (real execution, retries, error handling)
+- Policy learning improvements
+- Human-in-the-loop approval workflow
+- Playbook generation/optimization via LLM
+- Multi-agent orchestration
+- Rich metrics + dashboards
+- Notification service (email/Slack)
+- Optional gateway/auth hardening
+- Partial automation for resolution actions
+
+Generate the file .github/ISSUE_TEMPLATE/phase2-mvp-issues.md with a complete and clean Phase 2 checklist.
+
+
+
+
+
+Phase 2 — Next 10 Cursor Coding Prompts (21–30)
+
+
+Prompt 21 — Upgrade Domain Pack Loader + Hot Reload (Phase 2)
+
+Maps to: Issue 22 (high) 
+
+phase2-mvp-issues
+
+Paste into Cursor:
+
+Phase 2 implementation: Upgrade Domain Pack Loader + Validator with hot reloading.
+
+Spec refs:
+- docs/05-domain-pack-schema.md
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 22
+
+Tasks:
+1) Enhance src/domainpack/loader.py to support BOTH JSON and YAML packs.
+   - Add load_domain_pack(path) that infers parser by extension.
+2) Add schema validation improvements:
+   - validate ontology, entities, exception taxonomy, severity rules, tools, playbooks, guardrails.
+3) Implement hot-reloading:
+   - Watch domainpacks/ folder for changes (use watchdog).
+   - On change, reload pack into registry with version bump.
+4) Enforce tenant-scoped isolation:
+   - DomainPackRegistry should store packs per tenant namespace.
+   - No cross-tenant access to packs.
+
+Tests:
+- tests/test_domainpack_hot_reload.py
+- Verify JSON + YAML load.
+- Verify reload replaces pack.
+- Verify tenant isolation.
+
+Acceptance criteria must satisfy Issue 22.
+
+⭐ Prompt 22 — Domain Pack Storage + Caching + Version Rollback
+
+Maps to: Issue 23 (medium) 
+
+phase2-mvp-issues
+
+Paste into Cursor:
+
+Phase 2 implementation: Domain Pack persistent storage + caching + versioning.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 23
+
+Tasks:
+1) Create src/domainpack/storage.py:
+   - store_pack(tenant_id, pack)
+   - get_pack(tenant_id, domain_name, version=None)
+   - list_versions(tenant_id, domain_name)
+   - rollback_version(tenant_id, domain_name, target_version)
+
+2) MVP storage:
+   - filesystem under ./runtime/domainpacks/{tenantId}/{domainName}/{version}.json
+
+3) Add caching:
+   - simple LRU cache per tenant for active packs.
+
+4) Add usage tracking:
+   - store last_used_timestamp and usage_count per pack.
+
+Tests:
+- tests/test_domainpack_storage.py
+- Verify store/retrieve/version list/rollback.
+- Verify cache hit behavior.
+- Verify tenant segregation.
+
+Acceptance criteria must satisfy Issue 23.
+
+⭐ Prompt 23 — Extend Tool Registry for Domain Tools + Overrides
+
+Maps to: Issue 24 (high) 
+
+phase2-mvp-issues
+
+Paste into Cursor:
+
+Phase 2 implementation: Extend Tool Registry for Domain Tools.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- docs/02-modules-components.md
+- phase2-mvp-issues.md Issue 24
+
+Tasks:
+1) Update src/tools/registry.py:
+   - Load tool definitions from DomainPack.tools on pack registration.
+   - Namespace tools by tenant + domain:
+       {tenantId}:{domainName}:{toolName}
+
+2) Implement inheritance/override:
+   - TenantPolicyPack.toolsAllowList may override tool properties (timeouts, retries).
+   - Domain tool definitions remain canonical unless overridden.
+
+3) Implement tool version compatibility checks:
+   - Each tool definition may declare version.
+   - Registry rejects incompatible versions for tenant.
+
+Tests:
+- tests/test_tool_registry_domain_tools.py
+- Verify domain tools load into registry.
+- Verify overrides applied.
+- Verify namespacing + isolation.
+
+Acceptance criteria must satisfy Issue 24.
+
+⭐ Prompt 24 — Advanced Tool Execution Engine (Retries, Timeout, Circuit Breaker)
+
+Maps to: Issue 25 (high) 
+
+phase2-mvp-issues
+
+Paste into Cursor:
+
+Phase 2 implementation: Advanced Tool Execution Engine.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- docs/08-security-compliance.md
+- phase2-mvp-issues.md Issue 25
+
+Tasks:
+1) Create src/tools/execution_engine.py with ToolExecutionEngine:
+   - execute(tool_name, args, tenant_policy, domain_pack, mode="sync"|"async")
+   - retry with exponential backoff
+   - timeout handling per tool definition
+   - circuit breaker per tool (open/half-open/closed)
+   - validate tool output schema when argsSchema/returns present
+
+2) Support async execution:
+   - use asyncio + httpx.
+
+3) Update src/tools/invoker.py to delegate to ToolExecutionEngine.
+
+4) Audit every attempt/outcome.
+
+Tests:
+- tests/test_tool_execution_engine.py
+- Mock failures to verify retry/backoff.
+- Mock timeout behavior.
+- Verify circuit breaker trips after threshold.
+- Verify async path.
+
+Acceptance criteria must satisfy Issue 25.
+
+⭐ Prompt 25 — Domain-Specific Playbook Management + Selection
+
+Maps to: Issue 26 (high) 
+
+phase2-mvp-issues
+
+Paste into Cursor:
+
+Phase 2 implementation: Domain-specific Playbook support.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- docs/05-domain-pack-schema.md
+- phase2-mvp-issues.md Issue 26
+
+Tasks:
+1) Create src/playbooks/manager.py:
+   - load_playbooks(domain_pack)
+   - select_playbook(exception_record, tenant_policy, domain_pack)
+   - support inheritance/composition (simple merge rules MVP)
+   - versioning hooks (read from domain pack versions)
+
+2) Integrate with ResolutionAgent:
+   - ResolutionAgent uses PlaybookManager for selection instead of manual lookup.
+
+3) Enforce tenant isolation of playbooks.
+
+Tests:
+- tests/test_playbook_manager.py
+- Verify selection by exceptionType.
+- Verify only approved playbooks chosen.
+- Verify tenant isolation.
+
+Acceptance criteria must satisfy Issue 26.
+
+⭐ Prompt 26 — Partial Automation of Resolution Actions
+
+Maps to: Issue 36 (high) 
+
+phase2-mvp-issues
+
+Paste into Cursor:
+
+Phase 2 implementation: Partial automation for resolution actions.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 36
+
+Tasks:
+1) Upgrade src/agents/resolution.py:
+   - If PolicyAgent allows auto-action AND severity not CRITICAL:
+       execute playbook steps using ToolExecutionEngine.
+   - Respect confidence thresholds from tenant policy.
+   - If any step fails:
+       attempt rollback if rollback tool is defined OR escalate.
+
+2) Add per-step execution status:
+   - SUCCESS | FAILED | SKIPPED | NEEDS_APPROVAL
+
+3) Always audit each executed step.
+
+Tests:
+- tests/test_resolution_partial_automation.py
+- Mock tool execution success/failure.
+- Verify rollback/escalation path.
+- Verify CRITICAL never auto-executes.
+
+Acceptance criteria must satisfy Issue 36.
+
+⭐ Prompt 27 — Embedding Provider Integration (multi-provider + caching)
+
+Maps to: Issue 29 (high) 
+
+phase2-mvp-issues
+
+Paste into Cursor:
+
+Phase 2 implementation: Embedding Provider Integration.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 29
+
+Tasks:
+1) Create src/memory/embeddings.py:
+   - EmbeddingProvider interface
+   - OpenAIEmbeddingProvider (config driven)
+   - HFEmbeddingProvider stub (optional)
+   - EmbeddingCache (LRU + disk optional)
+
+2) Tenant customization:
+   - TenantPolicyPack may specify embedding provider/model.
+
+3) Quality metrics:
+   - log embedding latency, cache hit rate.
+
+Tests:
+- tests/test_embeddings.py
+- Mock providers.
+- Verify caching works.
+- Verify tenant-specific provider config.
+
+Acceptance criteria must satisfy Issue 29.
+
+⭐ Prompt 28 — Vector DB Integration (Qdrant/Pinecone/Weaviate adapter)
+
+Maps to: Issue 28 (high) 
+
+phase2-mvp-issues
+
+Paste into Cursor:
+
+Phase 2 implementation: Production Vector DB integration.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 28
+
+Tasks:
+1) Create src/memory/vector_store.py:
+   - VectorStore interface
+   - QdrantVectorStore implementation (default)
+   - connection pooling + retry
+   - per-tenant namespace/collection
+
+2) Migrate Phase 1 MemoryIndexRegistry:
+   - replace in-memory storage with VectorStore.
+   - keep a fallback mode for local tests.
+
+3) Backup/recovery stubs:
+   - export_collection(tenant_id)
+   - restore_collection(tenant_id)
+
+Tests:
+- tests/test_vector_store_qdrant.py
+- Use mocked Qdrant client.
+- Verify per-tenant isolation & persistence calls.
+
+Acceptance criteria must satisfy Issue 28.
+
+⭐ Prompt 29 — Advanced Semantic Search (Hybrid + re-ranking)
+
+Maps to: Issue 30 (medium) 
+
+phase2-mvp-issues
+
+Paste into Cursor:
+
+Phase 2 implementation: Advanced Semantic Search (hybrid).
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 30
+
+Tasks:
+1) Upgrade src/memory/rag.py:
+   - hybrid_search(exception_record, k=5, filters=None)
+      * vector search via VectorStore
+      * keyword match against stored metadata
+      * merge + rerank results
+
+2) Add:
+   - filtering by exceptionType, severity, domainName
+   - relevance scores + explanation
+
+3) Integrate into TriageAgent:
+   - include top similar cases as evidence.
+
+Tests:
+- tests/test_semantic_search_hybrid.py
+- Verify hybrid search merges correctly.
+- Verify filters work.
+- Verify explanations returned.
+
+Acceptance criteria must satisfy Issue 30.
+
+⭐ Prompt 30 — Human Approval Workflow + Approval Queue API
+
+Maps to: Issue 31 (high) 
+
+phase2-mvp-issues
+
+Paste into Cursor:
+
+Phase 2 implementation: Human-in-the-loop Approval Workflow.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- docs/08-security-compliance.md
+- phase2-mvp-issues.md Issue 31
+
+Tasks:
+1) Create src/workflow/approval.py:
+   - ApprovalQueue (per tenant)
+   - submit_for_approval(exceptionId, plan, evidence)
+   - approve(approvalId, user, comments)
+   - reject(approvalId, user, comments)
+   - timeout + escalation
+   - approval history persisted in ./runtime/approvals/{tenantId}.jsonl
+
+2) Integrate into PolicyAgent & ResolutionAgent:
+   - If humanApprovalRequired:
+       ResolutionAgent submits plan to queue and halts execution.
+   - Orchestrator marks status = PENDING_APPROVAL.
+
+3) Add API:
+   - POST /approvals/{tenantId}
+   - GET /approvals/{tenantId}
+   - POST /approvals/{tenantId}/{approvalId}/approve
+   - POST /approvals/{tenantId}/{approvalId}/reject
+
+Tests:
+- tests/test_approval_workflow.py
+- tests/test_api_approvals.py
+- Verify queue behavior, timeout/escalation, audit trail.
+
+Acceptance criteria must satisfy Issue 31.
+
+What’s covered vs Phase-2 issues
+
+These 10 prompts implement the core Phase-2 “engine upgrades”:
+
+Domain pack hot reload + persistence (22–23)
+
+Domain tools + advanced execution engine (24–25)
+
+Playbook manager + partial automation (26, 36)
+
+Embeddings + Vector DB + hybrid search (29, 28, 30)
+
+Human approvals (31)
+
+That’s the meat of Phase 2. Admin UI, dashboards, supervisor agent, policy learning, notifications, multi-domain testing come next once these are stable. 
+
+phase2-mvp-issues
+
+
+
+
+
+Phase 2 — Remaining Cursor Coding Prompts (31–46)
+⭐ Prompt 31 — LLM-Based Playbook Generation + Optimization
+
+Maps to: Issue 27
+
+Paste into Cursor:
+
+Phase 2: Implement LLM-Based Playbook Generation and Optimization.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- docs/04-agent-templates.md
+- phase2-mvp-issues.md Issue 27
+
+Tasks:
+1) Create src/llm/provider.py:
+   - LLMProvider interface
+   - GrokProvider/OpenAIProvider stubs (config-driven)
+   - safe_generate(prompt, schema) enforcing JSON-only output
+
+2) Create src/playbooks/generator.py:
+   - generate_playbook(exception_record, evidence, domain_pack)
+   - output must conform to DomainPack.playbooks schema
+   - tag generated playbooks as approved=false
+
+3) Integrate into ResolutionAgent:
+   - If PolicyAgent classifies ACTIONABLE_NON_APPROVED_PROCESS:
+        call PlaybookGenerator and attach suggestedDraftPlaybook.
+
+4) Add playbook optimization:
+   - optimize_playbook(playbook, past_outcomes) -> improved draft
+   - use tenant memory / outcomes as evidence
+
+Safety:
+- enforce output JSON schema validation
+- never auto-approve LLM-generated playbooks
+
+Tests:
+- tests/test_playbook_generator_llm.py
+- mock LLMProvider to return valid/invalid JSON
+- verify schema validation blocks invalid output
+
+⭐ Prompt 32 — Advanced Multi-Agent Orchestration (parallel + supervisor hooks)
+
+Maps to: Issue 33
+
+Paste into Cursor:
+
+Phase 2: Implement Advanced Multi-Agent Orchestration.
+
+Spec refs:
+- docs/01-architecture.md
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 33
+
+Tasks:
+1) Upgrade src/orchestrator/runner.py:
+   - support parallel execution across exceptions using asyncio.gather
+   - support timeouts per stage
+   - persist per-exception state snapshots
+
+2) Add orchestration hooks:
+   - before_stage(agent_name, context)
+   - after_stage(agent_name, decision)
+   - on_failure(agent_name, error)
+
+3) Allow branching:
+   - if PolicyAgent returns PENDING_APPROVAL → stop pipeline for that exception
+   - if non-actionable → skip ResolutionAgent and go to FeedbackAgent
+
+4) Maintain deterministic order within each exception.
+
+Tests:
+- tests/test_orchestrator_parallel.py
+- verify parallel batch execution produces same per-item decisions
+- verify branching behavior
+
+⭐ Prompt 33 — SupervisorAgent for Oversight
+
+Maps to: Issue 34
+
+Paste into Cursor:
+
+Phase 2: Implement SupervisorAgent.
+
+Spec refs:
+- docs/04-agent-templates.md
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 34
+
+Tasks:
+1) Create src/agents/supervisor.py:
+   - Runs after PolicyAgent and after ResolutionAgent
+   - Reviews decisions for safety/consistency
+   - Can override nextStep to "ESCALATE" if confidence too low / policy breach
+
+2) Integrate into Orchestrator hooks:
+   - call SupervisorAgent on checkpoints:
+       * post-policy
+       * post-resolution
+   - SupervisorAgent output appended to evidence
+
+Rules:
+- never executes tools, only governs flow
+- uses tenant guardrails + domain pack rules
+
+Tests:
+- tests/test_supervisor_agent.py
+- verify overrides trigger escalation
+
+⭐ Prompt 34 — Policy Learning + Improvement Loop
+
+Maps to: Issue 35
+
+Paste into Cursor:
+
+Phase 2: Implement Policy Learning and Improvement.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 35
+
+Tasks:
+1) Create src/learning/policy_learning.py:
+   - ingest_feedback(exceptionId, outcome, human_override)
+   - detect recurring exceptions & success/failure patterns
+   - suggest policy updates (not auto-applied)
+
+2) Store learning artifacts per tenant:
+   ./runtime/learning/{tenantId}.jsonl
+
+3) Integrate with FeedbackAgent:
+   - if human override exists, log it for learning
+   - attach policySuggestions list in feedback output
+
+Safety:
+- suggestions only, never auto-edit tenant policies
+
+Tests:
+- tests/test_policy_learning.py
+
+⭐ Prompt 35 — Approval UI Backend + Minimal Dashboard API
+
+Maps to: Issue 32
+
+Paste into Cursor:
+
+Phase 2: Implement Approval UI backend + minimal dashboard API.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 32
+
+Tasks:
+1) Create src/api/approval_ui.py:
+   - GET /ui/approvals/{tenantId}
+     returns pending approvals with evidence + plan
+
+2) Create src/api/ui_status.py:
+   - GET /ui/exceptions/{tenantId}
+     returns recent exceptions with statuses
+
+3) Keep output UI-friendly but derived from canonical schemas.
+
+Tests:
+- tests/test_api_ui_approvals.py
+- tests/test_api_ui_status.py
+
+⭐ Prompt 36 — Admin API/UI: Domain Pack Management
+
+Maps to: Issue 37
+
+Paste into Cursor:
+
+Phase 2: Implement Admin APIs for Domain Pack Management.
+
+Spec refs:
+- docs/03-data-models-apis.md
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 37
+
+Tasks:
+1) Create src/api/admin_domainpacks.py:
+   - POST /admin/domainpacks/{tenantId}
+      upload pack (JSON/YAML), validate, store, register
+   - GET /admin/domainpacks/{tenantId}
+      list domain packs + versions + usage stats
+   - POST /admin/domainpacks/{tenantId}/rollback
+      rollback active version
+
+2) Wire into FastAPI app.
+
+Tests:
+- tests/test_api_admin_domainpacks.py
+
+⭐ Prompt 37 — Admin API/UI: Tenant Policy Pack Management
+
+Maps to: Issue 38
+
+Paste into Cursor:
+
+Phase 2: Implement Admin APIs for Tenant Policy Pack Management.
+
+Spec refs:
+- docs/03-data-models-apis.md
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 38
+
+Tasks:
+1) Create src/api/admin_tenantpolicies.py:
+   - POST /admin/tenantpolicies/{tenantId}
+     upload policy pack, validate against active domain pack
+   - GET /admin/tenantpolicies/{tenantId}
+     return active policy + history
+   - POST /admin/tenantpolicies/{tenantId}/activate
+     activate a version
+
+Tests:
+- tests/test_api_admin_tenantpolicies.py
+
+⭐ Prompt 38 — Admin API/UI: Tool Management
+
+Maps to: Issue 39
+
+Paste into Cursor:
+
+Phase 2: Implement Admin APIs for Tool Management.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 39
+
+Tasks:
+1) Create src/api/admin_tools.py:
+   - POST /admin/tools/{tenantId}/{domainName}
+     register/override tool definitions
+   - GET /admin/tools/{tenantId}/{domainName}
+     list tools + allowlist status
+   - POST /admin/tools/{tenantId}/{domainName}/disable
+     disable a tool
+
+2) Integrate with ToolRegistry + AllowListEnforcer.
+
+Tests:
+- tests/test_api_admin_tools.py
+
+⭐ Prompt 39 — Rich Metrics Collector (expanded)
+
+Maps to: Issue 40
+
+Paste into Cursor:
+
+Phase 2: Implement Rich Metrics Collection.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 40
+
+Tasks:
+1) Upgrade src/observability/metrics.py:
+   - per-playbook success rates
+   - per-tool latency, retry counts, failure rates
+   - approval queue aging
+   - recurrence stats by exceptionType
+   - confidence distribution
+
+2) Persist metrics periodically:
+   ./runtime/metrics/{tenantId}.json
+
+Tests:
+- tests/test_metrics_rich.py
+
+⭐ Prompt 40 — Advanced Dashboards Backend APIs
+
+Maps to: Issue 41
+
+Paste into Cursor:
+
+Phase 2: Implement Advanced Dashboard APIs (backend only).
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 41
+
+Tasks:
+1) Create src/api/dashboards.py:
+   - GET /dashboards/{tenantId}/summary
+   - GET /dashboards/{tenantId}/exceptions
+   - GET /dashboards/{tenantId}/playbooks
+   - GET /dashboards/{tenantId}/tools
+
+2) Outputs derived from RichMetricsCollector + ExceptionStore.
+
+Tests:
+- tests/test_api_dashboards.py
+
+⭐ Prompt 41 — Notification Service (Email + Webhook)
+
+Maps to: Issue 42
+
+Paste into Cursor:
+
+Phase 2: Implement Notification Service.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 42
+
+Tasks:
+1) Create src/notify/service.py:
+   - NotificationService with channels:
+       * email (SMTP config)
+       * webhook (Teams/Slack)
+   - send_notification(tenant_id, group, subject, message, payload_link)
+
+2) Integrate into Orchestrator:
+   - notify on escalation
+   - notify on approval required
+   - notify on auto-resolution complete
+
+3) TenantPolicyPack.notificationPolicies drives routing.
+
+Tests:
+- tests/test_notification_service.py
+- mock SMTP + webhook
+
+⭐ Prompt 42 — Alert Rules + Escalation Automation
+
+Maps to: Issue 43
+
+Paste into Cursor:
+
+Phase 2: Implement Alert Rules and Escalation.
+
+Spec refs:
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 43
+
+Tasks:
+1) Create src/observability/alerts.py:
+   - define alert rules per tenant:
+       * high exception volume
+       * repeated CRITICAL breaks
+       * tool circuit breaker open
+       * approval queue aging
+   - evaluate_alerts(metrics, tenant_policy)
+
+2) On trigger:
+   - openCase/escalateCase via ToolExecutionEngine
+   - send notification
+
+Tests:
+- tests/test_alert_rules.py
+
+⭐ Prompt 43 — Gateway/Auth Hardening (Optional)
+
+Maps to: Issue 44 (optional)
+
+Paste into Cursor:
+
+Phase 2 (Optional): Gateway/Auth hardening.
+
+Spec refs:
+- docs/08-security-compliance.md
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 44
+
+Tasks:
+1) Upgrade src/api/auth.py:
+   - support JWT auth in addition to API key
+   - tenantId from JWT claims
+   - RBAC roles: viewer, operator, admin
+
+2) Add rate limiting real implementation (slowapi or custom).
+
+Tests:
+- tests/test_auth_jwt.py
+
+⭐ Prompt 44 — Multi-Domain Simulation + Load Testing Harness
+
+Maps to: Issue 45
+
+Paste into Cursor:
+
+Phase 2: Implement Multi-Domain Simulation and Testing Harness.
+
+Spec refs:
+- docs/07-test-plan.md
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 45
+
+Tasks:
+1) Create src/simulation/runner.py:
+   - load multiple domain packs
+   - generate synthetic exception batches
+   - run through orchestrator
+   - collect performance metrics
+
+2) Provide CLI:
+   python -m src.simulation.runner --domains finance,healthcare --batch 1000
+
+Tests:
+- tests/test_simulation_runner.py (small batch)
+
+⭐ Prompt 45 — Domain Pack Test Suite Execution Engine
+
+Maps to: Issue 46
+
+Paste into Cursor:
+
+Phase 2: Implement Domain Pack Test Suite Execution.
+
+Spec refs:
+- docs/05-domain-pack-schema.md (testSuites)
+- docs/master_project_instruction_full.md
+- phase2-mvp-issues.md Issue 46
+
+Tasks:
+1) Create src/domainpack/test_runner.py:
+   - run_test_suites(domain_pack, tenant_policy, orchestrator)
+   - validate expectedPlaybookId for each case
+   - output pass/fail report
+
+2) Expose API:
+   POST /admin/domainpacks/{tenantId}/{domainName}/run-tests
+
+Tests:
+- tests/test_domainpack_test_runner.py
+
+⭐ Prompt 46 — Phase-2 Final Regression + Coverage Gate
+
+Maps to: “final hardening” implied in Phase-2 issues
+
+Paste into Cursor:
+
+Phase 2: Final regression hardening.
+
+Spec refs:
+- docs/07-test-plan.md
+- docs/master_project_instruction_full.md
+
+Tasks:
+1) Add missing unit/integration tests for Phase 2 modules:
+   - playbook generator
+   - execution engine
+   - approvals
+   - admin APIs
+   - notifications
+   - alerts
+   - simulation + test runner
+
+2) Ensure tenant isolation tests cover:
+   - vector store collections
+   - domain packs storage
+   - approval queues
+   - notifications routing
+
+3) Upgrade scripts/run_tests.sh:
+   pytest --cov=src --cov-report=term-missing --cov-report=html
+   enforce >85% coverage
+
+4) Run multi-domain simulation with small batch in CI.
+
+Deliver:
+- stable Phase 2 MVP
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-------overall so far : 
+
+PHASE 2 — What You Achieved
+
+Phase 1 gave you the basic skeleton of a multi-tenant agentic exception engine:
+
+5 core agents
+
+deterministic classification & decision flow
+
+domain packs & tenant policies
+
+tool registry
+
+audit logging
+
+ingestion + pipeline APIs
+
+simple RAG memory
+
+tests + observability
+
+Phase 2 evolves the system into a true, scalable, intelligent, partially-autonomous agentic platform.
+
+Below is the full story of what Phase 2 added.
+
+🔥 1. Domain Pack Evolution & Governance
+
+Phase 2 transforms Domain Packs from static configuration files into a dynamic, versioned, reloadable knowledge layer, similar to how modern enterprise systems treat domain ontologies.
+
+You added:
+✔ JSON + YAML domain packs
+✔ Deep validation of domain taxonomy
+✔ Hot reloading via file watchers
+✔ Persistent storage & version control (rollback)
+✔ Per-tenant isolation
+✔ Domain tool definitions & overrides
+
+Why this matters:
+Now your system can support continuous domain changes (new exception types, new playbooks, new tools) without needing code changes.
+This is a huge enterprise requirement.
+
+🔥 2. Tool Execution Engine (Real Automation Infrastructure)
+
+Phase 1 tool usage was “dry-run.”
+Phase 2 introduces real execution with control-plane protections.
+
+You added:
+✔ Execution Engine
+
+Sync + async
+
+Retries + exponential backoff
+
+Timeouts
+
+Circuit breakers
+
+Output schema validation
+
+Tool namespacing by tenant + domain
+
+✔ ToolInvoker now orchestrates real workflows
+✔ Full auditing for every tool call
+
+Why this matters:
+Your platform can now actually perform actions, not just suggest them — still within a safe envelope.
+
+🔥 3. Advanced Playbook Management
+
+Phase 1: resolution was static, read-only.
+Phase 2: playbooks become intelligent, evolvable, and multi-version.
+
+You added:
+✔ PlaybookManager
+
+selection rules
+
+inheritance
+
+composition
+
+versioning
+
+✔ Integration with ResolutionAgent
+✔ Partial automation of playbook steps
+✔ Rollback logic
+✔ Per-step execution states
+
+Why this matters:
+Playbooks are now treated as operational runbooks — not static text — enabling precise automation.
+
+🔥 4. Embeddings + Vector Database + Hybrid Semantic Search
+
+Phase 1 had a simple in-memory RAG.
+
+Phase 2 adds the real AI-powered knowledge layer:
+
+✔ Multi-provider Embedding Provider
+
+(OpenAI, HF, etc.)
+
+✔ Embedding caching
+✔ Vector DB integration (Qdrant/Pinecone/Weaviate)
+✔ Per-tenant vector namespaces
+✔ Hybrid search:
+
+semantic vector search
+
+keyword search
+
+confidence scoring
+
+reranking
+
+filtering by exceptionType/severity/domain
+
+✔ TriageAgent enhanced with semantic evidence
+
+Why this matters:
+Your agentic decisions now leverage historical similarity — a core feature of real agentic systems.
+
+🔥 5. Multi-Agent Orchestration
+
+Phase 2 introduces more autonomy and intelligence across multiple agents.
+
+✔ Parallel pipeline execution (async)
+✔ Branching logic (approval, non-actionable, escalations)
+✔ SupervisorAgent (checks & overrides)
+✔ Orchestrator hooks before/after each agent
+✔ Per-exception state snapshots
+
+Why this matters:
+Your system now behaves like a swarm of cooperating agents, not a linear pipeline.
+
+🔥 6. Human Approval Workflow
+
+This is enterprise-grade human-in-the-loop handling.
+
+✔ ApprovalQueue per tenant
+✔ Approval submission & history
+✔ Timeout & escalation rules
+✔ REST APIs for approving/rejecting
+✔ SupervisorAgent + PolicyAgent integration
+
+Why this matters:
+Human governance is mandatory for compliance-heavy industries like finance & healthcare.
+
+🔥 7. Policy Learning Engine
+
+You added a feedback loop to continuously improve tenant policies.
+
+✔ Learning artifacts recorded
+✔ Pattern detection & analysis
+✔ Suggestions for policy updates (not auto-applied)
+✔ Integration with FeedbackAgent
+
+Why this matters:
+Your system now learns from operations and proposes optimizations.
+
+This is the first step toward self-tuning agentic behavior.
+
+🔥 8. Admin APIs (Domain, Tenant, Tools)
+
+Phase 2 added full administrative control:
+
+✔ Upload domain packs
+✔ Upload tenant policy packs
+✔ Activate versions
+✔ List & audit versions
+✔ Rollback
+✔ Tool registration / override / disable
+✔ Tenant isolation for all admin actions
+
+Why this matters:
+Your platform is now manageable by operators without code changes.
+
+🔥 9. Expanded Observability + Notifications + Alerts
+
+You enhanced observability far beyond Phase 1:
+
+✔ Rich metrics:
+
+playbook success
+
+tool latency
+
+retries & failures
+
+recurrence patterns
+
+approval queue aging
+
+confidence distributions
+
+✔ Dashboard APIs
+✔ Notification service (email + webhooks)
+✔ Alert rules system
+
+(detect anomalies, open cases, escalate)
+
+Why this matters:
+Your system is now monitorable, proactive, and enterprise-ready.
+
+🔥 10. Simulation & Test Suite Execution
+
+You added tooling for domain testing & load simulation:
+
+✔ Multi-domain simulation runner
+✔ Synthetic exception generation
+✔ Playbook test suite executor
+✔ CI-level regression runner
+
+Why this matters:
+Allows you to validate domain packs & policies before going to production.
+
+⭐ Summary of What Phase 2 Achieved
+🎯 Major Achievements
+
+The platform evolved from a deterministic rules engine → a semi-autonomous agentic AI system
+
+Real automation capabilities (tool execution)
+
+Domain & tenant governance elevated to enterprise-grade
+
+RAG became real semantic search
+
+Human approval workflows added
+
+Observability & notifications added
+
+Multi-agent orchestration upgraded
+
+Policy learning introduced
+
+🎯 Phase 2 transformed your system from a “smart orchestrator” → into a “true enterprise AI agent platform.”
+🎯 Phase 3 will make it fully autonomous, LLM-driven, self-improving, and capable of end-to-end execution.
+
+

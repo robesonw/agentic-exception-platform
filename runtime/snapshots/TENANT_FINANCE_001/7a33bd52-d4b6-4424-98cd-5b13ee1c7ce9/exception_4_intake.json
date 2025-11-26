@@ -1,0 +1,51 @@
+{
+  "exception": {
+    "exceptionId": "403e30b7-a619-4e91-88e0-d417afe635be",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "PositionSystem",
+    "exceptionType": "POSITION_BREAK",
+    "severity": null,
+    "timestamp": "2025-11-25 00:04:02.609192+00:00",
+    "rawPayload": {
+      "accountId": "ACC-001",
+      "cusip": "9128283K9",
+      "expectedPosition": 5000,
+      "actualPosition": 4800,
+      "difference": 200,
+      "asOfDate": "2024-01-15"
+    },
+    "normalizedContext": {
+      "pipelineId": "f638ac88-5603-4e0e-95bd-f845bcf939ec",
+      "normalizedAt": "2025-11-25T00:04:02.609192+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as POSITION_BREAK",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 403e30b7-a619-4e91-88e0-d417afe635be",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: PositionSystem",
+          "Exception type: POSITION_BREAK",
+          "Warning: Exception type 'POSITION_BREAK' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 403e30b7-a619-4e91-88e0-d417afe635be",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: PositionSystem",
+      "Exception type: POSITION_BREAK",
+      "Warning: Exception type 'POSITION_BREAK' validated against domain pack"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-25T00:04:02.609192+00:00"
+}

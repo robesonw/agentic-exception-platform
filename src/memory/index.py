@@ -1,6 +1,9 @@
 """
 Memory Index Registry for per-tenant exception storage and retrieval.
-Provides in-memory storage with similarity search capabilities.
+Phase 2: Migrated to use VectorStore for persistent storage.
+Fallback mode available for local tests.
+
+Provides persistent vector storage with similarity search capabilities.
 """
 
 import logging
@@ -9,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from src.memory.rag import DummyEmbeddingProvider, EmbeddingProvider, cosine_similarity
+from src.memory.vector_store import InMemoryVectorStore, SearchResult, VectorPoint, VectorStore
 from src.models.exception_record import ExceptionRecord
 
 logger = logging.getLogger(__name__)
@@ -30,26 +34,39 @@ class MemoryIndex:
     """
     Per-tenant memory index for exception storage and retrieval.
     
+    Phase 2: Uses VectorStore for persistent storage.
     Stores exception records with embeddings for similarity search.
     """
 
-    def __init__(self, tenant_id: str, embedding_provider: EmbeddingProvider):
+    def __init__(
+        self,
+        tenant_id: str,
+        embedding_provider: EmbeddingProvider,
+        vector_store: Optional[VectorStore] = None,
+    ):
         """
         Initialize memory index for a tenant.
         
         Args:
             tenant_id: Tenant identifier
             embedding_provider: Embedding provider for generating embeddings
+            vector_store: Optional VectorStore (defaults to InMemoryVectorStore for fallback)
         """
         self.tenant_id = tenant_id
         self.embedding_provider = embedding_provider
+        self.vector_store = vector_store or InMemoryVectorStore()
+        
+        # Legacy in-memory storage (for backward compatibility and fallback)
         self._entries: list[ExceptionMemoryEntry] = []
+        self._use_vector_store = vector_store is not None
 
     def add_exception(
         self, exception_record: ExceptionRecord, resolution_summary: str
     ) -> None:
         """
         Add exception to memory index.
+        
+        Phase 2: Stores in VectorStore if available, otherwise uses in-memory fallback.
         
         Args:
             exception_record: ExceptionRecord to store
@@ -71,14 +88,53 @@ class MemoryIndex:
             timestamp=datetime.now(timezone.utc),
         )
         
-        self._entries.append(entry)
-        logger.info(f"Added exception {exception_record.exception_id} to memory index for tenant {self.tenant_id}")
+        # Store in VectorStore if available
+        if self._use_vector_store:
+            try:
+                # Ensure collection exists
+                self.vector_store.ensure_collection(self.tenant_id, len(embedding))
+                
+                # Create vector point
+                point = VectorPoint(
+                    id=exception_record.exception_id,
+                    vector=embedding,
+                    payload={
+                        "exception_id": exception_record.exception_id,
+                        "tenant_id": self.tenant_id,
+                        "exception_type": exception_record.exception_type,
+                        "severity": exception_record.severity.value if exception_record.severity else None,
+                        "source_system": exception_record.source_system,
+                        "resolution_summary": resolution_summary,
+                        "timestamp": entry.timestamp.isoformat(),
+                        "raw_payload": exception_record.raw_payload,
+                    },
+                )
+                
+                self.vector_store.upsert_points(self.tenant_id, [point])
+                logger.info(
+                    f"Added exception {exception_record.exception_id} to vector store "
+                    f"for tenant {self.tenant_id}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to store in vector store, falling back to in-memory: {e}"
+                )
+                self._entries.append(entry)
+        else:
+            # Fallback to in-memory storage
+            self._entries.append(entry)
+            logger.info(
+                f"Added exception {exception_record.exception_id} to memory index "
+                f"for tenant {self.tenant_id} (in-memory mode)"
+            )
 
     def search_similar(
         self, exception_record: ExceptionRecord, k: int = 5
     ) -> list[tuple[ExceptionMemoryEntry, float]]:
         """
         Search for similar exceptions in the index.
+        
+        Phase 2: Uses VectorStore if available, otherwise uses in-memory fallback.
         
         Args:
             exception_record: ExceptionRecord to find similar exceptions for
@@ -87,14 +143,46 @@ class MemoryIndex:
         Returns:
             List of tuples (ExceptionMemoryEntry, similarity_score) sorted by similarity (descending)
         """
-        if not self._entries:
-            return []
-        
         # Generate text representation for query
         query_text = self._generate_text_representation(exception_record, "")
         
         # Generate embedding for query
         query_embedding = self.embedding_provider.embed(query_text)
+        
+        # Search in VectorStore if available
+        if self._use_vector_store:
+            try:
+                search_results = self.vector_store.search(
+                    tenant_id=self.tenant_id,
+                    query_vector=query_embedding,
+                    limit=k,
+                )
+                
+                # Convert SearchResult to ExceptionMemoryEntry
+                results = []
+                for result in search_results:
+                    # Reconstruct ExceptionMemoryEntry from payload
+                    payload = result.payload
+                    entry = ExceptionMemoryEntry(
+                        exception_id=payload.get("exception_id", result.id),
+                        tenant_id=payload.get("tenant_id", self.tenant_id),
+                        exception_record=exception_record,  # Simplified - in production would deserialize
+                        resolution_summary=payload.get("resolution_summary", ""),
+                        embedding=query_embedding,  # Would need to store in payload or retrieve
+                        timestamp=datetime.fromisoformat(payload.get("timestamp", datetime.now(timezone.utc).isoformat())),
+                    )
+                    results.append((entry, result.score))
+                
+                return results
+            except Exception as e:
+                logger.warning(
+                    f"Vector store search failed, falling back to in-memory: {e}"
+                )
+                # Fall through to in-memory search
+        
+        # Fallback to in-memory search
+        if not self._entries:
+            return []
         
         # Calculate similarities
         similarities = []
@@ -152,10 +240,20 @@ class MemoryIndex:
         Returns:
             Number of entries
         """
+        if self._use_vector_store:
+            # For VectorStore, we'd need to query count (not implemented in MVP)
+            # Return in-memory count as fallback
+            return len(self._entries)
+        
         return len(self._entries)
 
     def clear(self) -> None:
         """Clear all entries from the index."""
+        if self._use_vector_store:
+            # For VectorStore, we'd need to delete all points (not implemented in MVP)
+            # Clear in-memory as fallback
+            logger.warning("Clear operation on VectorStore not fully implemented, clearing in-memory only")
+        
         self._entries.clear()
         logger.info(f"Cleared memory index for tenant {self.tenant_id}")
 
@@ -164,25 +262,37 @@ class MemoryIndexRegistry:
     """
     Registry for managing per-tenant memory indexes.
     
-    Ensures strict tenant isolation - each tenant has its own isolated index.
+    Phase 2: Supports VectorStore for persistent storage with fallback mode.
+    Ensures strict tenant isolation - each tenant has its own isolated index/collection.
     """
 
-    def __init__(self, embedding_provider: Optional[EmbeddingProvider] = None):
+    def __init__(
+        self,
+        embedding_provider: Optional[EmbeddingProvider] = None,
+        vector_store: Optional[VectorStore] = None,
+        use_vector_store: bool = True,
+    ):
         """
         Initialize memory index registry.
         
         Args:
             embedding_provider: Optional embedding provider (defaults to DummyEmbeddingProvider)
+            vector_store: Optional VectorStore (defaults to InMemoryVectorStore for fallback)
+            use_vector_store: Whether to use VectorStore (default: True, falls back if None)
         """
         if embedding_provider is None:
             embedding_provider = DummyEmbeddingProvider()
         
         self.embedding_provider = embedding_provider
+        self.vector_store = vector_store
+        self.use_vector_store = use_vector_store and vector_store is not None
         self._indexes: dict[str, MemoryIndex] = {}
 
     def get_or_create_index(self, tenant_id: str) -> MemoryIndex:
         """
         Get or create memory index for a tenant.
+        
+        Phase 2: Creates index with VectorStore if available.
         
         Args:
             tenant_id: Tenant identifier
@@ -191,10 +301,55 @@ class MemoryIndexRegistry:
             MemoryIndex instance for the tenant
         """
         if tenant_id not in self._indexes:
-            self._indexes[tenant_id] = MemoryIndex(tenant_id, self.embedding_provider)
-            logger.info(f"Created memory index for tenant {tenant_id}")
+            vector_store = self.vector_store if self.use_vector_store else None
+            self._indexes[tenant_id] = MemoryIndex(
+                tenant_id, self.embedding_provider, vector_store=vector_store
+            )
+            logger.info(
+                f"Created memory index for tenant {tenant_id} "
+                f"(vector_store={'enabled' if self.use_vector_store else 'disabled'})"
+            )
         
         return self._indexes[tenant_id]
+    
+    def export_collection(self, tenant_id: str) -> dict[str, Any]:
+        """
+        Export collection data for backup.
+        
+        Args:
+            tenant_id: Tenant identifier
+            
+        Returns:
+            Dictionary with collection data
+        """
+        if not self.use_vector_store or not self.vector_store:
+            logger.warning("Export not available without VectorStore")
+            return {}
+        
+        try:
+            return self.vector_store.export_collection(tenant_id)
+        except Exception as e:
+            logger.error(f"Failed to export collection for tenant {tenant_id}: {e}")
+            raise
+    
+    def restore_collection(self, tenant_id: str, data: dict[str, Any]) -> None:
+        """
+        Restore collection from backup data.
+        
+        Args:
+            tenant_id: Tenant identifier
+            data: Collection data from export
+        """
+        if not self.use_vector_store or not self.vector_store:
+            logger.warning("Restore not available without VectorStore")
+            return
+        
+        try:
+            self.vector_store.restore_collection(tenant_id, data)
+            logger.info(f"Restored collection for tenant {tenant_id}")
+        except Exception as e:
+            logger.error(f"Failed to restore collection for tenant {tenant_id}: {e}")
+            raise
 
     def add_exception(
         self, tenant_id: str, exception_record: ExceptionRecord, resolution_summary: str

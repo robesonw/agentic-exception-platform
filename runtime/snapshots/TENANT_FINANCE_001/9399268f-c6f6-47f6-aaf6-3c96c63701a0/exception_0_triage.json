@@ -1,0 +1,62 @@
+{
+  "exception": {
+    "exceptionId": "727fc421-90f5-4b42-a348-9ff794f17faf",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "TradingSystem",
+    "exceptionType": "MISMATCHED_TRADE_DETAILS",
+    "severity": "LOW",
+    "timestamp": "2025-11-26 18:31:04.840152+00:00",
+    "rawPayload": {
+      "orderId": "ORD-001",
+      "priceMismatch": 0.01
+    },
+    "normalizedContext": {
+      "pipelineId": "e5a84e27-1142-4bfe-910b-ea2c075e0357",
+      "normalizedAt": "2025-11-26T18:31:04.840152+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as MISMATCHED_TRADE_DETAILS",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 727fc421-90f5-4b42-a348-9ff794f17faf",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: TradingSystem",
+          "Exception type: MISMATCHED_TRADE_DETAILS",
+          "Warning: Exception type 'MISMATCHED_TRADE_DETAILS' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged MISMATCHED_TRADE_DETAILS LOW",
+        "confidence": 0.8,
+        "evidence": [
+          "Classified as: MISMATCHED_TRADE_DETAILS",
+          "Severity: LOW",
+          "Description: Execution details do not match the original trade order (price, qty, security, counterparty, or dates).",
+          "No severity rules matched (using default)"
+        ],
+        "nextStep": "ProceedToPolicy"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 727fc421-90f5-4b42-a348-9ff794f17faf",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: TradingSystem",
+      "Exception type: MISMATCHED_TRADE_DETAILS",
+      "Warning: Exception type 'MISMATCHED_TRADE_DETAILS' validated against domain pack",
+      "Classified as: MISMATCHED_TRADE_DETAILS",
+      "Severity: LOW",
+      "Description: Execution details do not match the original trade order (price, qty, security, counterparty, or dates).",
+      "No severity rules matched (using default)"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T18:31:04.841151+00:00"
+}

@@ -12,6 +12,9 @@ from src.models.agent_contracts import AgentDecision
 from src.models.domain_pack import DomainPack, ExceptionTypeDefinition
 from src.models.exception_record import ExceptionRecord, Severity
 from src.memory.index import MemoryIndexRegistry
+from src.memory.rag import HybridSearchFilters, hybrid_search
+
+logger = logging.getLogger(__name__)
 
 
 class TriageAgentError(Exception):
@@ -80,18 +83,44 @@ class TriageAgent:
         # Classify exception type if not already set
         classified_type = self._classify_exception_type(exception)
         
-        # Optional: Search similar exceptions via RAG (if memory index available)
+        # Phase 2: Advanced semantic search with hybrid search
         similar_exceptions = []
+        hybrid_search_results = []
         if self.memory_index:
             try:
-                similar_exceptions = self.memory_index.search_similar(exception.tenant_id, exception, k=5)
-                if similar_exceptions:
-                    # Use similar exceptions to help with classification if needed
-                    # For MVP, we just log that similar exceptions were found
-                    logger.debug(f"Found {len(similar_exceptions)} similar exceptions for classification")
+                # Use hybrid search for better results
+                from src.memory.rag import EmbeddingProvider
+                
+                # Get embedding provider from memory index
+                embedding_provider = self.memory_index.embedding_provider
+                
+                # Perform hybrid search
+                hybrid_search_results = hybrid_search(
+                    exception_record=exception,
+                    memory_index_registry=self.memory_index,
+                    embedding_provider=embedding_provider,
+                    k=5,
+                    filters=None,  # Could add filters based on domain_pack
+                )
+                
+                if hybrid_search_results:
+                    logger.debug(
+                        f"Found {len(hybrid_search_results)} similar exceptions via hybrid search"
+                    )
+                    # Convert to legacy format for backward compatibility
+                    # (similar_exceptions is used in _create_decision)
+                    similar_exceptions = [
+                        (None, result.combined_score) for result in hybrid_search_results
+                    ]
             except Exception as e:
-                # Gracefully handle RAG search failures
-                logger.warning(f"RAG search failed: {e}, continuing without similarity search")
+                # Gracefully handle search failures, fallback to simple search
+                logger.warning(f"Hybrid search failed: {e}, falling back to simple search")
+                try:
+                    similar_exceptions = self.memory_index.search_similar(
+                        exception.tenant_id, exception, k=5
+                    )
+                except Exception as e2:
+                    logger.warning(f"Fallback search also failed: {e2}")
         
         # Evaluate severity rules
         severity = self._evaluate_severity(exception, classified_type)
@@ -100,8 +129,12 @@ class TriageAgent:
         exception.exception_type = classified_type
         exception.severity = severity
         
-        # Create agent decision
-        decision = self._create_decision(exception, classified_type, severity)
+        # Create agent decision (pass hybrid_search_results via context)
+        context_with_search = (context or {}).copy()
+        context_with_search["hybrid_search_results"] = hybrid_search_results
+        decision = self._create_decision(
+            exception, classified_type, severity, context=context_with_search
+        )
         
         # Log the event
         if self.audit_logger:
@@ -265,7 +298,11 @@ class TriageAgent:
         return exception_type in condition
 
     def _create_decision(
-        self, exception: ExceptionRecord, exception_type: str, severity: Severity
+        self,
+        exception: ExceptionRecord,
+        exception_type: str,
+        severity: Severity,
+        context: Optional[dict[str, Any]] = None,
     ) -> AgentDecision:
         """
         Create agent decision from triage results.
@@ -300,9 +337,16 @@ class TriageAgent:
         else:
             evidence.append("No severity rules matched (using default)")
         
-        # Add similar exceptions info if available (from RAG search)
-        # Note: This would be populated in process() method if memory_index is available
-        # For now, we'll add it as a placeholder in evidence if needed
+        # Phase 2: Add similar exceptions info from hybrid search
+        if context and "hybrid_search_results" in context:
+            hybrid_results = context["hybrid_search_results"]
+            if hybrid_results:
+                evidence.append(f"Found {len(hybrid_results)} similar cases via hybrid search:")
+                for i, result in enumerate(hybrid_results[:3], 1):  # Top 3 as evidence
+                    evidence.append(
+                        f"  {i}. Case {result.exception_id}: "
+                        f"score={result.combined_score:.2f} ({result.explanation})"
+                    )
 
         # Calculate confidence
         # Higher confidence if exception type was already set and severity rules matched

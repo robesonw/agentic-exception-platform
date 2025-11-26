@@ -1,0 +1,123 @@
+{
+  "exception": {
+    "exceptionId": "a416e895-53b3-4849-8378-8d4c8929b0b9",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "TradingSystem",
+    "exceptionType": "MISMATCHED_TRADE_DETAILS",
+    "severity": "LOW",
+    "timestamp": "2025-11-26 00:10:48.185362+00:00",
+    "rawPayload": {
+      "orderId": "ORD-2024-001",
+      "execId": "EXEC-2024-001",
+      "priceMismatch": 0.05,
+      "qtyMismatch": 100,
+      "cusip": "9128283K9",
+      "tradeDate": "2024-01-15"
+    },
+    "normalizedContext": {
+      "pipelineId": "9c6b7959-7370-431b-a537-6e93c5c1f874",
+      "normalizedAt": "2025-11-26T00:10:48.185362+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as MISMATCHED_TRADE_DETAILS",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: a416e895-53b3-4849-8378-8d4c8929b0b9",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: TradingSystem",
+          "Exception type: MISMATCHED_TRADE_DETAILS",
+          "Warning: Exception type 'MISMATCHED_TRADE_DETAILS' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged MISMATCHED_TRADE_DETAILS LOW",
+        "confidence": 0.8,
+        "evidence": [
+          "Classified as: MISMATCHED_TRADE_DETAILS",
+          "Severity: LOW",
+          "Description: Execution details do not match the original trade order (price, qty, security, counterparty, or dates).",
+          "No severity rules matched (using default)"
+        ],
+        "nextStep": "ProceedToPolicy"
+      },
+      "policy": {
+        "decision": "Approved",
+        "confidence": 0.9,
+        "evidence": [
+          "Exception type: MISMATCHED_TRADE_DETAILS",
+          "Severity: LOW",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS",
+          "Approved playbook found for: MISMATCHED_TRADE_DETAILS",
+          "selectedPlaybookId: MISMATCHED_TRADE_DETAILS",
+          "humanApprovalRequired: False"
+        ],
+        "nextStep": "ProceedToResolution"
+      },
+      "supervisor_post_policy": {
+        "decision": "SupervisorAgent approved: flow continues as planned",
+        "confidence": 0.8,
+        "evidence": [
+          "SupervisorAgent review: post-policy checkpoint",
+          "PolicyAgent confidence: 0.90"
+        ],
+        "nextStep": "ProceedToResolution"
+      },
+      "resolution": {
+        "decision": "Resolved plan created with 6 actions",
+        "confidence": 0.9,
+        "evidence": [
+          "Exception type: MISMATCHED_TRADE_DETAILS",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS",
+          "Resolved plan: 6 actions",
+          "Step 1: Fetch trade order and executions using getOrder/getExecutions",
+          "Step 2: Compare price/qty/cusip/counterparty/tradeDate",
+          "Step 3: If mismatch is non-economic (formatting/enrichment): auto-correct booking attributes",
+          "Step 4: If mismatch is economic: openCase('FO_MO_TRADE_BREAK') with evidence and assign to MiddleOffice",
+          "Step 5: Rebook corrected trade or update attributes through approved tool",
+          "Step 6: Notify trader and middle office",
+          "resolvedPlan: 6 actions"
+        ],
+        "nextStep": "ProceedToFeedback"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: a416e895-53b3-4849-8378-8d4c8929b0b9",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: TradingSystem",
+      "Exception type: MISMATCHED_TRADE_DETAILS",
+      "Warning: Exception type 'MISMATCHED_TRADE_DETAILS' validated against domain pack",
+      "Classified as: MISMATCHED_TRADE_DETAILS",
+      "Severity: LOW",
+      "Description: Execution details do not match the original trade order (price, qty, security, counterparty, or dates).",
+      "No severity rules matched (using default)",
+      "Exception type: MISMATCHED_TRADE_DETAILS",
+      "Severity: LOW",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Approved playbook found for: MISMATCHED_TRADE_DETAILS",
+      "selectedPlaybookId: MISMATCHED_TRADE_DETAILS",
+      "humanApprovalRequired: False",
+      "SupervisorAgent review: post-policy checkpoint",
+      "PolicyAgent confidence: 0.90",
+      "Exception type: MISMATCHED_TRADE_DETAILS",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Resolved plan: 6 actions",
+      "Step 1: Fetch trade order and executions using getOrder/getExecutions",
+      "Step 2: Compare price/qty/cusip/counterparty/tradeDate",
+      "Step 3: If mismatch is non-economic (formatting/enrichment): auto-correct booking attributes",
+      "Step 4: If mismatch is economic: openCase('FO_MO_TRADE_BREAK') with evidence and assign to MiddleOffice",
+      "Step 5: Rebook corrected trade or update attributes through approved tool",
+      "Step 6: Notify trader and middle office",
+      "resolvedPlan: 6 actions"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T00:10:48.188910+00:00"
+}

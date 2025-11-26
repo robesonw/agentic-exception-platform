@@ -1,0 +1,87 @@
+{
+  "exception": {
+    "exceptionId": "fea6b024-8cf9-4116-b1d0-71ba2b6acdea",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "TradingSystem",
+    "exceptionType": "POSITION_BREAK",
+    "severity": "CRITICAL",
+    "timestamp": "2025-11-25 00:05:34.485659+00:00",
+    "rawPayload": {
+      "accountId": "ACC-123",
+      "cusip": "CUSIP-456",
+      "expectedPosition": 1000,
+      "actualPosition": 950
+    },
+    "normalizedContext": {
+      "pipelineId": "ef73b302-b71a-4bcc-855e-42e41b56dc6e",
+      "normalizedAt": "2025-11-25T00:05:34.485659+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as POSITION_BREAK",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: fea6b024-8cf9-4116-b1d0-71ba2b6acdea",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: TradingSystem",
+          "Exception type: POSITION_BREAK",
+          "Warning: Exception type 'POSITION_BREAK' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged POSITION_BREAK CRITICAL",
+        "confidence": 0.9,
+        "evidence": [
+          "Classified as: POSITION_BREAK",
+          "Severity: CRITICAL",
+          "Description: Position quantity does not reconcile with trades + settlements.",
+          "Matched severity rules: 1",
+          "exceptionType == 'POSITION_BREAK' -> CRITICAL"
+        ],
+        "nextStep": "ProceedToPolicy"
+      },
+      "policy": {
+        "decision": "Approved - Human approval required",
+        "confidence": 0.8,
+        "evidence": [
+          "Exception type: POSITION_BREAK",
+          "Severity: CRITICAL",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS",
+          "Approved playbook found for: POSITION_BREAK",
+          "Human approval required",
+          "selectedPlaybookId: POSITION_BREAK",
+          "humanApprovalRequired: True"
+        ],
+        "nextStep": "ProceedToResolution"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: fea6b024-8cf9-4116-b1d0-71ba2b6acdea",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: TradingSystem",
+      "Exception type: POSITION_BREAK",
+      "Warning: Exception type 'POSITION_BREAK' validated against domain pack",
+      "Classified as: POSITION_BREAK",
+      "Severity: CRITICAL",
+      "Description: Position quantity does not reconcile with trades + settlements.",
+      "Matched severity rules: 1",
+      "exceptionType == 'POSITION_BREAK' -> CRITICAL",
+      "Exception type: POSITION_BREAK",
+      "Severity: CRITICAL",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Approved playbook found for: POSITION_BREAK",
+      "Human approval required",
+      "selectedPlaybookId: POSITION_BREAK",
+      "humanApprovalRequired: True"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-25T00:05:34.488660+00:00"
+}

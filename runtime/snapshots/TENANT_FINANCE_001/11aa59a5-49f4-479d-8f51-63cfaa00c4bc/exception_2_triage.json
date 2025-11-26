@@ -1,0 +1,67 @@
+{
+  "exception": {
+    "exceptionId": "e872fb45-bedc-4474-896e-624bb9d9da8c",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "SettlementSystem",
+    "exceptionType": "SETTLEMENT_FAIL",
+    "severity": "HIGH",
+    "timestamp": "2025-11-26 18:31:04.762494+00:00",
+    "rawPayload": {
+      "orderId": "ORD-2024-003",
+      "intendedSettleDate": "2024-01-18",
+      "actualSettleDate": null,
+      "failReason": "SSI_MISMATCH",
+      "counterparty": "CPTY-ABC"
+    },
+    "normalizedContext": {
+      "pipelineId": "af4de8b0-75cd-48d7-aa8e-760e59b45c16",
+      "normalizedAt": "2025-11-26T18:31:04.762494+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as SETTLEMENT_FAIL",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: e872fb45-bedc-4474-896e-624bb9d9da8c",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: SettlementSystem",
+          "Exception type: SETTLEMENT_FAIL",
+          "Warning: Exception type 'SETTLEMENT_FAIL' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged SETTLEMENT_FAIL HIGH",
+        "confidence": 0.9,
+        "evidence": [
+          "Classified as: SETTLEMENT_FAIL",
+          "Severity: HIGH",
+          "Description: Trade failed to settle by intended settle date.",
+          "Matched severity rules: 1",
+          "exceptionType == 'SETTLEMENT_FAIL' -> HIGH"
+        ],
+        "nextStep": "ProceedToPolicy"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: e872fb45-bedc-4474-896e-624bb9d9da8c",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: SettlementSystem",
+      "Exception type: SETTLEMENT_FAIL",
+      "Warning: Exception type 'SETTLEMENT_FAIL' validated against domain pack",
+      "Classified as: SETTLEMENT_FAIL",
+      "Severity: HIGH",
+      "Description: Trade failed to settle by intended settle date.",
+      "Matched severity rules: 1",
+      "exceptionType == 'SETTLEMENT_FAIL' -> HIGH"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T18:31:04.764514+00:00"
+}

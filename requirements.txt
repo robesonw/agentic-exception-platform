@@ -19,3 +19,7 @@ pydantic-settings>=2.1.0  # For configuration management (not currently used)
 httpx>=0.25.0             # For HTTP client calls (not currently used)
 python-dotenv>=1.0.0      # For environment variable management (not currently used)
 
+# Phase 2 Dependencies
+watchdog>=3.0.0           # For file system monitoring and hot-reloading
+PyYAML>=6.0.1             # For YAML Domain Pack support
+

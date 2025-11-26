@@ -1,0 +1,66 @@
+{
+  "exception": {
+    "exceptionId": "eaf08050-ac66-4bfc-ba22-0093eb0c8c91",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "TradingSystem",
+    "exceptionType": "MISMATCHED_TRADE_DETAILS",
+    "severity": "LOW",
+    "timestamp": "2025-11-26 18:46:14.991551+00:00",
+    "rawPayload": {
+      "orderId": "ORD-2024-001",
+      "execId": "EXEC-2024-001",
+      "priceMismatch": 0.05,
+      "qtyMismatch": 100,
+      "cusip": "9128283K9",
+      "tradeDate": "2024-01-15"
+    },
+    "normalizedContext": {
+      "pipelineId": "5e5257ce-eba9-4dd3-be2d-db87dbd6759e",
+      "normalizedAt": "2025-11-26T18:46:14.991551+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as MISMATCHED_TRADE_DETAILS",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: eaf08050-ac66-4bfc-ba22-0093eb0c8c91",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: TradingSystem",
+          "Exception type: MISMATCHED_TRADE_DETAILS",
+          "Warning: Exception type 'MISMATCHED_TRADE_DETAILS' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged MISMATCHED_TRADE_DETAILS LOW",
+        "confidence": 0.8,
+        "evidence": [
+          "Classified as: MISMATCHED_TRADE_DETAILS",
+          "Severity: LOW",
+          "Description: Execution details do not match the original trade order (price, qty, security, counterparty, or dates).",
+          "No severity rules matched (using default)"
+        ],
+        "nextStep": "ProceedToPolicy"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: eaf08050-ac66-4bfc-ba22-0093eb0c8c91",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: TradingSystem",
+      "Exception type: MISMATCHED_TRADE_DETAILS",
+      "Warning: Exception type 'MISMATCHED_TRADE_DETAILS' validated against domain pack",
+      "Classified as: MISMATCHED_TRADE_DETAILS",
+      "Severity: LOW",
+      "Description: Execution details do not match the original trade order (price, qty, security, counterparty, or dates).",
+      "No severity rules matched (using default)"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T18:46:14.992544+00:00"
+}

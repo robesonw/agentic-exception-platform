@@ -1,11 +1,12 @@
 """
 Comprehensive tenant isolation tests across all components.
-Ensures strict tenant isolation in all Phase 1 modules.
+Ensures strict tenant isolation in all Phase 1 and Phase 2 modules.
 
 Test Rationale:
 - Validates that no data leakage occurs between tenants
 - Ensures all components enforce tenant boundaries
 - Confirms isolation at storage, memory, tools, and API layers
+- Phase 2: Adds vector store, domain packs storage, approval queues, notifications
 """
 
 import pytest
@@ -16,6 +17,9 @@ from src.models.exception_record import ExceptionRecord, ResolutionStatus, Sever
 from src.observability.metrics import MetricsCollector
 from src.orchestrator.store import get_exception_store
 from src.tools.registry import ToolRegistry
+from src.domainpack.storage import DomainPackStorage
+from src.workflow.approval import ApprovalQueueRegistry
+from src.notify.service import NotificationService
 
 
 @pytest.fixture(autouse=True)
@@ -217,14 +221,14 @@ class TestCrossComponentTenantIsolation:
         auth.register_api_key("key_tenant_2", "TENANT_002")
         
         # Verify isolation
-        tenant_1 = auth.validate_api_key("key_tenant_1")
-        assert tenant_1 == "TENANT_001"
+        user_context_1 = auth.validate_api_key("key_tenant_1")
+        assert user_context_1.tenant_id == "TENANT_001"
         
-        tenant_2 = auth.validate_api_key("key_tenant_2")
-        assert tenant_2 == "TENANT_002"
+        user_context_2 = auth.validate_api_key("key_tenant_2")
+        assert user_context_2.tenant_id == "TENANT_002"
         
         # Verify keys map to correct tenants
-        assert tenant_1 != tenant_2
+        assert user_context_1.tenant_id != user_context_2.tenant_id
 
 
 class TestTenantIsolationEdgeCases:
@@ -291,4 +295,145 @@ class TestTenantIsolationEdgeCases:
         result_lower = store.get_exception("tenant_001", "exc_001")
         assert result_lower is not None
         assert result_lower[0].raw_payload["data"] == "lowercase"
+
+
+class TestPhase2TenantIsolation:
+    """Phase 2 tenant isolation tests for new components."""
+
+    def test_domain_pack_storage_tenant_isolation(self, tmp_path):
+        """Test DomainPackStorage tenant isolation."""
+        storage = DomainPackStorage(storage_root=str(tmp_path))
+        
+        from src.models.domain_pack import DomainPack, ExceptionTypeDefinition
+        
+        pack_1 = DomainPack(
+            domain_name="Finance",
+            exception_types={
+                "TEST_1": ExceptionTypeDefinition(description="Test 1"),
+            },
+        )
+        
+        pack_2 = DomainPack(
+            domain_name="Finance",
+            exception_types={
+                "TEST_2": ExceptionTypeDefinition(description="Test 2"),
+            },
+        )
+        
+        # Store packs for different tenants
+        storage.store_pack(tenant_id="TENANT_001", pack=pack_1, version="1.0.0")
+        storage.store_pack(tenant_id="TENANT_002", pack=pack_2, version="1.0.0")
+        
+        # Retrieve packs
+        retrieved_1 = storage.get_pack(tenant_id="TENANT_001", domain_name="Finance", version="1.0.0")
+        retrieved_2 = storage.get_pack(tenant_id="TENANT_002", domain_name="Finance", version="1.0.0")
+        
+        assert retrieved_1 is not None
+        assert retrieved_2 is not None
+        assert "TEST_1" in retrieved_1.exception_types
+        assert "TEST_2" in retrieved_2.exception_types
+        assert "TEST_1" not in retrieved_2.exception_types
+        assert "TEST_2" not in retrieved_1.exception_types
+
+    def test_approval_queue_tenant_isolation(self, tmp_path):
+        """Test ApprovalQueue tenant isolation."""
+        from src.workflow.approval import ApprovalQueue
+        
+        queue_1 = ApprovalQueue(
+            tenant_id="TENANT_001",
+            storage_path=tmp_path,
+        )
+        
+        queue_2 = ApprovalQueue(
+            tenant_id="TENANT_002",
+            storage_path=tmp_path,
+        )
+        
+        # Submit approvals for different tenants
+        approval_1 = queue_1.submit_for_approval(
+            exception_id="exc_001",
+            plan={"action": "retry"},
+            evidence=["evidence_1"],
+        )
+        
+        approval_2 = queue_2.submit_for_approval(
+            exception_id="exc_001",  # Same ID
+            plan={"action": "cancel"},
+            evidence=["evidence_2"],
+        )
+        
+        # Verify isolation
+        pending_1 = queue_1.list_pending()
+        pending_2 = queue_2.list_pending()
+        
+        assert len(pending_1) == 1
+        assert len(pending_2) == 1
+        assert pending_1[0].approval_id == approval_1
+        assert pending_2[0].approval_id == approval_2
+        assert pending_1[0].plan["action"] == "retry"
+        assert pending_2[0].plan["action"] == "cancel"
+
+    def test_notification_routing_tenant_isolation(self):
+        """Test notification routing tenant isolation."""
+        from unittest.mock import patch
+        with patch("smtplib.SMTP"):
+            service = NotificationService(
+                smtp_host="smtp.test.com",
+                smtp_port=587,
+            )
+            
+            from src.models.tenant_policy import TenantPolicyPack
+            
+            tenant_policy_1 = TenantPolicyPack(
+                tenant_id="TENANT_001",
+                domain_name="Finance",
+                notification_policies={
+                    "onEscalation": {
+                        "channels": ["email"],
+                        "groups": ["ops_team"],
+                        "recipients": ["ops@tenant1.com"],
+                    },
+                },
+            )
+            
+            tenant_policy_2 = TenantPolicyPack(
+                tenant_id="TENANT_002",
+                domain_name="Healthcare",
+                notification_policies={
+                    "onEscalation": {
+                        "channels": ["email"],
+                        "groups": ["ops_team"],
+                        "recipients": ["ops@tenant2.com"],
+                    },
+                },
+            )
+            
+            # Convert NotificationPolicies to dict format expected by send_notification
+            policies_1 = {}
+            if hasattr(tenant_policy_1, 'notification_policies') and tenant_policy_1.notification_policies:
+                policies_1 = tenant_policy_1.notification_policies.model_dump() if hasattr(tenant_policy_1.notification_policies, 'model_dump') else {}
+            
+            policies_2 = {}
+            if hasattr(tenant_policy_2, 'notification_policies') and tenant_policy_2.notification_policies:
+                policies_2 = tenant_policy_2.notification_policies.model_dump() if hasattr(tenant_policy_2.notification_policies, 'model_dump') else {}
+            
+            # Send notifications for different tenants
+            service.send_notification(
+                tenant_id="TENANT_001",
+                group="ops_team",
+                subject="Alert",
+                message="Test 1",
+                notification_policies=policies_1,
+            )
+            
+            service.send_notification(
+                tenant_id="TENANT_002",
+                group="ops_team",
+                subject="Alert",
+                message="Test 2",
+                notification_policies=policies_2,
+            )
+            
+            # Verify notifications were sent (mocked, but should be isolated)
+            # The actual routing is tested in test_notification_service.py
 

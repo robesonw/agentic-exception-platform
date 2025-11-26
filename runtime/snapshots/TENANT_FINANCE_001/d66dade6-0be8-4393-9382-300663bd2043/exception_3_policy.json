@@ -1,0 +1,86 @@
+{
+  "exception": {
+    "exceptionId": "8184b712-f9cc-4d59-9226-ed1298a2cfca",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "RegulatorySystem",
+    "exceptionType": "REG_REPORT_REJECTED",
+    "severity": "MEDIUM",
+    "timestamp": "2025-11-26 18:31:04.907727+00:00",
+    "rawPayload": {
+      "reportId": "REG-2024-001",
+      "tradeId": "TRADE-2024-001",
+      "rejectReason": "MISSING_LEI",
+      "regType": "TRADE_REPORT",
+      "submittedAt": "2024-01-15T10:00:00Z"
+    },
+    "normalizedContext": {
+      "pipelineId": "372839e2-e13e-438a-8a25-01bf95939311",
+      "normalizedAt": "2025-11-26T18:31:04.907727+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as REG_REPORT_REJECTED",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 8184b712-f9cc-4d59-9226-ed1298a2cfca",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: RegulatorySystem",
+          "Exception type: REG_REPORT_REJECTED",
+          "Warning: Exception type 'REG_REPORT_REJECTED' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged REG_REPORT_REJECTED MEDIUM",
+        "confidence": 0.8,
+        "evidence": [
+          "Classified as: REG_REPORT_REJECTED",
+          "Severity: MEDIUM",
+          "Description: Regulatory report rejected due to missing/invalid fields.",
+          "No severity rules matched (using default)"
+        ],
+        "nextStep": "ProceedToPolicy"
+      },
+      "policy": {
+        "decision": "Approved",
+        "confidence": 0.9,
+        "evidence": [
+          "Exception type: REG_REPORT_REJECTED",
+          "Severity: HIGH",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS",
+          "Approved playbook found for: REG_REPORT_REJECTED",
+          "Severity overridden: MEDIUM -> HIGH",
+          "selectedPlaybookId: REG_REPORT_REJECTED",
+          "humanApprovalRequired: False"
+        ],
+        "nextStep": "ProceedToResolution"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 8184b712-f9cc-4d59-9226-ed1298a2cfca",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: RegulatorySystem",
+      "Exception type: REG_REPORT_REJECTED",
+      "Warning: Exception type 'REG_REPORT_REJECTED' validated against domain pack",
+      "Classified as: REG_REPORT_REJECTED",
+      "Severity: MEDIUM",
+      "Description: Regulatory report rejected due to missing/invalid fields.",
+      "No severity rules matched (using default)",
+      "Exception type: REG_REPORT_REJECTED",
+      "Severity: HIGH",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Approved playbook found for: REG_REPORT_REJECTED",
+      "Severity overridden: MEDIUM -> HIGH",
+      "selectedPlaybookId: REG_REPORT_REJECTED",
+      "humanApprovalRequired: False"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T18:31:04.907727+00:00"
+}

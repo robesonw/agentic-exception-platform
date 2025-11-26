@@ -1,15 +1,21 @@
 """
-FeedbackAgent implementation for MVP.
-Captures resolution outcomes and prepares for learning (placeholder).
-Matches specification from docs/04-agent-templates.md
+FeedbackAgent implementation for MVP and Phase 2.
+Captures resolution outcomes and prepares for learning.
+Phase 2: Integrates with PolicyLearning for policy suggestions.
+
+Matches specification from docs/04-agent-templates.md and phase2-mvp-issues.md Issue 35.
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 from src.audit.logger import AuditLogger
+from src.learning.policy_learning import PolicyLearning
 from src.models.agent_contracts import AgentDecision
 from src.models.exception_record import ExceptionRecord, ResolutionStatus
+
+logger = logging.getLogger(__name__)
 
 
 class FeedbackAgentError(Exception):
@@ -39,14 +45,17 @@ class FeedbackAgent:
     def __init__(
         self,
         audit_logger: Optional[AuditLogger] = None,
+        policy_learning: Optional[PolicyLearning] = None,
     ):
         """
         Initialize FeedbackAgent.
         
         Args:
             audit_logger: Optional AuditLogger for logging
+            policy_learning: Optional PolicyLearning instance for Phase 2
         """
         self.audit_logger = audit_logger
+        self.policy_learning = policy_learning
 
     async def process(
         self,
@@ -70,6 +79,28 @@ class FeedbackAgent:
         
         # Append outcome placeholder fields
         self._append_outcome_fields(exception, context)
+        
+        # Phase 2: Ingest feedback for learning if policy_learning is available
+        if self.policy_learning:
+            try:
+                # Extract outcome from exception status
+                outcome = self._determine_outcome(exception, context)
+                
+                # Extract human override from context if available
+                human_override = context.get("humanOverride")
+                
+                # Ingest feedback
+                self.policy_learning.ingest_feedback(
+                    tenant_id=exception.tenant_id,
+                    exception_id=exception.exception_id,
+                    outcome=outcome,
+                    human_override=human_override,
+                    exception_type=exception.exception_type,
+                    severity=exception.severity.value if exception.severity else None,
+                    context=context,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to ingest feedback for learning: {e}")
         
         # Create agent decision
         decision = self._create_decision(exception, context)
@@ -177,6 +208,27 @@ class FeedbackAgent:
             artifacts = exception.normalized_context["learningArtifacts"]
             evidence.append(f"Learning artifacts: {len(artifacts)} (MVP placeholder)")
         
+        # Phase 2: Get policy suggestions if policy_learning is available
+        policy_suggestions = []
+        if self.policy_learning:
+            try:
+                suggestions = self.policy_learning.get_policy_suggestions(
+                    tenant_id=exception.tenant_id,
+                    min_confidence=0.7,
+                )
+                policy_suggestions = [s.model_dump() for s in suggestions]
+                
+                if policy_suggestions:
+                    evidence.append(f"Policy suggestions available: {len(policy_suggestions)}")
+                    # Add summary of suggestions
+                    for suggestion in policy_suggestions[:3]:  # Show top 3
+                        evidence.append(
+                            f"Suggestion: {suggestion['description']} "
+                            f"(confidence: {suggestion['confidence']:.2f})"
+                        )
+            except Exception as e:
+                logger.warning(f"Failed to get policy suggestions: {e}")
+        
         # Add final resolution summary
         evidence.append(f"Final status: {exception.resolution_status.value}")
         if exception.exception_type:
@@ -193,9 +245,43 @@ class FeedbackAgent:
         # Next step is always "complete"
         next_step = "complete"
 
-        return AgentDecision(
+        decision = AgentDecision(
             decision=decision_text,
             confidence=confidence,
             evidence=evidence,
             nextStep=next_step,
         )
+        
+        # Phase 2: Attach policy suggestions to decision metadata
+        # (In production, this would be in a separate metadata field)
+        if policy_suggestions:
+            # Add to evidence as structured data indicator
+            decision.evidence.append(f"policySuggestions: {len(policy_suggestions)} available")
+        
+        return decision
+
+    def _determine_outcome(
+        self, exception: ExceptionRecord, context: dict[str, Any]
+    ) -> str:
+        """
+        Determine outcome from exception status and context.
+        
+        Args:
+            exception: ExceptionRecord
+            context: Context from processing
+            
+        Returns:
+            Outcome string
+        """
+        status = exception.resolution_status
+        
+        if status == ResolutionStatus.RESOLVED:
+            return "RESOLVED"
+        elif status == ResolutionStatus.ESCALATED:
+            return "ESCALATED"
+        elif status == ResolutionStatus.PENDING_APPROVAL:
+            return "PENDING_APPROVAL"
+        elif status == ResolutionStatus.IN_PROGRESS:
+            return "IN_PROGRESS"
+        else:
+            return "OPEN"

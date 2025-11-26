@@ -1,0 +1,47 @@
+{
+  "exception": {
+    "exceptionId": "40d80090-51a1-4413-9404-d1201b82e4f4",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "AllocationSystem",
+    "exceptionType": "FAILED_ALLOCATION",
+    "severity": null,
+    "timestamp": "2025-11-26 18:31:04.848766+00:00",
+    "rawPayload": {
+      "orderId": "ORD-002",
+      "blockQty": 1000
+    },
+    "normalizedContext": {
+      "pipelineId": "f1cac616-c9b5-4a64-9dcb-17f2799d4d1f",
+      "normalizedAt": "2025-11-26T18:31:04.848766+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as FAILED_ALLOCATION",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 40d80090-51a1-4413-9404-d1201b82e4f4",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: AllocationSystem",
+          "Exception type: FAILED_ALLOCATION",
+          "Warning: Exception type 'FAILED_ALLOCATION' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 40d80090-51a1-4413-9404-d1201b82e4f4",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: AllocationSystem",
+      "Exception type: FAILED_ALLOCATION",
+      "Warning: Exception type 'FAILED_ALLOCATION' validated against domain pack"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T18:31:04.848766+00:00"
+}

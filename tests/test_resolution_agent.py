@@ -408,11 +408,17 @@ class TestResolutionAgentAuditLogging:
         # Verify log contains agent event
         import json
         with open(log_file, "r", encoding="utf-8") as f:
-            line = f.readline()
-            entry = json.loads(line)
+            # Read all lines and find agent_event (step executions are logged first)
+            agent_event_entry = None
+            for line in f:
+                if line.strip():
+                    entry = json.loads(line)
+                    if entry.get("event_type") == "agent_event":
+                        agent_event_entry = entry
+                        break
         
-        assert entry["event_type"] == "agent_event"
-        assert entry["data"]["agent_name"] == "ResolutionAgent"
+        assert agent_event_entry is not None, "Agent event not found in audit log"
+        assert agent_event_entry["data"]["agent_name"] == "ResolutionAgent"
 
     @pytest.mark.asyncio
     async def test_logs_without_audit_logger(self, finance_domain_pack, tool_registry):

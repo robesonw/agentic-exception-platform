@@ -13,53 +13,107 @@ from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from src.api.auth import AuthenticationError, get_api_key_auth
+from src.api.auth import (
+    AuthManager,
+    AuthenticationError,
+    AuthorizationError,
+    get_api_key_auth,
+    get_auth_manager,
+    Role,
+    UserContext,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class RateLimiter:
     """
-    Simple per-tenant rate limiter (stub for MVP).
+    Enhanced rate limiter with per-endpoint and per-role limits.
     
-    Tracks requests per minute per tenant.
+    Phase 2: Real implementation with configurable limits per endpoint and role.
     In production, this would use Redis or similar distributed cache.
     """
 
-    def __init__(self, requests_per_minute: int = 100):
+    def __init__(
+        self,
+        default_requests_per_minute: int = 100,
+        endpoint_limits: Optional[dict[str, int]] = None,
+        role_limits: Optional[dict[str, int]] = None,
+    ):
         """
         Initialize rate limiter.
         
         Args:
-            requests_per_minute: Maximum requests per minute per tenant
+            default_requests_per_minute: Default requests per minute per tenant
+            endpoint_limits: Optional dict mapping endpoint patterns to limits
+            role_limits: Optional dict mapping roles to limits
         """
-        self.requests_per_minute = requests_per_minute
-        # Structure: {tenant_id: [(timestamp, ...), ...]}
-        self._request_timestamps: dict[str, list[float]] = defaultdict(list)
+        self.default_requests_per_minute = default_requests_per_minute
+        self.endpoint_limits = endpoint_limits or {}
+        self.role_limits = role_limits or {
+            "viewer": 50,  # Viewers have lower limits
+            "operator": 200,  # Operators have higher limits
+            "admin": 500,  # Admins have highest limits
+        }
+        # Structure: {tenant_id: {endpoint: [(timestamp, ...), ...]}}
+        self._request_timestamps: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
 
-    def is_allowed(self, tenant_id: str) -> tuple[bool, Optional[str]]:
+    def get_limit_for_request(self, endpoint: str, role: Optional[str] = None) -> int:
         """
-        Check if request is allowed for tenant.
+        Get rate limit for a specific request.
+        
+        Args:
+            endpoint: Request endpoint path
+            role: Optional user role
+            
+        Returns:
+            Rate limit (requests per minute)
+        """
+        # Check endpoint-specific limit first
+        for pattern, limit in self.endpoint_limits.items():
+            if endpoint.startswith(pattern):
+                return limit
+        
+        # Check role-specific limit
+        if role and role in self.role_limits:
+            return self.role_limits[role]
+        
+        # Default limit
+        return self.default_requests_per_minute
+
+    def is_allowed(
+        self, tenant_id: str, endpoint: str, role: Optional[str] = None
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Check if request is allowed for tenant and endpoint.
         
         Args:
             tenant_id: Tenant identifier
+            endpoint: Request endpoint path
+            role: Optional user role
             
         Returns:
             Tuple of (is_allowed, error_message)
         """
+        limit = self.get_limit_for_request(endpoint, role)
         current_time = time.time()
         one_minute_ago = current_time - 60.0
         
+        # Get timestamps for this tenant and endpoint
+        endpoint_timestamps = self._request_timestamps[tenant_id][endpoint]
+        
         # Clean old timestamps (older than 1 minute)
-        timestamps = self._request_timestamps[tenant_id]
-        timestamps[:] = [ts for ts in timestamps if ts > one_minute_ago]
+        endpoint_timestamps[:] = [ts for ts in endpoint_timestamps if ts > one_minute_ago]
         
         # Check if limit exceeded
-        if len(timestamps) >= self.requests_per_minute:
-            return False, f"Rate limit exceeded: {self.requests_per_minute} requests per minute"
+        if len(endpoint_timestamps) >= limit:
+            return (
+                False,
+                f"Rate limit exceeded: {limit} requests per minute for {endpoint}",
+            )
         
         # Record this request
-        timestamps.append(current_time)
+        endpoint_timestamps.append(current_time)
         
         return True, None
 
@@ -86,19 +140,25 @@ def get_rate_limiter() -> RateLimiter:
     """
     global _rate_limiter
     if _rate_limiter is None:
-        _rate_limiter = RateLimiter()
+        _rate_limiter = RateLimiter(
+            default_requests_per_minute=100,
+            endpoint_limits={"/admin": 10, "/metrics": 50},
+            role_limits={"viewer": 50, "operator": 200, "admin": 500},
+        )
     return _rate_limiter
 
 
 class TenantRouterMiddleware(BaseHTTPMiddleware):
     """
-    Middleware for tenant routing and authentication.
+    Enhanced middleware for tenant routing and authentication.
+    
+    Phase 2: Supports both API key and JWT authentication with RBAC.
     
     Responsibilities:
-    - Extract API key from X-API-KEY header
-    - Validate API key and get tenant ID
-    - Attach tenant ID to request.state.tenant_id
-    - Enforce rate limiting per tenant
+    - Extract API key from X-API-KEY header OR JWT from Authorization header
+    - Validate credentials and get tenant ID and role
+    - Attach tenant ID and user context to request.state
+    - Enforce rate limiting per tenant/endpoint/role
     - Log authentication failures securely
     """
 
@@ -112,7 +172,7 @@ class TenantRouterMiddleware(BaseHTTPMiddleware):
         """
         super().__init__(app)
         self.exclude_paths = exclude_paths or ["/health", "/docs", "/openapi.json", "/redoc"]
-        self.api_key_auth = get_api_key_auth()
+        self.auth_manager = get_auth_manager()
         self.rate_limiter = get_rate_limiter()
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
@@ -130,19 +190,18 @@ class TenantRouterMiddleware(BaseHTTPMiddleware):
         if any(request.url.path.startswith(path) for path in self.exclude_paths):
             return await call_next(request)
         
-        # Extract API key from header
+        # Extract authentication credentials
         api_key = request.headers.get("X-API-KEY")
+        jwt_token = None
         
-        if not api_key:
-            logger.warning(f"Authentication failed: Missing X-API-KEY header for {request.url.path}")
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"detail": "Missing X-API-KEY header"},
-            )
+        # Extract JWT from Authorization header (Bearer token)
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            jwt_token = auth_header[7:]  # Remove "Bearer " prefix
         
-        # Validate API key and get tenant ID
+        # Authenticate
         try:
-            tenant_id = self.api_key_auth.validate_api_key(api_key)
+            user_context = self.auth_manager.authenticate(api_key=api_key, jwt_token=jwt_token)
         except AuthenticationError as e:
             logger.warning(f"Authentication failed: {str(e)} for {request.url.path}")
             return JSONResponse(
@@ -150,17 +209,25 @@ class TenantRouterMiddleware(BaseHTTPMiddleware):
                 content={"detail": str(e)},
             )
         
-        # Check rate limiting
-        is_allowed, error_msg = self.rate_limiter.is_allowed(tenant_id)
+        # Check rate limiting (with role-based limits)
+        is_allowed, error_msg = self.rate_limiter.is_allowed(
+            tenant_id=user_context.tenant_id,
+            endpoint=request.url.path,
+            role=user_context.role.value,
+        )
         if not is_allowed:
-            logger.warning(f"Rate limit exceeded for tenant {tenant_id} on {request.url.path}")
+            logger.warning(
+                f"Rate limit exceeded for tenant {user_context.tenant_id} "
+                f"(role: {user_context.role.value}) on {request.url.path}"
+            )
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content={"detail": error_msg},
             )
         
-        # Attach tenant ID to request state
-        request.state.tenant_id = tenant_id
+        # Attach tenant ID and user context to request state
+        request.state.tenant_id = user_context.tenant_id
+        request.state.user_context = user_context
         
         # Process request
         response = await call_next(request)

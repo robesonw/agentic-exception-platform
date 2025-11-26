@@ -1,0 +1,68 @@
+{
+  "exception": {
+    "exceptionId": "46ff06b6-703e-4933-9661-7d580b688e69",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "AllocationSystem",
+    "exceptionType": "FAILED_ALLOCATION",
+    "severity": "HIGH",
+    "timestamp": "2025-11-26 18:46:15.312362+00:00",
+    "rawPayload": {
+      "orderId": "ORD-2024-002",
+      "blockQty": 10000,
+      "allocatedQty": 9500,
+      "failedAccounts": [
+        "ACC-001",
+        "ACC-002"
+      ],
+      "errorCode": "INSUFFICIENT_BALANCE"
+    },
+    "normalizedContext": {
+      "pipelineId": "5f03a4a9-a8f1-4777-8f93-267616c41a50",
+      "normalizedAt": "2025-11-26T18:46:15.312362+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as FAILED_ALLOCATION",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 46ff06b6-703e-4933-9661-7d580b688e69",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: AllocationSystem",
+          "Exception type: FAILED_ALLOCATION",
+          "Warning: Exception type 'FAILED_ALLOCATION' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged FAILED_ALLOCATION HIGH",
+        "confidence": 0.8,
+        "evidence": [
+          "Classified as: FAILED_ALLOCATION",
+          "Severity: HIGH",
+          "Description: Allocations for a block trade failed or partially processed.",
+          "No severity rules matched (using default)"
+        ],
+        "nextStep": "ProceedToPolicy"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 46ff06b6-703e-4933-9661-7d580b688e69",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: AllocationSystem",
+      "Exception type: FAILED_ALLOCATION",
+      "Warning: Exception type 'FAILED_ALLOCATION' validated against domain pack",
+      "Classified as: FAILED_ALLOCATION",
+      "Severity: HIGH",
+      "Description: Allocations for a block trade failed or partially processed.",
+      "No severity rules matched (using default)"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T18:46:15.313859+00:00"
+}

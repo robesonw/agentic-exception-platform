@@ -1,0 +1,86 @@
+{
+  "exception": {
+    "exceptionId": "afccc30a-6bc5-411a-8a9e-fda3bb6fda4d",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "SettlementSystem",
+    "exceptionType": "SETTLEMENT_FAIL",
+    "severity": "HIGH",
+    "timestamp": "2025-11-25 00:05:33.474777+00:00",
+    "rawPayload": {
+      "orderId": "ORD-2024-003",
+      "intendedSettleDate": "2024-01-18",
+      "actualSettleDate": null,
+      "failReason": "SSI_MISMATCH",
+      "counterparty": "CPTY-ABC"
+    },
+    "normalizedContext": {
+      "pipelineId": "634bd25b-ed04-4eb0-a1ac-2c90b92f8734",
+      "normalizedAt": "2025-11-25T00:05:33.474777+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as SETTLEMENT_FAIL",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: afccc30a-6bc5-411a-8a9e-fda3bb6fda4d",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: SettlementSystem",
+          "Exception type: SETTLEMENT_FAIL",
+          "Warning: Exception type 'SETTLEMENT_FAIL' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged SETTLEMENT_FAIL HIGH",
+        "confidence": 0.9,
+        "evidence": [
+          "Classified as: SETTLEMENT_FAIL",
+          "Severity: HIGH",
+          "Description: Trade failed to settle by intended settle date.",
+          "Matched severity rules: 1",
+          "exceptionType == 'SETTLEMENT_FAIL' -> HIGH"
+        ],
+        "nextStep": "ProceedToPolicy"
+      },
+      "policy": {
+        "decision": "Approved",
+        "confidence": 0.9,
+        "evidence": [
+          "Exception type: SETTLEMENT_FAIL",
+          "Severity: HIGH",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS",
+          "Approved playbook found for: SETTLEMENT_FAIL",
+          "selectedPlaybookId: SETTLEMENT_FAIL",
+          "humanApprovalRequired: False"
+        ],
+        "nextStep": "ProceedToResolution"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: afccc30a-6bc5-411a-8a9e-fda3bb6fda4d",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: SettlementSystem",
+      "Exception type: SETTLEMENT_FAIL",
+      "Warning: Exception type 'SETTLEMENT_FAIL' validated against domain pack",
+      "Classified as: SETTLEMENT_FAIL",
+      "Severity: HIGH",
+      "Description: Trade failed to settle by intended settle date.",
+      "Matched severity rules: 1",
+      "exceptionType == 'SETTLEMENT_FAIL' -> HIGH",
+      "Exception type: SETTLEMENT_FAIL",
+      "Severity: HIGH",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Approved playbook found for: SETTLEMENT_FAIL",
+      "selectedPlaybookId: SETTLEMENT_FAIL",
+      "humanApprovalRequired: False"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-25T00:05:33.476948+00:00"
+}

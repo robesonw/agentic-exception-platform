@@ -3,7 +3,7 @@ Domain Pack schema models with strict Pydantic v2 validation.
 Matches specification from docs/03-data-models-apis.md
 """
 
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -57,11 +57,19 @@ class ToolDefinition(BaseModel):
         extra="forbid",
         str_strip_whitespace=True,
         validate_assignment=True,
+        populate_by_name=True,
     )
 
     description: str = Field(..., min_length=1, description="Tool description")
     parameters: dict[str, Any] = Field(default_factory=dict, description="Tool parameters schema")
     endpoint: str = Field(..., min_length=1, description="Tool endpoint URL")
+    version: str = Field(default="1.0.0", description="Tool version for compatibility checks")
+    timeout_seconds: Optional[float] = Field(
+        default=None, alias="timeoutSeconds", ge=0.0, description="Request timeout in seconds"
+    )
+    max_retries: int = Field(
+        default=3, alias="maxRetries", ge=0, description="Maximum number of retry attempts"
+    )
 
 
 class PlaybookStep(BaseModel):

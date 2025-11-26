@@ -1,0 +1,31 @@
+{
+  "exception": {
+    "exceptionId": "exc_ORD-001",
+    "tenantId": "TENANT_A",
+    "sourceSystem": "ERP",
+    "exceptionType": "SETTLEMENT_FAIL",
+    "severity": "HIGH",
+    "timestamp": "2025-11-26 00:10:49.188960+00:00",
+    "rawPayload": {
+      "orderId": "ORD-001"
+    },
+    "normalizedContext": {},
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Intake",
+        "confidence": 0.9,
+        "evidence": [],
+        "nextStep": "triage"
+      }
+    },
+    "evidence": [],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T00:10:49.188960+00:00"
+}

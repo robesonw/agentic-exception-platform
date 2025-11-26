@@ -1,0 +1,51 @@
+{
+  "exception": {
+    "exceptionId": "ac0a25b9-01c9-4793-9131-50b80a9af847",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "TradingSystem",
+    "exceptionType": "MISMATCHED_TRADE_DETAILS",
+    "severity": null,
+    "timestamp": "2025-11-26 18:31:04.930211+00:00",
+    "rawPayload": {
+      "orderId": "ORD-2024-001",
+      "execId": "EXEC-2024-001",
+      "priceMismatch": 0.05,
+      "qtyMismatch": 100,
+      "cusip": "9128283K9",
+      "tradeDate": "2024-01-15"
+    },
+    "normalizedContext": {
+      "pipelineId": "a959de4c-9d37-4d10-bb2f-8015af05ae7e",
+      "normalizedAt": "2025-11-26T18:31:04.930211+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as MISMATCHED_TRADE_DETAILS",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: ac0a25b9-01c9-4793-9131-50b80a9af847",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: TradingSystem",
+          "Exception type: MISMATCHED_TRADE_DETAILS",
+          "Warning: Exception type 'MISMATCHED_TRADE_DETAILS' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: ac0a25b9-01c9-4793-9131-50b80a9af847",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: TradingSystem",
+      "Exception type: MISMATCHED_TRADE_DETAILS",
+      "Warning: Exception type 'MISMATCHED_TRADE_DETAILS' validated against domain pack"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T18:31:04.930530+00:00"
+}

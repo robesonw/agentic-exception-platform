@@ -6,7 +6,7 @@ Tests GET /exceptions/{tenantId}/{exceptionId} endpoint.
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api.auth import get_api_key_auth
+from src.api.auth import Role, get_api_key_auth
 from src.api.main import app
 from src.models.exception_record import ExceptionRecord, ResolutionStatus, Severity
 from src.orchestrator.store import ExceptionStore, get_exception_store
@@ -29,8 +29,9 @@ def reset_store():
     
     # Register API keys for multi-tenant tests
     auth = get_api_key_auth()
-    auth.register_api_key(TENANT_A_API_KEY, "TENANT_A")
-    auth.register_api_key(TENANT_B_API_KEY, "TENANT_B")
+    auth.register_api_key(TENANT_A_API_KEY, "TENANT_A", Role.ADMIN)
+    auth.register_api_key(TENANT_B_API_KEY, "TENANT_B", Role.ADMIN)
+    auth.register_api_key(DEFAULT_API_KEY, "TENANT_001", Role.ADMIN)
     
     yield
     

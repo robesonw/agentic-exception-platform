@@ -1,0 +1,49 @@
+{
+  "exception": {
+    "exceptionId": "60815366-6d02-4f81-b49b-0584b12369c6",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "ClearingSystem",
+    "exceptionType": "CASH_BREAK",
+    "severity": null,
+    "timestamp": "2025-11-26 00:10:49.623006+00:00",
+    "rawPayload": {
+      "accountId": "ACC-123",
+      "currency": "USD",
+      "expectedCash": 50000.0,
+      "actualCash": 49500.0
+    },
+    "normalizedContext": {
+      "pipelineId": "8327e43a-4686-4e03-b616-3c6b74ad0aca",
+      "normalizedAt": "2025-11-26T00:10:49.623006+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as CASH_BREAK",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 60815366-6d02-4f81-b49b-0584b12369c6",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: ClearingSystem",
+          "Exception type: CASH_BREAK",
+          "Warning: Exception type 'CASH_BREAK' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 60815366-6d02-4f81-b49b-0584b12369c6",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: ClearingSystem",
+      "Exception type: CASH_BREAK",
+      "Warning: Exception type 'CASH_BREAK' validated against domain pack"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T00:10:49.623006+00:00"
+}

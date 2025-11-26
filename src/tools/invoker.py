@@ -1,6 +1,8 @@
 """
 Tool invocation interface with HTTP support and sandboxing.
 Matches specification from docs/02-modules-components.md and phase1-mvp-issues.md Issue 12.
+
+Phase 2: Delegates to ToolExecutionEngine for advanced features (retry, timeout, circuit breaker).
 """
 
 import logging
@@ -11,6 +13,7 @@ import httpx
 from src.audit.logger import AuditLogger
 from src.models.domain_pack import DomainPack, ToolDefinition
 from src.models.tenant_policy import TenantPolicyPack
+from src.tools.execution_engine import ToolExecutionEngine
 from src.tools.registry import AllowListEnforcer, ToolRegistry, ToolRegistryError
 
 logger = logging.getLogger(__name__)
@@ -26,6 +29,7 @@ class ToolInvoker:
     """
     Tool invoker that executes allow-listed tools via HTTP.
     
+    Phase 2: Delegates to ToolExecutionEngine for advanced execution features.
     MVP supports HTTP tools only (no gRPC yet).
     Enforces tenant allow-lists and provides sandbox behavior via dry_run.
     """
@@ -34,6 +38,7 @@ class ToolInvoker:
         self,
         tool_registry: ToolRegistry,
         audit_logger: AuditLogger | None = None,
+        use_execution_engine: bool = True,
     ):
         """
         Initialize the tool invoker.
@@ -41,20 +46,30 @@ class ToolInvoker:
         Args:
             tool_registry: ToolRegistry for validation and allow-list enforcement
             audit_logger: Optional AuditLogger for logging tool invocations
+            use_execution_engine: If True, use ToolExecutionEngine (Phase 2), else use basic implementation
         """
         self.tool_registry = tool_registry
         self.audit_logger = audit_logger
-        self._http_client: httpx.AsyncClient | None = None
+        self.use_execution_engine = use_execution_engine
+        
+        # Initialize execution engine if enabled
+        if use_execution_engine:
+            self.execution_engine = ToolExecutionEngine(audit_logger=audit_logger)
+        else:
+            self.execution_engine = None
+            self._http_client: httpx.AsyncClient | None = None
 
     async def _get_http_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client."""
+        """Get or create HTTP client (legacy mode only)."""
         if self._http_client is None:
             self._http_client = httpx.AsyncClient(timeout=30.0)
         return self._http_client
 
     async def close(self) -> None:
-        """Close HTTP client."""
-        if self._http_client:
+        """Close HTTP clients and execution engine."""
+        if self.execution_engine:
+            await self.execution_engine.close()
+        if hasattr(self, "_http_client") and self._http_client:
             await self._http_client.aclose()
             self._http_client = None
 
@@ -66,9 +81,12 @@ class ToolInvoker:
         domain_pack: DomainPack,
         tenant_id: str,
         dry_run: bool = True,
+        mode: str = "sync",
     ) -> dict[str, Any]:
         """
         Invoke a tool with given arguments.
+        
+        Phase 2: Uses ToolExecutionEngine for advanced features (retry, timeout, circuit breaker).
         
         Args:
             tool_name: Name of the tool to invoke
@@ -77,6 +95,7 @@ class ToolInvoker:
             domain_pack: Domain Pack containing tool definitions
             tenant_id: Tenant identifier
             dry_run: If True, skip real call and return mock response (default: True for MVP)
+            mode: Execution mode ("sync" or "async") - only used if use_execution_engine=True
             
         Returns:
             Tool execution result dictionary
@@ -134,7 +153,25 @@ class ToolInvoker:
             self._audit_log_invocation(tool_name, args, mock_response, None, tenant_id)
             return mock_response
         
-        # Real HTTP invocation
+        # Use execution engine if enabled (Phase 2)
+        if self.use_execution_engine and self.execution_engine:
+            try:
+                result = await self.execution_engine.execute(
+                    tool_name=tool_name,
+                    args=args,
+                    tenant_policy=tenant_policy,
+                    domain_pack=domain_pack,
+                    tenant_id=tenant_id,
+                    mode=mode,
+                )
+                return result
+            except Exception as e:
+                error_msg = f"Tool execution engine error: {str(e)}"
+                logger.error(error_msg)
+                self._audit_log_invocation(tool_name, args, None, error_msg, tenant_id)
+                raise ToolInvocationError(error_msg) from e
+        
+        # Legacy basic HTTP invocation (Phase 1)
         try:
             logger.info(f"Invoking tool '{tool_name}' at endpoint: {tool_def.endpoint}")
             

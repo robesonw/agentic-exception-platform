@@ -1,0 +1,50 @@
+{
+  "exception": {
+    "exceptionId": "99cb1ebb-601c-476e-ac06-17458cedfe57",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "RegulatorySystem",
+    "exceptionType": "REG_REPORT_REJECTED",
+    "severity": null,
+    "timestamp": "2025-11-25 00:04:02.844728+00:00",
+    "rawPayload": {
+      "reportId": "REG-2024-001",
+      "tradeId": "TRADE-2024-001",
+      "rejectReason": "MISSING_LEI",
+      "regType": "TRADE_REPORT",
+      "submittedAt": "2024-01-15T10:00:00Z"
+    },
+    "normalizedContext": {
+      "pipelineId": "e0bd8a98-6378-45e1-b54c-3daa840c4168",
+      "normalizedAt": "2025-11-25T00:04:02.844728+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as REG_REPORT_REJECTED",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 99cb1ebb-601c-476e-ac06-17458cedfe57",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: RegulatorySystem",
+          "Exception type: REG_REPORT_REJECTED",
+          "Warning: Exception type 'REG_REPORT_REJECTED' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 99cb1ebb-601c-476e-ac06-17458cedfe57",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: RegulatorySystem",
+      "Exception type: REG_REPORT_REJECTED",
+      "Warning: Exception type 'REG_REPORT_REJECTED' validated against domain pack"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-25T00:04:02.844728+00:00"
+}

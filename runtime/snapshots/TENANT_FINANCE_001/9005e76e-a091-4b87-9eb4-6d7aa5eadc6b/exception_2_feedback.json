@@ -1,0 +1,129 @@
+{
+  "exception": {
+    "exceptionId": "60815366-6d02-4f81-b49b-0584b12369c6",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "ClearingSystem",
+    "exceptionType": "CASH_BREAK",
+    "severity": "HIGH",
+    "timestamp": "2025-11-26 00:10:49.623006+00:00",
+    "rawPayload": {
+      "accountId": "ACC-123",
+      "currency": "USD",
+      "expectedCash": 50000.0,
+      "actualCash": 49500.0
+    },
+    "normalizedContext": {
+      "pipelineId": "8327e43a-4686-4e03-b616-3c6b74ad0aca",
+      "normalizedAt": "2025-11-26T00:10:49.623006+00:00",
+      "feedbackCapturedAt": "2025-11-26T00:10:49.624006+00:00",
+      "learningArtifacts": []
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "ESCALATED",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as CASH_BREAK",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 60815366-6d02-4f81-b49b-0584b12369c6",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: ClearingSystem",
+          "Exception type: CASH_BREAK",
+          "Warning: Exception type 'CASH_BREAK' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged CASH_BREAK HIGH",
+        "confidence": 0.9,
+        "evidence": [
+          "Classified as: CASH_BREAK",
+          "Severity: HIGH",
+          "Description: Cash ledger does not match expected clearing amounts.",
+          "Matched severity rules: 1",
+          "exceptionType == 'CASH_BREAK' -> HIGH"
+        ],
+        "nextStep": "ProceedToPolicy"
+      },
+      "policy": {
+        "decision": "Blocked - Non-actionable",
+        "confidence": 0.5,
+        "evidence": [
+          "Exception type: CASH_BREAK",
+          "Severity: HIGH",
+          "Actionability: NON_ACTIONABLE_INFO_ONLY",
+          "No approved playbook found",
+          "selectedPlaybookId: None",
+          "humanApprovalRequired: False"
+        ],
+        "nextStep": "ESCALATE"
+      },
+      "supervisor_post_policy": {
+        "decision": "SupervisorAgent intervened: escalating due to safety concerns",
+        "confidence": 0.9,
+        "evidence": [
+          "SupervisorAgent review: post-policy checkpoint",
+          "PolicyAgent confidence: 0.50",
+          "Confidence issue: Current decision confidence (0.50) below threshold (0.60)",
+          "Confidence issue: policy confidence (0.50) below threshold (0.60)",
+          "Policy breach: Confidence (0.50) below approval threshold (0.75) but approval not required",
+          "Severity issue: High severity (HIGH) but low confidence (0.50)"
+        ],
+        "nextStep": "ESCALATE"
+      },
+      "feedback": {
+        "decision": "FEEDBACK_CAPTURED",
+        "confidence": 1.0,
+        "evidence": [
+          "Exception ID: 60815366-6d02-4f81-b49b-0584b12369c6",
+          "Resolution status: ESCALATED",
+          "Feedback captured at: 2025-11-26T00:10:49.624006+00:00",
+          "No resolution plan (non-actionable or escalated)",
+          "Learning artifacts: 0 (MVP placeholder)",
+          "Final status: ESCALATED",
+          "Exception type: CASH_BREAK",
+          "Severity: HIGH"
+        ],
+        "nextStep": "complete"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 60815366-6d02-4f81-b49b-0584b12369c6",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: ClearingSystem",
+      "Exception type: CASH_BREAK",
+      "Warning: Exception type 'CASH_BREAK' validated against domain pack",
+      "Classified as: CASH_BREAK",
+      "Severity: HIGH",
+      "Description: Cash ledger does not match expected clearing amounts.",
+      "Matched severity rules: 1",
+      "exceptionType == 'CASH_BREAK' -> HIGH",
+      "Exception type: CASH_BREAK",
+      "Severity: HIGH",
+      "Actionability: NON_ACTIONABLE_INFO_ONLY",
+      "No approved playbook found",
+      "selectedPlaybookId: None",
+      "humanApprovalRequired: False",
+      "SupervisorAgent review: post-policy checkpoint",
+      "PolicyAgent confidence: 0.50",
+      "Confidence issue: Current decision confidence (0.50) below threshold (0.60)",
+      "Confidence issue: policy confidence (0.50) below threshold (0.60)",
+      "Policy breach: Confidence (0.50) below approval threshold (0.75) but approval not required",
+      "Severity issue: High severity (HIGH) but low confidence (0.50)",
+      "Exception ID: 60815366-6d02-4f81-b49b-0584b12369c6",
+      "Resolution status: ESCALATED",
+      "Feedback captured at: 2025-11-26T00:10:49.624006+00:00",
+      "No resolution plan (non-actionable or escalated)",
+      "Learning artifacts: 0 (MVP placeholder)",
+      "Final status: ESCALATED",
+      "Exception type: CASH_BREAK",
+      "Severity: HIGH"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T00:10:49.627332+00:00"
+}

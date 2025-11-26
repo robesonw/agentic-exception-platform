@@ -19,12 +19,12 @@ echo   - HTML: htmlcov\index.html
 echo   - XML: coverage.xml
 
 echo.
-echo Checking coverage threshold (80%%)...
-python -m coverage report --fail-under=80
+echo Checking coverage threshold (85%%)...
+python -m coverage report --fail-under=85
 if %ERRORLEVEL% NEQ 0 (
-    echo WARNING: Coverage is below 80%% threshold
+    echo ERROR: Coverage is below 85%% threshold (Phase 2 requirement)
     exit /b 1
 )
 
-echo All tests passed and coverage threshold met!
+echo All tests passed and coverage threshold (85%%) met!
 

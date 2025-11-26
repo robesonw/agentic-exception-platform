@@ -1,19 +1,38 @@
 """
-ResolutionAgent implementation for MVP.
-Plans resolution actions from playbooks (no execution in MVP).
-Matches specification from docs/04-agent-templates.md
+ResolutionAgent implementation for MVP and Phase 2.
+Plans resolution actions from playbooks.
+Phase 2: Supports partial automation with ToolExecutionEngine.
+Matches specification from docs/04-agent-templates.md and phase2-mvp-issues.md Issue 36.
 """
 
+import logging
 import re
+from enum import Enum
 from typing import Any, Optional
 
 from src.audit.logger import AuditLogger
 from src.models.agent_contracts import AgentDecision
 from src.models.domain_pack import DomainPack, Playbook, PlaybookStep
-from src.models.exception_record import ExceptionRecord, Severity
+from src.models.exception_record import ExceptionRecord, ResolutionStatus, Severity
 from src.models.tenant_policy import TenantPolicyPack
+from src.llm.provider import LLMProvider
+from src.playbooks.generator import PlaybookGenerator, PlaybookGeneratorError
+from src.playbooks.manager import PlaybookManager, PlaybookManagerError
+from src.tools.execution_engine import ToolExecutionEngine, ToolExecutionError
 from src.tools.invoker import ToolInvoker, ToolInvocationError
 from src.tools.registry import ToolRegistry
+from src.workflow.approval import ApprovalQueue, ApprovalQueueRegistry
+
+logger = logging.getLogger(__name__)
+
+
+class StepExecutionStatus(str, Enum):
+    """Execution status for a playbook step."""
+
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    SKIPPED = "SKIPPED"
+    NEEDS_APPROVAL = "NEEDS_APPROVAL"
 
 
 class ResolutionAgentError(Exception):
@@ -47,6 +66,9 @@ class ResolutionAgent:
         audit_logger: Optional[AuditLogger] = None,
         tool_invoker: Optional[ToolInvoker] = None,
         tenant_policy: Optional[TenantPolicyPack] = None,
+        playbook_manager: Optional[PlaybookManager] = None,
+        execution_engine: Optional[ToolExecutionEngine] = None,
+        approval_queue_registry: Optional[ApprovalQueueRegistry] = None,
     ):
         """
         Initialize ResolutionAgent.
@@ -55,14 +77,37 @@ class ResolutionAgent:
             domain_pack: Domain Pack containing playbooks and tools
             tool_registry: Tool Registry for validation
             audit_logger: Optional AuditLogger for logging
-            tool_invoker: Optional ToolInvoker for executing tools (default: None, uses dry_run)
+            tool_invoker: Optional ToolInvoker for executing tools (legacy, Phase 1)
             tenant_policy: Optional TenantPolicyPack for human approval checks
+            playbook_manager: Optional PlaybookManager for playbook selection (Phase 2)
+            execution_engine: Optional ToolExecutionEngine for automated execution (Phase 2)
         """
         self.domain_pack = domain_pack
         self.tool_registry = tool_registry
         self.audit_logger = audit_logger
-        self.tool_invoker = tool_invoker
+        self.tool_invoker = tool_invoker  # Legacy support
         self.tenant_policy = tenant_policy
+        self.playbook_manager = playbook_manager or PlaybookManager()
+        self.execution_engine = execution_engine or (
+            ToolExecutionEngine(audit_logger=audit_logger) if audit_logger else None
+        )
+        self.approval_queue_registry = approval_queue_registry
+        self.playbook_generator: Optional[PlaybookGenerator] = None  # Phase 2: LLM-based generation
+        
+        # Load playbooks into manager if domain pack and tenant policy are available
+        if tenant_policy:
+            self.playbook_manager.load_playbooks(domain_pack, tenant_policy.tenant_id)
+
+    def set_playbook_generator(self, generator: PlaybookGenerator) -> None:
+        """
+        Set playbook generator for LLM-based generation.
+        
+        Phase 2: Allows injecting PlaybookGenerator for ACTIONABLE_NON_APPROVED_PROCESS cases.
+        
+        Args:
+            generator: PlaybookGenerator instance
+        """
+        self.playbook_generator = generator
 
     async def process(
         self,
@@ -97,17 +142,74 @@ class ResolutionAgent:
         if actionability == "ACTIONABLE_APPROVED_PROCESS":
             if selected_playbook_id:
                 resolved_plan = await self._resolve_approved_playbook(
-                    exception, selected_playbook_id
+                    exception, selected_playbook_id, actionability=actionability, context=context
                 )
             else:
-                # Find playbook for exception type
-                playbook = self._find_playbook_for_exception(exception)
+                # Use PlaybookManager to select playbook (Phase 2)
+                if self.tenant_policy:
+                    playbook = self.playbook_manager.select_playbook(
+                        exception, self.tenant_policy, self.domain_pack
+                    )
+                else:
+                    # Fallback to manual lookup if no tenant policy
+                    playbook = self._find_playbook_for_exception(exception)
+                
                 if playbook:
-                    resolved_plan = await self._resolve_playbook_steps(exception, playbook)
+                    # Get confidence from context if available
+                    confidence = 1.0
+                    if context and "prior_outputs" in context:
+                        triage_output = context["prior_outputs"].get("triage")
+                        if triage_output and hasattr(triage_output, "confidence"):
+                            confidence = triage_output.confidence
+                    
+                    resolved_plan = await self._resolve_playbook_steps(
+                        exception, playbook, actionability=actionability, confidence=confidence
+                    )
         
-        # If non-approved but actionable, generate draft playbook
+        # Phase 2: If non-approved but actionable, generate draft playbook using LLM
         elif actionability == "ACTIONABLE_NON_APPROVED_PROCESS":
-            suggested_draft_playbook = self._generate_draft_playbook(exception)
+            if self.playbook_generator:
+                # Use LLM-based generation
+                try:
+                    # Build evidence from context
+                    evidence = []
+                    if context and "prior_outputs" in context:
+                        for agent_name, output in context["prior_outputs"].items():
+                            if hasattr(output, "evidence"):
+                                evidence.extend(output.evidence)
+                    
+                    # Generate playbook using LLM
+                    generated_playbook = self.playbook_generator.generate_playbook(
+                        exception_record=exception,
+                        evidence=evidence,
+                        domain_pack=self.domain_pack,
+                    )
+                    
+                    # Convert to draft playbook format
+                    suggested_draft_playbook = {
+                        "exceptionType": generated_playbook.exception_type,
+                        "steps": [
+                            {
+                                "stepNumber": i + 1,
+                                "action": step.action,
+                                "parameters": step.parameters or {},
+                            }
+                            for i, step in enumerate(generated_playbook.steps)
+                        ],
+                        "note": "LLM-generated playbook (not approved - requires human review)",
+                        "approved": False,  # Never auto-approve LLM-generated playbooks
+                    }
+                    
+                    logger.info(
+                        f"Generated LLM playbook for exception {exception.exception_id} "
+                        f"with {len(generated_playbook.steps)} steps"
+                    )
+                except PlaybookGeneratorError as e:
+                    logger.warning(f"LLM playbook generation failed: {e}, falling back to simple draft")
+                    suggested_draft_playbook = self._generate_draft_playbook(exception)
+            else:
+                # Fallback to simple draft generation
+                suggested_draft_playbook = self._generate_draft_playbook(exception)
         
         # Create agent decision
         decision = self._create_decision(
@@ -206,7 +308,11 @@ class ResolutionAgent:
         return None
 
     async def _resolve_approved_playbook(
-        self, exception: ExceptionRecord, playbook_id: str
+        self,
+        exception: ExceptionRecord,
+        playbook_id: str,
+        actionability: str = "ACTIONABLE_APPROVED_PROCESS",
+        context: Optional[dict[str, Any]] = None,
     ) -> list[dict[str, Any]]:
         """
         Resolve an approved playbook into structured action plan.
@@ -214,6 +320,8 @@ class ResolutionAgent:
         Args:
             exception: ExceptionRecord
             playbook_id: Playbook identifier (exception type for MVP)
+            actionability: Actionability classification
+            context: Optional context with prior outputs
             
         Returns:
             List of structured actions
@@ -231,120 +339,203 @@ class ResolutionAgent:
         if not playbook:
             raise ResolutionAgentError(f"Playbook not found for ID: {playbook_id}")
         
-        return await self._resolve_playbook_steps(exception, playbook)
+        # Get confidence from context if available
+        confidence = 1.0
+        if context and "prior_outputs" in context:
+            triage_output = context["prior_outputs"].get("triage")
+            if triage_output and hasattr(triage_output, "confidence"):
+                confidence = triage_output.confidence
+        
+        return await self._resolve_playbook_steps(
+            exception, playbook, actionability=actionability, confidence=confidence
+        )
 
     async def _resolve_playbook_steps(
-        self, exception: ExceptionRecord, playbook: Playbook
+        self,
+        exception: ExceptionRecord,
+        playbook: Playbook,
+        actionability: str = "ACTIONABLE_APPROVED_PROCESS",
+        confidence: float = 1.0,
     ) -> list[dict[str, Any]]:
         """
-        Resolve playbook steps into structured action plan.
+        Resolve playbook steps into structured action plan with partial automation.
         
-        Optionally executes tools if conditions are met:
-        - policy approved (actionability == "ACTIONABLE_APPROVED_PROCESS")
-        - not CRITICAL severity
-        - humanApprovalRequired == false
+        Phase 2: Executes tools using ToolExecutionEngine if conditions are met:
+        - PolicyAgent allows auto-action (actionability == "ACTIONABLE_APPROVED_PROCESS")
+        - Severity not CRITICAL
+        - Confidence meets threshold
+        - Human approval not required
         
         Args:
             exception: ExceptionRecord
             playbook: Playbook to resolve
+            actionability: Actionability classification from PolicyAgent
+            confidence: Confidence score from previous agents
             
         Returns:
-            List of structured actions with validated tool references and execution results
+            List of structured actions with execution status and results
         """
         resolved_plan = []
+        executed_steps: list[dict[str, Any]] = []  # Track executed steps for rollback
         
         # Determine if tools should be executed (not just planned)
-        should_execute = self._should_execute_tools(exception)
+        should_execute = self._should_execute_tools(exception, actionability, confidence)
         
         for step_idx, step in enumerate(playbook.steps):
             # Extract tool name from step action
             tool_name = self._extract_tool_name_from_step(step)
             
+            # Initialize action structure
+            action: dict[str, Any] = {
+                "stepNumber": step_idx + 1,
+                "action": step.action,
+                "toolName": tool_name,
+                "parameters": step.parameters or {},
+                "validated": False,
+                "status": StepExecutionStatus.SKIPPED.value,
+            }
+            
             # Validate tool exists in domain pack
             if tool_name:
                 if tool_name not in self.domain_pack.tools:
-                    raise ResolutionAgentError(
+                    # Validation failure - raise exception (backward compatibility)
+                    error_msg = (
                         f"Tool '{tool_name}' referenced in playbook step {step_idx + 1} "
                         f"not found in domain pack. Valid tools: {sorted(self.domain_pack.tools.keys())}"
                     )
+                    self._audit_step_execution(exception, step_idx + 1, {
+                        "stepNumber": step_idx + 1,
+                        "action": step.action,
+                        "toolName": tool_name,
+                        "status": StepExecutionStatus.FAILED.value,
+                        "error": error_msg,
+                    })
+                    raise ResolutionAgentError(error_msg)
                 
                 # Validate tool is allow-listed for tenant
                 if not self.tool_registry.is_allowed(exception.tenant_id, tool_name):
-                    raise ResolutionAgentError(
+                    # Validation failure - raise exception (backward compatibility)
+                    error_msg = (
                         f"Tool '{tool_name}' referenced in playbook step {step_idx + 1} "
                         f"is not allow-listed for tenant {exception.tenant_id}"
                     )
+                    self._audit_step_execution(exception, step_idx + 1, {
+                        "stepNumber": step_idx + 1,
+                        "action": step.action,
+                        "toolName": tool_name,
+                        "status": StepExecutionStatus.FAILED.value,
+                        "error": error_msg,
+                    })
+                    raise ResolutionAgentError(error_msg)
                 
                 # Get tool definition
                 tool_def = self.domain_pack.tools[tool_name]
+                action["toolDescription"] = tool_def.description
+                action["endpoint"] = tool_def.endpoint
+                action["validated"] = True
                 
-                # Build structured action
-                action = {
-                    "stepNumber": step_idx + 1,
-                    "action": step.action,
-                    "toolName": tool_name,
-                    "toolDescription": tool_def.description,
-                    "parameters": step.parameters or {},
-                    "endpoint": tool_def.endpoint,
-                    "validated": True,
-                    "executed": False,
-                }
-                
-                # Optionally execute tool if conditions are met
-                if should_execute and self.tool_invoker and self.tenant_policy:
+                # Execute tool if conditions are met (Phase 2)
+                if should_execute and self.execution_engine and self.tenant_policy:
                     try:
-                        # Execute tool (default to dry_run=True for MVP)
-                        dry_run = True  # MVP default: always dry run
-                        result = await self.tool_invoker.invoke(
+                        # Execute using ToolExecutionEngine
+                        result = await self.execution_engine.execute(
                             tool_name=tool_name,
                             args=step.parameters or {},
                             tenant_policy=self.tenant_policy,
                             domain_pack=self.domain_pack,
                             tenant_id=exception.tenant_id,
-                            dry_run=dry_run,
+                            mode="async",
                         )
-                        action["executed"] = True
+                        
+                        action["status"] = StepExecutionStatus.SUCCESS.value
                         action["executionResult"] = result
-                        action["dryRun"] = dry_run
-                    except ToolInvocationError as e:
-                        action["executionError"] = str(e)
-                        if self.audit_logger:
-                            self.audit_logger.log_decision(
-                                f"ResolutionAgent - Tool execution failed: {tool_name}",
-                                {"error": str(e), "step": step_idx + 1},
-                                tenant_id=exception.tenant_id,
-                            )
+                        action["executed"] = True
+                        executed_steps.append(action)  # Track for potential rollback
+                        
+                        logger.info(
+                            f"Step {step_idx + 1} executed successfully: {tool_name} "
+                            f"for exception {exception.exception_id}"
+                        )
+                        
+                    except ToolExecutionError as e:
+                        action["status"] = StepExecutionStatus.FAILED.value
+                        action["error"] = str(e)
+                        action["executed"] = False
+                        
+                        logger.error(
+                            f"Step {step_idx + 1} execution failed: {tool_name} - {e}"
+                        )
+                        
+                        # Attempt rollback if rollback tool is defined
+                        rollback_success = await self._attempt_rollback(
+                            exception, executed_steps, step_idx + 1
+                        )
+                        
+                        if not rollback_success:
+                            # Escalate if rollback fails or not available
+                            await self._escalate_failure(exception, step_idx + 1, str(e))
+                        
+                elif not should_execute:
+                    # Conditions not met for execution
+                    if exception.severity == Severity.CRITICAL:
+                        action["status"] = StepExecutionStatus.NEEDS_APPROVAL.value
+                        action["reason"] = "CRITICAL severity requires human approval"
+                    elif confidence < self._get_confidence_threshold():
+                        action["status"] = StepExecutionStatus.NEEDS_APPROVAL.value
+                        action["reason"] = f"Confidence {confidence:.2f} below threshold"
+                    else:
+                        action["status"] = StepExecutionStatus.SKIPPED.value
+                        action["reason"] = "Execution conditions not met"
+                else:
+                    # No execution engine available
+                    action["status"] = StepExecutionStatus.SKIPPED.value
+                    action["reason"] = "Execution engine not available"
             else:
                 # Step doesn't reference a tool (e.g., conditional logic, notification)
-                action = {
-                    "stepNumber": step_idx + 1,
-                    "action": step.action,
-                    "toolName": None,
-                    "parameters": step.parameters or {},
-                    "validated": True,
-                }
+                action["validated"] = True
+                action["status"] = StepExecutionStatus.SKIPPED.value
+                action["reason"] = "Non-tool step (notification/conditional)"
             
+            # Always audit step execution
+            self._audit_step_execution(exception, step_idx + 1, action)
             resolved_plan.append(action)
         
         return resolved_plan
     
-    def _should_execute_tools(self, exception: ExceptionRecord) -> bool:
+    def _should_execute_tools(
+        self,
+        exception: ExceptionRecord,
+        actionability: str,
+        confidence: float,
+    ) -> bool:
         """
         Determine if tools should be executed (not just planned).
         
-        Conditions:
-        - policy approved (checked in process method via actionability)
-        - not CRITICAL severity
-        - humanApprovalRequired == false
+        Phase 2 conditions:
+        - PolicyAgent allows auto-action (actionability == "ACTIONABLE_APPROVED_PROCESS")
+        - Severity not CRITICAL (never auto-execute CRITICAL)
+        - Confidence meets threshold from tenant policy
+        - Human approval not required
         
         Args:
             exception: ExceptionRecord
+            actionability: Actionability classification
+            confidence: Confidence score from previous agents
             
         Returns:
             True if tools should be executed, False otherwise
         """
-        # Check severity: do not execute for CRITICAL
+        # Must be actionable and approved
+        if actionability != "ACTIONABLE_APPROVED_PROCESS":
+            return False
+        
+        # Never execute for CRITICAL severity
         if exception.severity == Severity.CRITICAL:
+            return False
+        
+        # Check confidence threshold
+        confidence_threshold = self._get_confidence_threshold()
+        if confidence < confidence_threshold:
             return False
         
         # Check human approval requirement
@@ -356,6 +547,224 @@ class ResolutionAgent:
         
         # All conditions met
         return True
+    
+    def _get_confidence_threshold(self) -> float:
+        """
+        Get confidence threshold from tenant policy or domain pack guardrails.
+        
+        Returns:
+            Confidence threshold (0.0-1.0)
+        """
+        if self.tenant_policy:
+            guardrails = (
+                self.tenant_policy.custom_guardrails or self.domain_pack.guardrails
+            )
+            return guardrails.human_approval_threshold
+        
+        # Default threshold if no policy
+        return 0.8
+    
+    async def _attempt_rollback(
+        self,
+        exception: ExceptionRecord,
+        executed_steps: list[dict[str, Any]],
+        failed_step: int,
+    ) -> bool:
+        """
+        Attempt to rollback executed steps when a step fails.
+        
+        Looks for a rollback tool in the domain pack and executes it.
+        
+        Args:
+            exception: ExceptionRecord
+            executed_steps: List of successfully executed steps
+            failed_step: Step number that failed
+            
+        Returns:
+            True if rollback was attempted and succeeded, False otherwise
+        """
+        if not executed_steps or not self.execution_engine or not self.tenant_policy:
+            return False
+        
+        # Look for rollback tool (common names: rollback, undo, revert)
+        rollback_tool_names = ["rollback", "undo", "revert", "rollbackStep"]
+        rollback_tool = None
+        
+        for tool_name in rollback_tool_names:
+            if tool_name in self.domain_pack.tools:
+                rollback_tool = tool_name
+                break
+        
+        if not rollback_tool:
+            logger.warning(
+                f"No rollback tool found for exception {exception.exception_id} "
+                f"after step {failed_step} failure"
+            )
+            return False
+        
+        # Check if rollback tool is approved
+        if not self.tool_registry.is_allowed(exception.tenant_id, rollback_tool):
+            logger.warning(
+                f"Rollback tool '{rollback_tool}' not approved for tenant {exception.tenant_id}"
+            )
+            return False
+        
+        try:
+            # Execute rollback with executed steps as context
+            rollback_params = {
+                "executedSteps": executed_steps,
+                "failedStep": failed_step,
+                "exceptionId": exception.exception_id,
+            }
+            
+            await self.execution_engine.execute(
+                tool_name=rollback_tool,
+                args=rollback_params,
+                tenant_policy=self.tenant_policy,
+                domain_pack=self.domain_pack,
+                tenant_id=exception.tenant_id,
+                mode="async",
+            )
+            
+            logger.info(
+                f"Rollback executed successfully for exception {exception.exception_id} "
+                f"after step {failed_step} failure"
+            )
+            
+            # Audit rollback
+            if self.audit_logger:
+                self.audit_logger.log_decision(
+                    "ResolutionAgent - Rollback executed",
+                    {
+                        "exceptionId": exception.exception_id,
+                        "failedStep": failed_step,
+                        "rollbackTool": rollback_tool,
+                        "executedSteps": len(executed_steps),
+                    },
+                    tenant_id=exception.tenant_id,
+                )
+            
+            return True
+            
+        except ToolExecutionError as e:
+            logger.error(
+                f"Rollback execution failed for exception {exception.exception_id}: {e}"
+            )
+            
+            # Audit rollback failure
+            if self.audit_logger:
+                self.audit_logger.log_decision(
+                    "ResolutionAgent - Rollback failed",
+                    {
+                        "exceptionId": exception.exception_id,
+                        "failedStep": failed_step,
+                        "rollbackTool": rollback_tool,
+                        "error": str(e),
+                    },
+                    tenant_id=exception.tenant_id,
+                )
+            
+            return False
+    
+    async def _escalate_failure(
+        self, exception: ExceptionRecord, failed_step: int, error: str
+    ) -> None:
+        """
+        Escalate a failed step to human review.
+        
+        Args:
+            exception: ExceptionRecord
+            failed_step: Step number that failed
+            error: Error message
+        """
+        logger.warning(
+            f"Escalating failure for exception {exception.exception_id} "
+            f"at step {failed_step}: {error}"
+        )
+        
+        # Look for escalation tool
+        escalation_tool_names = ["escalate", "escalateCase", "openCase", "notifyEscalation"]
+        escalation_tool = None
+        
+        for tool_name in escalation_tool_names:
+            if tool_name in self.domain_pack.tools:
+                if self.tool_registry.is_allowed(exception.tenant_id, tool_name):
+                    escalation_tool = tool_name
+                    break
+        
+        if escalation_tool and self.execution_engine and self.tenant_policy:
+            try:
+                escalation_params = {
+                    "exceptionId": exception.exception_id,
+                    "failedStep": failed_step,
+                    "error": error,
+                    "severity": exception.severity.value if exception.severity else "UNKNOWN",
+                }
+                
+                await self.execution_engine.execute(
+                    tool_name=escalation_tool,
+                    args=escalation_params,
+                    tenant_policy=self.tenant_policy,
+                    domain_pack=self.domain_pack,
+                    tenant_id=exception.tenant_id,
+                    mode="async",
+                )
+                
+                logger.info(
+                    f"Escalation executed for exception {exception.exception_id}"
+                )
+            except ToolExecutionError as e:
+                logger.error(
+                    f"Escalation execution failed for exception {exception.exception_id}: {e}"
+                )
+        
+        # Always audit escalation
+        if self.audit_logger:
+            self.audit_logger.log_decision(
+                "ResolutionAgent - Escalation",
+                {
+                    "exceptionId": exception.exception_id,
+                    "failedStep": failed_step,
+                    "error": error,
+                    "escalationTool": escalation_tool or "none",
+                },
+                tenant_id=exception.tenant_id,
+            )
+    
+    def _audit_step_execution(
+        self, exception: ExceptionRecord, step_number: int, action: dict[str, Any]
+    ) -> None:
+        """
+        Audit log each step execution.
+        
+        Args:
+            exception: ExceptionRecord
+            step_number: Step number
+            action: Action dictionary with execution details
+        """
+        if not self.audit_logger:
+            return
+        
+        audit_data = {
+            "stepNumber": step_number,
+            "action": action.get("action"),
+            "toolName": action.get("toolName"),
+            "status": action.get("status"),
+            "exceptionId": exception.exception_id,
+        }
+        
+        if action.get("executionResult"):
+            audit_data["executionResult"] = action["executionResult"]
+        if action.get("error"):
+            audit_data["error"] = action["error"]
+        if action.get("reason"):
+            audit_data["reason"] = action["reason"]
+        
+        self.audit_logger.log_decision(
+            "ResolutionAgent - Step Execution",
+            audit_data,
+            tenant_id=exception.tenant_id,
+        )
 
     def _extract_tool_name_from_step(self, step: PlaybookStep) -> Optional[str]:
         """
@@ -453,6 +862,106 @@ class ResolutionAgent:
             "steps": draft_steps,
             "note": "This playbook is not approved but could be used if approved",
         }
+
+    def _check_human_approval_required(self, context: Optional[dict[str, Any]]) -> bool:
+        """
+        Check if human approval is required from context.
+        
+        Args:
+            context: Context from PolicyAgent
+            
+        Returns:
+            True if human approval is required
+        """
+        if not context:
+            return False
+        
+        # Check if humanApprovalRequired is in context
+        if "humanApprovalRequired" in context:
+            return context["humanApprovalRequired"]
+        
+        # Check if it's in prior outputs (from PolicyAgent decision evidence)
+        if "prior_outputs" in context:
+            policy_output = context["prior_outputs"].get("policy")
+            if policy_output and hasattr(policy_output, "evidence"):
+                for evidence in policy_output.evidence:
+                    if "humanApprovalRequired:" in evidence:
+                        # Extract value from evidence string
+                        match = re.search(r"humanApprovalRequired:\s*(\S+)", evidence)
+                        if match:
+                            value = match.group(1).lower()
+                            return value == "true"
+        
+        return False
+
+    def _submit_for_approval(
+        self,
+        exception: ExceptionRecord,
+        resolved_plan: list[dict[str, Any]],
+        context: Optional[dict[str, Any]],
+    ) -> str:
+        """
+        Submit resolution plan for human approval.
+        
+        Args:
+            exception: ExceptionRecord
+            resolved_plan: Resolved plan from playbook
+            context: Context from agents
+            
+        Returns:
+            Approval ID
+        """
+        if not self.approval_queue_registry:
+            raise ResolutionAgentError("Approval queue registry not available")
+        
+        # Get or create approval queue for tenant
+        approval_queue = self.approval_queue_registry.get_or_create_queue(exception.tenant_id)
+        
+        # Build evidence from context
+        evidence = []
+        if context and "prior_outputs" in context:
+            for agent_name, output in context["prior_outputs"].items():
+                if hasattr(output, "evidence"):
+                    evidence.extend(output.evidence)
+        
+        # Submit for approval
+        approval_id = approval_queue.submit_for_approval(
+            exception_id=exception.exception_id,
+            plan={"resolvedPlan": resolved_plan, "exception": exception.model_dump()},
+            evidence=evidence,
+        )
+        
+        return approval_id
+
+    def _create_approval_pending_decision(
+        self,
+        exception: ExceptionRecord,
+        resolved_plan: list[dict[str, Any]],
+        approval_id: str,
+    ) -> AgentDecision:
+        """
+        Create decision indicating approval is pending.
+        
+        Args:
+            exception: ExceptionRecord
+            resolved_plan: Resolved plan
+            approval_id: Approval ID
+            
+        Returns:
+            AgentDecision
+        """
+        evidence = [
+            f"Resolution plan submitted for approval: {approval_id}",
+            f"Plan contains {len(resolved_plan)} steps",
+            "Status: PENDING_APPROVAL",
+        ]
+        
+        return AgentDecision(
+            decision=f"Plan submitted for approval ({approval_id})",
+            confidence=0.8,  # Lower confidence since pending approval
+            evidence=evidence,
+            nextStep="WaitForApproval",
+        )
 
     def _create_decision(
         self,

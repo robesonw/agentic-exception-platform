@@ -1,0 +1,46 @@
+{
+  "exception": {
+    "exceptionId": "57fda378-55af-4410-ba02-65b3e53cf056",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "ERP",
+    "exceptionType": "SETTLEMENT_FAIL",
+    "severity": null,
+    "timestamp": "2025-11-26 00:10:49.732093+00:00",
+    "rawPayload": {
+      "orderId": "ORD-123"
+    },
+    "normalizedContext": {
+      "pipelineId": "91372fdd-e9f8-47e0-b286-dd6eb280db34",
+      "normalizedAt": "2025-11-26T00:10:49.732093+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as SETTLEMENT_FAIL",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 57fda378-55af-4410-ba02-65b3e53cf056",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: ERP",
+          "Exception type: SETTLEMENT_FAIL",
+          "Warning: Exception type 'SETTLEMENT_FAIL' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 57fda378-55af-4410-ba02-65b3e53cf056",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: ERP",
+      "Exception type: SETTLEMENT_FAIL",
+      "Warning: Exception type 'SETTLEMENT_FAIL' validated against domain pack"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T00:10:49.733040+00:00"
+}

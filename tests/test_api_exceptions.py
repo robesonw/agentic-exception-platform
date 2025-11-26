@@ -5,12 +5,26 @@ Tests for Exception Ingestion API endpoints.
 import pytest
 from fastapi.testclient import TestClient
 
+from src.api.auth import Role, get_api_key_auth
 from src.api.main import app
+from src.api.middleware import get_rate_limiter
 
 client = TestClient(app)
 
 # Default API key for tests
 DEFAULT_API_KEY = "test_api_key_tenant_001"
+
+
+@pytest.fixture(autouse=True)
+def setup_api_keys():
+    """Set up API keys for tests."""
+    auth = get_api_key_auth()
+    limiter = get_rate_limiter()
+    # Ensure DEFAULT_API_KEY is registered to TENANT_001
+    auth.register_api_key(DEFAULT_API_KEY, "TENANT_001", Role.ADMIN)
+    yield
+    # Reset rate limiter after each test
+    limiter._request_timestamps.clear()
 
 
 class TestExceptionIngestionAPI:

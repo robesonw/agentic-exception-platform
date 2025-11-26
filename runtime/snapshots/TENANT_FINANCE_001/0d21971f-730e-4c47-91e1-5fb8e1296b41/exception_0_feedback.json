@@ -1,0 +1,72 @@
+{
+  "exception": {
+    "exceptionId": "4c7c48ec-a1ac-4c45-8e27-48bf093a0d55",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "ERP",
+    "exceptionType": "INVALID_TYPE",
+    "severity": null,
+    "timestamp": "2025-11-25 00:05:34.558641+00:00",
+    "rawPayload": {
+      "error": "Unknown error"
+    },
+    "normalizedContext": {
+      "pipelineId": "bc588ec9-49eb-4af0-86be-68d57f42cc05",
+      "normalizedAt": "2025-11-25T00:05:34.558641+00:00",
+      "feedbackCapturedAt": "2025-11-25T00:05:34.559637+00:00",
+      "learningArtifacts": []
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "ESCALATED",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as INVALID_TYPE (validation errors)",
+        "confidence": 0.5,
+        "evidence": [
+          "Normalized exception ID: 4c7c48ec-a1ac-4c45-8e27-48bf093a0d55",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: ERP",
+          "Exception type: INVALID_TYPE",
+          "Error: Exception type 'INVALID_TYPE' not found in domain pack. Valid types: ['CASH_BREAK', 'FAILED_ALLOCATION', 'MISMATCHED_TRADE_DETAILS', 'POSITION_BREAK', 'REG_REPORT_REJECTED', 'SEC_MASTER_MISMATCH', 'SETTLEMENT_FAIL']"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "feedback": {
+        "decision": "FEEDBACK_CAPTURED",
+        "confidence": 1.0,
+        "evidence": [
+          "Exception ID: 4c7c48ec-a1ac-4c45-8e27-48bf093a0d55",
+          "Resolution status: ESCALATED",
+          "Feedback captured at: 2025-11-25T00:05:34.559637+00:00",
+          "No resolution plan (non-actionable or escalated)",
+          "Learning artifacts: 0 (MVP placeholder)",
+          "Final status: ESCALATED",
+          "Exception type: INVALID_TYPE"
+        ],
+        "nextStep": "complete"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 4c7c48ec-a1ac-4c45-8e27-48bf093a0d55",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: ERP",
+      "Exception type: INVALID_TYPE",
+      "Error: Exception type 'INVALID_TYPE' not found in domain pack. Valid types: ['CASH_BREAK', 'FAILED_ALLOCATION', 'MISMATCHED_TRADE_DETAILS', 'POSITION_BREAK', 'REG_REPORT_REJECTED', 'SEC_MASTER_MISMATCH', 'SETTLEMENT_FAIL']",
+      "TriageAgent failed: Exception type 'INVALID_TYPE' not found in domain pack. Valid types: ['CASH_BREAK', 'FAILED_ALLOCATION', 'MISMATCHED_TRADE_DETAILS', 'POSITION_BREAK', 'REG_REPORT_REJECTED', 'SEC_MASTER_MISMATCH', 'SETTLEMENT_FAIL']",
+      "Exception ID: 4c7c48ec-a1ac-4c45-8e27-48bf093a0d55",
+      "Resolution status: ESCALATED",
+      "Feedback captured at: 2025-11-25T00:05:34.559637+00:00",
+      "No resolution plan (non-actionable or escalated)",
+      "Learning artifacts: 0 (MVP placeholder)",
+      "Final status: ESCALATED",
+      "Exception type: INVALID_TYPE"
+    ],
+    "errors": [
+      "TriageAgent failed: Exception type 'INVALID_TYPE' not found in domain pack. Valid types: ['CASH_BREAK', 'FAILED_ALLOCATION', 'MISMATCHED_TRADE_DETAILS', 'POSITION_BREAK', 'REG_REPORT_REJECTED', 'SEC_MASTER_MISMATCH', 'SETTLEMENT_FAIL']"
+    ]
+  },
+  "timestamp": "2025-11-25T00:05:34.559637+00:00"
+}

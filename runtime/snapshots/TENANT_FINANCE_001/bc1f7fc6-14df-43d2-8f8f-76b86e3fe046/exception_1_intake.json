@@ -1,0 +1,53 @@
+{
+  "exception": {
+    "exceptionId": "f09b5cc4-e941-489f-9733-e0a76782a8a2",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "AllocationSystem",
+    "exceptionType": "FAILED_ALLOCATION",
+    "severity": null,
+    "timestamp": "2025-11-26 02:03:47.266629+00:00",
+    "rawPayload": {
+      "orderId": "ORD-2024-002",
+      "blockQty": 10000,
+      "allocatedQty": 9500,
+      "failedAccounts": [
+        "ACC-001",
+        "ACC-002"
+      ],
+      "errorCode": "INSUFFICIENT_BALANCE"
+    },
+    "normalizedContext": {
+      "pipelineId": "eb8a01e9-e61c-403a-85e5-71e8004fc8af",
+      "normalizedAt": "2025-11-26T02:03:47.266629+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as FAILED_ALLOCATION",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: f09b5cc4-e941-489f-9733-e0a76782a8a2",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: AllocationSystem",
+          "Exception type: FAILED_ALLOCATION",
+          "Warning: Exception type 'FAILED_ALLOCATION' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: f09b5cc4-e941-489f-9733-e0a76782a8a2",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: AllocationSystem",
+      "Exception type: FAILED_ALLOCATION",
+      "Warning: Exception type 'FAILED_ALLOCATION' validated against domain pack"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T02:03:47.266629+00:00"
+}

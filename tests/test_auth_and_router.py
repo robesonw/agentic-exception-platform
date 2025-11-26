@@ -6,7 +6,7 @@ Tests API key authentication, tenant routing, and tenant isolation.
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api.auth import APIKeyAuth, AuthenticationError, get_api_key_auth
+from src.api.auth import APIKeyAuth, AuthenticationError, Role, get_api_key_auth
 from src.api.main import app
 from src.api.middleware import RateLimiter, get_rate_limiter
 
@@ -19,18 +19,18 @@ def reset_auth():
     auth = get_api_key_auth()
     # Clear existing keys and reinitialize
     auth._api_keys.clear()
-    auth._api_keys["test_api_key_tenant_001"] = "TENANT_001"
-    auth._api_keys["test_api_key_tenant_002"] = "TENANT_002"
+    auth._api_keys["test_api_key_tenant_001"] = ("TENANT_001", Role.ADMIN)
+    auth._api_keys["test_api_key_tenant_002"] = ("TENANT_002", Role.ADMIN)
     yield
     # Reset after test
     auth._api_keys.clear()
-    auth._api_keys["test_api_key_tenant_001"] = "TENANT_001"
-    auth._api_keys["test_api_key_tenant_002"] = "TENANT_002"
+    auth._api_keys["test_api_key_tenant_001"] = ("TENANT_001", Role.ADMIN)
+    auth._api_keys["test_api_key_tenant_002"] = ("TENANT_002", Role.ADMIN)
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def reset_rate_limiter():
-    """Reset rate limiter before each test."""
+    """Reset rate limiter before each test (explicit use only)."""
     limiter = get_rate_limiter()
     limiter._request_timestamps.clear()
     yield
@@ -44,8 +44,8 @@ class TestAPIKeyAuth:
         """Test that valid API key returns correct tenant ID."""
         auth = get_api_key_auth()
         
-        tenant_id = auth.validate_api_key("test_api_key_tenant_001")
-        assert tenant_id == "TENANT_001"
+        user_context = auth.validate_api_key("test_api_key_tenant_001")
+        assert user_context.tenant_id == "TENANT_001"
 
     def test_validate_api_key_rejects_invalid_key(self):
         """Test that invalid API key raises AuthenticationError."""
@@ -71,8 +71,8 @@ class TestAPIKeyAuth:
         
         auth.register_api_key("new_api_key", "NEW_TENANT")
         
-        tenant_id = auth.validate_api_key("new_api_key")
-        assert tenant_id == "NEW_TENANT"
+        user_context = auth.validate_api_key("new_api_key")
+        assert user_context.tenant_id == "NEW_TENANT"
 
     def test_revoke_api_key(self):
         """Test revoking an API key."""
@@ -80,7 +80,8 @@ class TestAPIKeyAuth:
         
         # Register and validate
         auth.register_api_key("temp_key", "TEMP_TENANT")
-        assert auth.validate_api_key("temp_key") == "TEMP_TENANT"
+        user_context = auth.validate_api_key("temp_key")
+        assert user_context.tenant_id == "TEMP_TENANT"
         
         # Revoke
         auth.revoke_api_key("temp_key")
@@ -99,7 +100,7 @@ class TestTenantRouterMiddleware:
         
         assert response.status_code == 401
         data = response.json()
-        assert "X-API-KEY" in data["detail"] or "Missing" in data["detail"]
+        assert "required" in data["detail"].lower() or "missing" in data["detail"].lower() or "authentication" in data["detail"].lower()
 
     def test_invalid_api_key_returns_401(self):
         """Test that invalid API key returns 401."""
@@ -201,66 +202,67 @@ class TestRateLimiting:
 
     def test_rate_limiter_allows_requests(self):
         """Test that rate limiter allows requests within limit."""
-        limiter = RateLimiter(requests_per_minute=5)
+        limiter = RateLimiter(default_requests_per_minute=5)
         
         for i in range(5):
-            is_allowed, error = limiter.is_allowed("TENANT_001")
+            is_allowed, error = limiter.is_allowed("TENANT_001", "/test")
             assert is_allowed is True
             assert error is None
 
     def test_rate_limiter_blocks_excess_requests(self):
         """Test that rate limiter blocks requests exceeding limit."""
-        limiter = RateLimiter(requests_per_minute=3)
+        limiter = RateLimiter(default_requests_per_minute=3)
         
         # Make 3 requests (should all be allowed)
         for i in range(3):
-            is_allowed, error = limiter.is_allowed("TENANT_001")
+            is_allowed, error = limiter.is_allowed("TENANT_001", "/test")
             assert is_allowed is True
         
         # 4th request should be blocked
-        is_allowed, error = limiter.is_allowed("TENANT_001")
+        is_allowed, error = limiter.is_allowed("TENANT_001", "/test")
         assert is_allowed is False
+        assert error is not None
         assert "Rate limit exceeded" in error
 
     def test_rate_limiter_per_tenant(self):
         """Test that rate limiting is per tenant."""
-        limiter = RateLimiter(requests_per_minute=2)
+        limiter = RateLimiter(default_requests_per_minute=2)
         
         # Tenant 1 uses up limit
-        limiter.is_allowed("TENANT_001")
-        limiter.is_allowed("TENANT_001")
+        limiter.is_allowed("TENANT_001", "/test")
+        limiter.is_allowed("TENANT_001", "/test")
         
         # Tenant 2 should still be allowed
-        is_allowed, error = limiter.is_allowed("TENANT_002")
+        is_allowed, error = limiter.is_allowed("TENANT_002", "/test")
         assert is_allowed is True
         
         # Tenant 1 should be blocked
-        is_allowed, error = limiter.is_allowed("TENANT_001")
+        is_allowed, error = limiter.is_allowed("TENANT_001", "/test")
         assert is_allowed is False
 
     def test_rate_limiter_reset_tenant(self):
         """Test that rate limiter can be reset for a tenant."""
-        limiter = RateLimiter(requests_per_minute=2)
+        limiter = RateLimiter(default_requests_per_minute=2)
         
         # Use up limit
-        limiter.is_allowed("TENANT_001")
-        limiter.is_allowed("TENANT_001")
+        limiter.is_allowed("TENANT_001", "/test")
+        limiter.is_allowed("TENANT_001", "/test")
         
         # Should be blocked
-        is_allowed, error = limiter.is_allowed("TENANT_001")
+        is_allowed, error = limiter.is_allowed("TENANT_001", "/test")
         assert is_allowed is False
         
         # Reset
         limiter.reset_tenant("TENANT_001")
         
         # Should be allowed again
-        is_allowed, error = limiter.is_allowed("TENANT_001")
+        is_allowed, error = limiter.is_allowed("TENANT_001", "/test")
         assert is_allowed is True
 
     def test_rate_limiting_returns_429(self):
         """Test that rate limiting returns 429 status code."""
         limiter = get_rate_limiter()
-        limiter.requests_per_minute = 1
+        limiter.default_requests_per_minute = 1
         
         # First request should succeed
         response1 = client.get(

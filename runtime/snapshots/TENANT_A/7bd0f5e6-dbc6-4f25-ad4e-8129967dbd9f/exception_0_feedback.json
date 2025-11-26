@@ -1,0 +1,52 @@
+{
+  "exception": {
+    "exceptionId": "fe6f53c2-c101-4e48-b2a6-539cf5fa8e80",
+    "tenantId": "TENANT_A",
+    "sourceSystem": "ERP",
+    "exceptionType": null,
+    "severity": null,
+    "timestamp": "2025-11-26 00:10:49.349170+00:00",
+    "rawPayload": {
+      "sourceSystem": "ERP",
+      "rawPayload": {}
+    },
+    "normalizedContext": {
+      "feedbackCapturedAt": "2025-11-26T00:10:49.349170+00:00",
+      "learningArtifacts": []
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "ESCALATED",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "feedback": {
+        "decision": "FEEDBACK_CAPTURED",
+        "confidence": 1.0,
+        "evidence": [
+          "Exception ID: fe6f53c2-c101-4e48-b2a6-539cf5fa8e80",
+          "Resolution status: ESCALATED",
+          "Feedback captured at: 2025-11-26T00:10:49.349170+00:00",
+          "No resolution plan (non-actionable or escalated)",
+          "Learning artifacts: 0 (MVP placeholder)",
+          "Final status: ESCALATED"
+        ],
+        "nextStep": "complete"
+      }
+    },
+    "evidence": [
+      "IntakeAgent failed: Stage intake timed out after 0.1s",
+      "Exception ID: fe6f53c2-c101-4e48-b2a6-539cf5fa8e80",
+      "Resolution status: ESCALATED",
+      "Feedback captured at: 2025-11-26T00:10:49.349170+00:00",
+      "No resolution plan (non-actionable or escalated)",
+      "Learning artifacts: 0 (MVP placeholder)",
+      "Final status: ESCALATED"
+    ],
+    "errors": [
+      "IntakeAgent failed: Stage intake timed out after 0.1s"
+    ]
+  },
+  "timestamp": "2025-11-26T00:10:49.351913+00:00"
+}

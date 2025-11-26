@@ -3,7 +3,7 @@ Tenant Policy Pack schema models with strict Pydantic v2 validation.
 Matches specification from docs/03-data-models-apis.md
 """
 
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -38,6 +38,25 @@ class HumanApprovalRule(BaseModel):
     require_approval: bool = Field(..., alias="requireApproval", description="Whether approval is required")
 
 
+class ToolOverride(BaseModel):
+    """Tool property override from Tenant Policy Pack."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        populate_by_name=True,
+    )
+
+    tool_name: str = Field(..., alias="toolName", min_length=1, description="Tool name to override")
+    timeout_seconds: Optional[float] = Field(
+        None, alias="timeoutSeconds", ge=0.0, description="Override timeout in seconds"
+    )
+    max_retries: Optional[int] = Field(
+        None, alias="maxRetries", ge=0, description="Override maximum retries"
+    )
+
+
 class RetentionPolicies(BaseModel):
     """Data retention policies."""
 
@@ -49,6 +68,61 @@ class RetentionPolicies(BaseModel):
     )
 
     data_ttl: int = Field(..., alias="dataTTL", gt=0, description="Time to live in days")
+
+
+class EmbeddingConfig(BaseModel):
+    """Embedding provider configuration for tenant."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        populate_by_name=True,
+    )
+
+    provider: str = Field(
+        ..., min_length=1, description="Embedding provider name (e.g., 'openai', 'huggingface')"
+    )
+    model: str = Field(
+        ..., min_length=1, description="Model name (e.g., 'text-embedding-ada-002', 'sentence-transformers/all-MiniLM-L6-v2')"
+    )
+    api_key: Optional[str] = Field(
+        None, alias="apiKey", description="API key for provider (if required)"
+    )
+    dimension: Optional[int] = Field(
+        None, ge=1, description="Embedding dimension override (if applicable)"
+    )
+
+
+class NotificationPolicies(BaseModel):
+    """Notification policies for tenant."""
+
+    model_config = ConfigDict(
+        extra="allow",  # Allow extra fields for flexible webhook configuration
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        populate_by_name=True,
+    )
+
+    channels: list[str] = Field(
+        default_factory=list,
+        description="List of notification channels (e.g., 'email', 'teamsWebhook', 'slackWebhook')",
+    )
+    recipients_by_group: dict[str, list[str]] = Field(
+        default_factory=dict,
+        alias="recipientsByGroup",
+        description="Map of group names to recipient email addresses",
+    )
+    webhook_urls: dict[str, str] = Field(
+        default_factory=dict,
+        alias="webhookUrls",
+        description="Map of channel names to webhook URLs",
+    )
+    smtp_config: Optional[dict[str, Any]] = Field(
+        None,
+        alias="smtpConfig",
+        description="SMTP configuration (host, port, user, password, useTls)",
+    )
 
 
 class TenantPolicyPack(BaseModel):
@@ -81,6 +155,11 @@ class TenantPolicyPack(BaseModel):
     approved_tools: list[str] = Field(
         default_factory=list, alias="approvedTools", description="List of approved tool names"
     )
+    tool_overrides: list[ToolOverride] = Field(
+        default_factory=list,
+        alias="toolOverrides",
+        description="Tool property overrides (timeouts, retries)",
+    )
     human_approval_rules: list[HumanApprovalRule] = Field(
         default_factory=list,
         alias="humanApprovalRules",
@@ -91,6 +170,12 @@ class TenantPolicyPack(BaseModel):
     )
     custom_playbooks: list[Playbook] = Field(
         default_factory=list, alias="customPlaybooks", description="Custom playbooks (overrides Domain Pack)"
+    )
+    embedding_config: Optional[EmbeddingConfig] = Field(
+        None, alias="embeddingConfig", description="Custom embedding provider configuration per tenant"
+    )
+    notification_policies: Optional[NotificationPolicies] = Field(
+        None, alias="notificationPolicies", description="Notification policies for alerts and updates"
     )
 
     @classmethod

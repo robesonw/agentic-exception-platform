@@ -1,0 +1,63 @@
+{
+  "exception": {
+    "exceptionId": "4ef6e4d1-1716-4a80-a7b9-452aa4a54190",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "TradingSystem",
+    "exceptionType": "POSITION_BREAK",
+    "severity": "CRITICAL",
+    "timestamp": "2025-11-25 00:05:34.635308+00:00",
+    "rawPayload": {
+      "accountId": "ACC-123"
+    },
+    "normalizedContext": {
+      "pipelineId": "23de062f-9be3-483b-8082-e6fbd4cb3130",
+      "normalizedAt": "2025-11-25T00:05:34.635308+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as POSITION_BREAK",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 4ef6e4d1-1716-4a80-a7b9-452aa4a54190",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: TradingSystem",
+          "Exception type: POSITION_BREAK",
+          "Warning: Exception type 'POSITION_BREAK' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged POSITION_BREAK CRITICAL",
+        "confidence": 0.9,
+        "evidence": [
+          "Classified as: POSITION_BREAK",
+          "Severity: CRITICAL",
+          "Description: Position quantity does not reconcile with trades + settlements.",
+          "Matched severity rules: 1",
+          "exceptionType == 'POSITION_BREAK' -> CRITICAL"
+        ],
+        "nextStep": "ProceedToPolicy"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 4ef6e4d1-1716-4a80-a7b9-452aa4a54190",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: TradingSystem",
+      "Exception type: POSITION_BREAK",
+      "Warning: Exception type 'POSITION_BREAK' validated against domain pack",
+      "Classified as: POSITION_BREAK",
+      "Severity: CRITICAL",
+      "Description: Position quantity does not reconcile with trades + settlements.",
+      "Matched severity rules: 1",
+      "exceptionType == 'POSITION_BREAK' -> CRITICAL"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-25T00:05:34.637309+00:00"
+}

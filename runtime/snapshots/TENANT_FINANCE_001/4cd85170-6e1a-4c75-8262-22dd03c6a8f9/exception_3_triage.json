@@ -1,0 +1,65 @@
+{
+  "exception": {
+    "exceptionId": "fd31c878-3c86-47bc-b0a9-f8a884f5935c",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "RegulatorySystem",
+    "exceptionType": "REG_REPORT_REJECTED",
+    "severity": "MEDIUM",
+    "timestamp": "2025-11-26 18:46:14.969756+00:00",
+    "rawPayload": {
+      "reportId": "REG-2024-001",
+      "tradeId": "TRADE-2024-001",
+      "rejectReason": "MISSING_LEI",
+      "regType": "TRADE_REPORT",
+      "submittedAt": "2024-01-15T10:00:00Z"
+    },
+    "normalizedContext": {
+      "pipelineId": "70b3a999-98f8-4a4b-8989-b36b8fc361e7",
+      "normalizedAt": "2025-11-26T18:46:14.969756+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as REG_REPORT_REJECTED",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: fd31c878-3c86-47bc-b0a9-f8a884f5935c",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: RegulatorySystem",
+          "Exception type: REG_REPORT_REJECTED",
+          "Warning: Exception type 'REG_REPORT_REJECTED' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged REG_REPORT_REJECTED MEDIUM",
+        "confidence": 0.8,
+        "evidence": [
+          "Classified as: REG_REPORT_REJECTED",
+          "Severity: MEDIUM",
+          "Description: Regulatory report rejected due to missing/invalid fields.",
+          "No severity rules matched (using default)"
+        ],
+        "nextStep": "ProceedToPolicy"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: fd31c878-3c86-47bc-b0a9-f8a884f5935c",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: RegulatorySystem",
+      "Exception type: REG_REPORT_REJECTED",
+      "Warning: Exception type 'REG_REPORT_REJECTED' validated against domain pack",
+      "Classified as: REG_REPORT_REJECTED",
+      "Severity: MEDIUM",
+      "Description: Regulatory report rejected due to missing/invalid fields.",
+      "No severity rules matched (using default)"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T18:46:14.971761+00:00"
+}

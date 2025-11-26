@@ -1,0 +1,62 @@
+{
+  "exception": {
+    "exceptionId": "8d66fd23-55ee-4f71-a076-6d0fd55e5128",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "AllocationSystem",
+    "exceptionType": "FAILED_ALLOCATION",
+    "severity": "HIGH",
+    "timestamp": "2025-11-26 00:10:48.507489+00:00",
+    "rawPayload": {
+      "orderId": "ORD-002",
+      "blockQty": 1000
+    },
+    "normalizedContext": {
+      "pipelineId": "653c2b4f-c9de-4e46-8ebc-e7ac88fbcaae",
+      "normalizedAt": "2025-11-26T00:10:48.507489+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as FAILED_ALLOCATION",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 8d66fd23-55ee-4f71-a076-6d0fd55e5128",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: AllocationSystem",
+          "Exception type: FAILED_ALLOCATION",
+          "Warning: Exception type 'FAILED_ALLOCATION' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged FAILED_ALLOCATION HIGH",
+        "confidence": 0.8,
+        "evidence": [
+          "Classified as: FAILED_ALLOCATION",
+          "Severity: HIGH",
+          "Description: Allocations for a block trade failed or partially processed.",
+          "No severity rules matched (using default)"
+        ],
+        "nextStep": "ProceedToPolicy"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 8d66fd23-55ee-4f71-a076-6d0fd55e5128",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: AllocationSystem",
+      "Exception type: FAILED_ALLOCATION",
+      "Warning: Exception type 'FAILED_ALLOCATION' validated against domain pack",
+      "Classified as: FAILED_ALLOCATION",
+      "Severity: HIGH",
+      "Description: Allocations for a block trade failed or partially processed.",
+      "No severity rules matched (using default)"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T00:10:48.508494+00:00"
+}

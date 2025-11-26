@@ -1,0 +1,68 @@
+{
+  "exception": {
+    "exceptionId": "b42310e9-fcaf-4bc3-a0e8-1f8a836115a4",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "PositionSystem",
+    "exceptionType": "POSITION_BREAK",
+    "severity": "CRITICAL",
+    "timestamp": "2025-11-26 18:46:15.219646+00:00",
+    "rawPayload": {
+      "accountId": "ACC-001",
+      "cusip": "9128283K9",
+      "expectedPosition": 5000,
+      "actualPosition": 4800,
+      "difference": 200,
+      "asOfDate": "2024-01-15"
+    },
+    "normalizedContext": {
+      "pipelineId": "38d67a7e-8a57-4d75-9ac7-05cb1e4a201a",
+      "normalizedAt": "2025-11-26T18:46:15.219646+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as POSITION_BREAK",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: b42310e9-fcaf-4bc3-a0e8-1f8a836115a4",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: PositionSystem",
+          "Exception type: POSITION_BREAK",
+          "Warning: Exception type 'POSITION_BREAK' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged POSITION_BREAK CRITICAL",
+        "confidence": 0.9,
+        "evidence": [
+          "Classified as: POSITION_BREAK",
+          "Severity: CRITICAL",
+          "Description: Position quantity does not reconcile with trades + settlements.",
+          "Matched severity rules: 1",
+          "exceptionType == 'POSITION_BREAK' -> CRITICAL"
+        ],
+        "nextStep": "ProceedToPolicy"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: b42310e9-fcaf-4bc3-a0e8-1f8a836115a4",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: PositionSystem",
+      "Exception type: POSITION_BREAK",
+      "Warning: Exception type 'POSITION_BREAK' validated against domain pack",
+      "Classified as: POSITION_BREAK",
+      "Severity: CRITICAL",
+      "Description: Position quantity does not reconcile with trades + settlements.",
+      "Matched severity rules: 1",
+      "exceptionType == 'POSITION_BREAK' -> CRITICAL"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T18:46:15.221652+00:00"
+}

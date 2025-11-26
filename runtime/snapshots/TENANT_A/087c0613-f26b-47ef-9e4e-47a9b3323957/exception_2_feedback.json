@@ -1,0 +1,73 @@
+{
+  "exception": {
+    "exceptionId": "exc_ORD-003",
+    "tenantId": "TENANT_A",
+    "sourceSystem": "ERP",
+    "exceptionType": "SETTLEMENT_FAIL",
+    "severity": "LOW",
+    "timestamp": "2025-11-24 22:37:37.834221+00:00",
+    "rawPayload": {
+      "orderId": "ORD-003"
+    },
+    "normalizedContext": {},
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Intake decision",
+        "confidence": 0.9,
+        "evidence": [
+          "Intake evidence"
+        ],
+        "nextStep": "triage"
+      },
+      "triage": {
+        "decision": "Triage decision",
+        "confidence": 0.8,
+        "evidence": [
+          "Triage evidence"
+        ],
+        "nextStep": "policy"
+      },
+      "policy": {
+        "decision": "Policy decision",
+        "confidence": 0.8,
+        "evidence": [
+          "Policy evidence",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS"
+        ],
+        "nextStep": "resolution"
+      },
+      "resolution": {
+        "decision": "Resolution decision",
+        "confidence": 0.8,
+        "evidence": [
+          "Resolution evidence"
+        ],
+        "nextStep": "feedback"
+      },
+      "feedback": {
+        "decision": "Feedback decision",
+        "confidence": 0.8,
+        "evidence": [
+          "Feedback evidence"
+        ],
+        "nextStep": "complete"
+      }
+    },
+    "evidence": [
+      "Intake evidence",
+      "Triage evidence",
+      "Policy evidence",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Resolution evidence",
+      "Feedback evidence"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-24T22:37:37.852619+00:00"
+}
