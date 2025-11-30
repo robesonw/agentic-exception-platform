@@ -1,0 +1,21 @@
+# Example SLO Configuration for Tenant tenant_001, Domain TestDomain
+# Copy this file and rename to match your tenant and domain
+
+# Target p95 latency in milliseconds
+target_latency_ms: 500.0
+
+# Target error rate (as decimal, e.g., 0.01 = 1%)
+target_error_rate: 0.005
+
+# Target Mean Time To Resolution in minutes
+target_mttr_minutes: 15.0
+
+# Target auto-resolution rate (as decimal, e.g., 0.80 = 80%)
+target_auto_resolution_rate: 0.90
+
+# Optional: Target throughput (exceptions per second)
+# target_throughput: 10.0
+
+# Time window for SLO evaluation in minutes (default: 60)
+window_minutes: 60
+

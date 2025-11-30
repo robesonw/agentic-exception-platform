@@ -442,6 +442,18 @@ async def _process_exception(
         # Log audit entry
         audit_logger.log_decision("intake", intake_decision.model_dump(), tenant_id)
         save_snapshot("intake")
+        
+        # Phase 3: Emit stage completed event for streaming
+        try:
+            from src.streaming.decision_stream import emit_stage_completed
+            emit_stage_completed(
+                exception_id=exception.exception_id,
+                tenant_id=tenant_id,
+                stage_name="intake",
+                decision=intake_decision,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to emit intake stage event: {e}")
     except (IntakeAgentError, Exception) as e:
         error_msg = f"IntakeAgent failed: {str(e)}"
         context["errors"].append(error_msg)
@@ -478,6 +490,18 @@ async def _process_exception(
             # Log audit entry
             audit_logger.log_decision("triage", triage_decision.model_dump(), tenant_id)
             save_snapshot("triage")
+            
+            # Phase 3: Emit stage completed event for streaming
+            try:
+                from src.streaming.decision_stream import emit_stage_completed
+                emit_stage_completed(
+                    exception_id=exception.exception_id,
+                    tenant_id=tenant_id,
+                    stage_name="triage",
+                    decision=triage_decision,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to emit triage stage event: {e}")
         except (TriageAgentError, Exception) as e:
             error_msg = f"TriageAgent failed: {str(e)}"
             context["errors"].append(error_msg)
@@ -518,6 +542,18 @@ async def _process_exception(
             audit_logger.log_decision("policy", policy_decision.model_dump(), tenant_id)
             save_snapshot("policy")
             
+            # Phase 3: Emit stage completed event for streaming
+            try:
+                from src.streaming.decision_stream import emit_stage_completed
+                emit_stage_completed(
+                    exception_id=exception.exception_id,
+                    tenant_id=tenant_id,
+                    stage_name="policy",
+                    decision=policy_decision,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to emit policy stage event: {e}")
+            
             # Phase 2: SupervisorAgent review (post-policy checkpoint)
             try:
                 supervisor_decision = await run_stage_with_timeout(
@@ -531,6 +567,18 @@ async def _process_exception(
                 context["evidence"].extend(supervisor_decision.evidence)
                 context["stages"]["supervisor_post_policy"] = supervisor_decision
                 context["prior_outputs"]["supervisor_post_policy"] = supervisor_decision
+                
+                # Phase 3: Emit supervisor stage completed event for streaming
+                try:
+                    from src.streaming.decision_stream import emit_stage_completed
+                    emit_stage_completed(
+                        exception_id=exception.exception_id,
+                        tenant_id=tenant_id,
+                        stage_name="supervisor_post_policy",
+                        decision=supervisor_decision,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to emit supervisor_post_policy stage event: {e}")
                 
                 # Check if supervisor overrode nextStep to ESCALATE
                 if supervisor_decision.next_step == "ESCALATE":
@@ -622,6 +670,18 @@ async def _process_exception(
             audit_logger.log_decision("resolution", resolution_decision.model_dump(), tenant_id)
             save_snapshot("resolution")
             
+            # Phase 3: Emit stage completed event for streaming
+            try:
+                from src.streaming.decision_stream import emit_stage_completed
+                emit_stage_completed(
+                    exception_id=exception.exception_id,
+                    tenant_id=tenant_id,
+                    stage_name="resolution",
+                    decision=resolution_decision,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to emit resolution stage event: {e}")
+            
             # Phase 2: SupervisorAgent review (post-resolution checkpoint)
             try:
                 supervisor_decision = await run_stage_with_timeout(
@@ -635,6 +695,18 @@ async def _process_exception(
                 context["evidence"].extend(supervisor_decision.evidence)
                 context["stages"]["supervisor_post_resolution"] = supervisor_decision
                 context["prior_outputs"]["supervisor_post_resolution"] = supervisor_decision
+                
+                # Phase 3: Emit supervisor stage completed event for streaming
+                try:
+                    from src.streaming.decision_stream import emit_stage_completed
+                    emit_stage_completed(
+                        exception_id=exception.exception_id,
+                        tenant_id=tenant_id,
+                        stage_name="supervisor_post_resolution",
+                        decision=supervisor_decision,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to emit supervisor_post_resolution stage event: {e}")
                 
                 # Check if supervisor overrode nextStep to ESCALATE
                 if supervisor_decision.next_step == "ESCALATE":
@@ -696,6 +768,18 @@ async def _process_exception(
             # Log audit entry
             audit_logger.log_decision("feedback", feedback_decision.model_dump(), tenant_id)
             save_snapshot("feedback")
+            
+            # Phase 3: Emit stage completed event for streaming
+            try:
+                from src.streaming.decision_stream import emit_stage_completed
+                emit_stage_completed(
+                    exception_id=exception.exception_id,
+                    tenant_id=tenant_id,
+                    stage_name="feedback",
+                    decision=feedback_decision,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to emit feedback stage event: {e}")
         except Exception as e:
             error_msg = f"FeedbackAgent failed: {str(e)}"
             context["errors"].append(error_msg)

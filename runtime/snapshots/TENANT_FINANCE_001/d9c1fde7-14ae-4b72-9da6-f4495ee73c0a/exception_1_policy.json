@@ -1,0 +1,81 @@
+{
+  "exception": {
+    "exceptionId": "6b311390-3d42-4344-890a-a6b9fba10832",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "AllocationSystem",
+    "exceptionType": "FAILED_ALLOCATION",
+    "severity": "HIGH",
+    "timestamp": "2025-11-26 22:33:42.001660+00:00",
+    "rawPayload": {
+      "orderId": "ORD-002",
+      "blockQty": 1000
+    },
+    "normalizedContext": {
+      "pipelineId": "4c8104e8-10d2-4808-b6d6-29190b47b9e7",
+      "normalizedAt": "2025-11-26T22:33:42.001660+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as FAILED_ALLOCATION",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 6b311390-3d42-4344-890a-a6b9fba10832",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: AllocationSystem",
+          "Exception type: FAILED_ALLOCATION",
+          "Warning: Exception type 'FAILED_ALLOCATION' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged FAILED_ALLOCATION HIGH",
+        "confidence": 0.8,
+        "evidence": [
+          "Classified as: FAILED_ALLOCATION",
+          "Severity: HIGH",
+          "Description: Allocations for a block trade failed or partially processed.",
+          "No severity rules matched (using default)"
+        ],
+        "nextStep": "ProceedToPolicy"
+      },
+      "policy": {
+        "decision": "Approved",
+        "confidence": 0.9,
+        "evidence": [
+          "Exception type: FAILED_ALLOCATION",
+          "Severity: HIGH",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS",
+          "Approved playbook found for: FAILED_ALLOCATION",
+          "selectedPlaybookId: FAILED_ALLOCATION",
+          "humanApprovalRequired: False"
+        ],
+        "nextStep": "ProceedToResolution"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 6b311390-3d42-4344-890a-a6b9fba10832",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: AllocationSystem",
+      "Exception type: FAILED_ALLOCATION",
+      "Warning: Exception type 'FAILED_ALLOCATION' validated against domain pack",
+      "Classified as: FAILED_ALLOCATION",
+      "Severity: HIGH",
+      "Description: Allocations for a block trade failed or partially processed.",
+      "No severity rules matched (using default)",
+      "Exception type: FAILED_ALLOCATION",
+      "Severity: HIGH",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Approved playbook found for: FAILED_ALLOCATION",
+      "selectedPlaybookId: FAILED_ALLOCATION",
+      "humanApprovalRequired: False"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T22:33:42.004485+00:00"
+}

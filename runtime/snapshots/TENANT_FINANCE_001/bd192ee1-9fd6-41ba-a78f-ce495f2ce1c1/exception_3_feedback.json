@@ -1,0 +1,168 @@
+{
+  "exception": {
+    "exceptionId": "d653c153-1a8d-4e09-8944-2521dc1e6005",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "RegulatorySystem",
+    "exceptionType": "REG_REPORT_REJECTED",
+    "severity": "MEDIUM",
+    "timestamp": "2025-11-26 23:35:39.808197+00:00",
+    "rawPayload": {
+      "reportId": "REG-2024-001",
+      "tradeId": "TRADE-2024-001",
+      "rejectReason": "MISSING_LEI",
+      "regType": "TRADE_REPORT",
+      "submittedAt": "2024-01-15T10:00:00Z"
+    },
+    "normalizedContext": {
+      "pipelineId": "9c20b554-bb09-4f0d-99e7-c8c218a99f8e",
+      "normalizedAt": "2025-11-26T23:35:39.808197+00:00",
+      "feedbackCapturedAt": "2025-11-26T23:35:39.815818+00:00",
+      "learningArtifacts": []
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "IN_PROGRESS",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as REG_REPORT_REJECTED",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: d653c153-1a8d-4e09-8944-2521dc1e6005",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: RegulatorySystem",
+          "Exception type: REG_REPORT_REJECTED",
+          "Warning: Exception type 'REG_REPORT_REJECTED' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged REG_REPORT_REJECTED MEDIUM",
+        "confidence": 0.8,
+        "evidence": [
+          "Classified as: REG_REPORT_REJECTED",
+          "Severity: MEDIUM",
+          "Description: Regulatory report rejected due to missing/invalid fields.",
+          "No severity rules matched (using default)"
+        ],
+        "nextStep": "ProceedToPolicy"
+      },
+      "policy": {
+        "decision": "Approved",
+        "confidence": 0.9,
+        "evidence": [
+          "Exception type: REG_REPORT_REJECTED",
+          "Severity: HIGH",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS",
+          "Approved playbook found for: REG_REPORT_REJECTED",
+          "Severity overridden: MEDIUM -> HIGH",
+          "selectedPlaybookId: REG_REPORT_REJECTED",
+          "humanApprovalRequired: False"
+        ],
+        "nextStep": "ProceedToResolution"
+      },
+      "supervisor_post_policy": {
+        "decision": "SupervisorAgent approved: flow continues as planned",
+        "confidence": 0.8,
+        "evidence": [
+          "SupervisorAgent review: post-policy checkpoint",
+          "PolicyAgent confidence: 0.90"
+        ],
+        "nextStep": "ProceedToResolution"
+      },
+      "resolution": {
+        "decision": "Resolved plan created with 5 actions",
+        "confidence": 0.9,
+        "evidence": [
+          "Exception type: REG_REPORT_REJECTED",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS",
+          "Resolved plan: 5 actions",
+          "Step 1: Fetch report + trade evidence",
+          "Step 2: Identify missing fields (LEI, UTI, venue, timestamps)",
+          "Step 3: Regenerate report using regenerateRegReport(tradeId)",
+          "Step 4: Resubmit and track status",
+          "Step 5: Notify RegulatoryOps",
+          "resolvedPlan: 5 actions"
+        ],
+        "nextStep": "ProceedToFeedback"
+      },
+      "supervisor_post_resolution": {
+        "decision": "SupervisorAgent approved: resolution plan is safe",
+        "confidence": 0.8,
+        "evidence": [
+          "SupervisorAgent review: post-resolution checkpoint",
+          "ResolutionAgent confidence: 0.90"
+        ],
+        "nextStep": "ProceedToFeedback"
+      },
+      "feedback": {
+        "decision": "FEEDBACK_CAPTURED",
+        "confidence": 1.0,
+        "evidence": [
+          "Exception ID: d653c153-1a8d-4e09-8944-2521dc1e6005",
+          "Resolution status: IN_PROGRESS",
+          "Feedback captured at: 2025-11-26T23:35:39.815818+00:00",
+          "Resolution plan executed",
+          "Learning artifacts: 0 (MVP placeholder)",
+          "Policy suggestions available: 8",
+          "Suggestion: Exception type 'POSITION_BREAK' appears 125 times with consistent severity 'CRITICAL' (confidence: 0.90)",
+          "Suggestion: Exception type 'MISMATCHED_TRADE_DETAILS' appears 54 times with consistent severity 'LOW' (confidence: 0.90)",
+          "Suggestion: Exception type 'FAILED_ALLOCATION' appears 54 times with consistent severity 'HIGH' (confidence: 0.90)",
+          "Final status: IN_PROGRESS",
+          "Exception type: REG_REPORT_REJECTED",
+          "Severity: MEDIUM",
+          "policySuggestions: 8 available"
+        ],
+        "nextStep": "complete"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: d653c153-1a8d-4e09-8944-2521dc1e6005",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: RegulatorySystem",
+      "Exception type: REG_REPORT_REJECTED",
+      "Warning: Exception type 'REG_REPORT_REJECTED' validated against domain pack",
+      "Classified as: REG_REPORT_REJECTED",
+      "Severity: MEDIUM",
+      "Description: Regulatory report rejected due to missing/invalid fields.",
+      "No severity rules matched (using default)",
+      "Exception type: REG_REPORT_REJECTED",
+      "Severity: HIGH",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Approved playbook found for: REG_REPORT_REJECTED",
+      "Severity overridden: MEDIUM -> HIGH",
+      "selectedPlaybookId: REG_REPORT_REJECTED",
+      "humanApprovalRequired: False",
+      "SupervisorAgent review: post-policy checkpoint",
+      "PolicyAgent confidence: 0.90",
+      "Exception type: REG_REPORT_REJECTED",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Resolved plan: 5 actions",
+      "Step 1: Fetch report + trade evidence",
+      "Step 2: Identify missing fields (LEI, UTI, venue, timestamps)",
+      "Step 3: Regenerate report using regenerateRegReport(tradeId)",
+      "Step 4: Resubmit and track status",
+      "Step 5: Notify RegulatoryOps",
+      "resolvedPlan: 5 actions",
+      "SupervisorAgent review: post-resolution checkpoint",
+      "ResolutionAgent confidence: 0.90",
+      "Exception ID: d653c153-1a8d-4e09-8944-2521dc1e6005",
+      "Resolution status: IN_PROGRESS",
+      "Feedback captured at: 2025-11-26T23:35:39.815818+00:00",
+      "Resolution plan executed",
+      "Learning artifacts: 0 (MVP placeholder)",
+      "Policy suggestions available: 8",
+      "Suggestion: Exception type 'POSITION_BREAK' appears 125 times with consistent severity 'CRITICAL' (confidence: 0.90)",
+      "Suggestion: Exception type 'MISMATCHED_TRADE_DETAILS' appears 54 times with consistent severity 'LOW' (confidence: 0.90)",
+      "Suggestion: Exception type 'FAILED_ALLOCATION' appears 54 times with consistent severity 'HIGH' (confidence: 0.90)",
+      "Final status: IN_PROGRESS",
+      "Exception type: REG_REPORT_REJECTED",
+      "Severity: MEDIUM",
+      "policySuggestions: 8 available"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T23:35:39.816827+00:00"
+}

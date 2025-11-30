@@ -1,0 +1,63 @@
+{
+  "exception": {
+    "exceptionId": "411941dd-c267-4519-a88f-7a0f98a64587",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "SettlementSystem",
+    "exceptionType": "SETTLEMENT_FAIL",
+    "severity": "HIGH",
+    "timestamp": "2025-11-26 22:33:23.795067+00:00",
+    "rawPayload": {
+      "orderId": "ORD-789"
+    },
+    "normalizedContext": {
+      "pipelineId": "8831f668-d44b-465c-a5d0-aa427079234c",
+      "normalizedAt": "2025-11-26T22:33:23.795067+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as SETTLEMENT_FAIL",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 411941dd-c267-4519-a88f-7a0f98a64587",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: SettlementSystem",
+          "Exception type: SETTLEMENT_FAIL",
+          "Warning: Exception type 'SETTLEMENT_FAIL' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged SETTLEMENT_FAIL HIGH",
+        "confidence": 0.9,
+        "evidence": [
+          "Classified as: SETTLEMENT_FAIL",
+          "Severity: HIGH",
+          "Description: Trade failed to settle by intended settle date.",
+          "Matched severity rules: 1",
+          "exceptionType == 'SETTLEMENT_FAIL' -> HIGH"
+        ],
+        "nextStep": "ProceedToPolicy"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 411941dd-c267-4519-a88f-7a0f98a64587",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: SettlementSystem",
+      "Exception type: SETTLEMENT_FAIL",
+      "Warning: Exception type 'SETTLEMENT_FAIL' validated against domain pack",
+      "Classified as: SETTLEMENT_FAIL",
+      "Severity: HIGH",
+      "Description: Trade failed to settle by intended settle date.",
+      "Matched severity rules: 1",
+      "exceptionType == 'SETTLEMENT_FAIL' -> HIGH"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T22:33:23.795067+00:00"
+}

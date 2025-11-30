@@ -2,7 +2,7 @@
 Comprehensive tests for UI Status API endpoints.
 
 Tests:
-- GET /ui/exceptions/{tenantId}
+- GET /ui/status/{tenantId}
 - Recent exceptions with statuses
 - Status filtering
 - Pagination
@@ -96,7 +96,7 @@ class TestUIStatusAPI:
         
         # Get exceptions via UI API
         response = client.get(
-            f"/ui/exceptions/{tenant_id}",
+            f"/ui/status/{tenant_id}",
             headers={"X-API-KEY": DEFAULT_API_KEY},
         )
         
@@ -132,7 +132,7 @@ class TestUIStatusAPI:
         
         # Get only RESOLVED exceptions
         response = client.get(
-            f"/ui/exceptions/{tenant_id}",
+            f"/ui/status/{tenant_id}",
             params={"status": "RESOLVED"},
             headers={"X-API-KEY": DEFAULT_API_KEY},
         )
@@ -155,7 +155,7 @@ class TestUIStatusAPI:
         
         # Get with limit and offset
         response = client.get(
-            f"/ui/exceptions/{tenant_id}",
+            f"/ui/status/{tenant_id}",
             params={"limit": 2, "offset": 1},
             headers={"X-API-KEY": DEFAULT_API_KEY},
         )
@@ -176,7 +176,7 @@ class TestUIStatusAPI:
         setup_api_key.register_api_key(DEFAULT_API_KEY, tenant_id)
         
         response = client.get(
-            f"/ui/exceptions/{tenant_id}",
+            f"/ui/status/{tenant_id}",
             params={"status": "INVALID_STATUS"},
             headers={"X-API-KEY": DEFAULT_API_KEY},
         )
@@ -192,7 +192,7 @@ class TestUIStatusAPI:
         setup_api_key.register_api_key(DEFAULT_API_KEY, tenant_id)
         
         response = client.get(
-            f"/ui/exceptions/{tenant_id}",
+            f"/ui/status/{tenant_id}",
             headers={"X-API-KEY": DEFAULT_API_KEY},
         )
         
@@ -214,7 +214,7 @@ class TestUIStatusAPI:
         setup_api_key.register_api_key(DEFAULT_API_KEY, tenant_id)
         
         response = client.get(
-            f"/ui/exceptions/{tenant_id}",
+            f"/ui/status/{tenant_id}",
             headers={"X-API-KEY": DEFAULT_API_KEY},
         )
         
@@ -239,7 +239,7 @@ class TestUIStatusAPI:
         setup_api_key.register_api_key(DEFAULT_API_KEY, tenant_id)
         
         response = client.get(
-            f"/ui/exceptions/{tenant_id}",
+            f"/ui/status/{tenant_id}",
             headers={"X-API-KEY": DEFAULT_API_KEY},
         )
         
@@ -267,7 +267,7 @@ class TestUIStatusAPI:
         setup_api_key.register_api_key(DEFAULT_API_KEY, tenant_id)
         
         response = client.get(
-            f"/ui/exceptions/{tenant_id}",
+            f"/ui/status/{tenant_id}",
             headers={"X-API-KEY": DEFAULT_API_KEY},
         )
         
@@ -324,7 +324,7 @@ class TestUIStatusAPI:
         setup_api_key.register_api_key(DEFAULT_API_KEY, tenant_id)
         
         response = client.get(
-            f"/ui/exceptions/{tenant_id}",
+            f"/ui/status/{tenant_id}",
             headers={"X-API-KEY": DEFAULT_API_KEY},
         )
         

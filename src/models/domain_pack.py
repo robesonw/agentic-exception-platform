@@ -31,9 +31,13 @@ class ExceptionTypeDefinition(BaseModel):
         populate_by_name=True,
     )
 
+    name: Optional[str] = Field(None, min_length=1, description="Exception type name (optional, may be keyed in parent structure)")
     description: str = Field(..., min_length=1, description="Exception type description")
     detection_rules: list[str] = Field(
         default_factory=list, alias="detectionRules", description="Rules for detecting this exception type"
+    )
+    severity_rules: list["SeverityRule"] = Field(
+        default_factory=list, alias="severityRules", description="Severity mapping rules for this exception type"
     )
 
 
@@ -79,10 +83,13 @@ class PlaybookStep(BaseModel):
         extra="forbid",
         str_strip_whitespace=True,
         validate_assignment=True,
+        populate_by_name=True,
     )
 
+    step_id: Optional[str] = Field(None, alias="stepId", description="Optional step identifier")
     action: str = Field(..., min_length=1, description="Action to perform")
     parameters: dict[str, Any] | None = Field(None, description="Action parameters")
+    description: Optional[str] = Field(None, description="Optional step description")
 
 
 class Playbook(BaseModel):

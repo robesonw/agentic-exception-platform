@@ -89,6 +89,12 @@ class FeedbackAgent:
                 # Extract human override from context if available
                 human_override = context.get("humanOverride")
                 
+                # Phase 3: Determine if resolution was successful
+                resolution_successful = self._determine_resolution_success(exception, context)
+                
+                # Phase 3: Extract policy rules that were applied (from context or prior outputs)
+                policy_rules_applied = self._extract_policy_rules_applied(context)
+                
                 # Ingest feedback
                 self.policy_learning.ingest_feedback(
                     tenant_id=exception.tenant_id,
@@ -98,6 +104,8 @@ class FeedbackAgent:
                     exception_type=exception.exception_type,
                     severity=exception.severity.value if exception.severity else None,
                     context=context,
+                    resolution_successful=resolution_successful,
+                    policy_rules_applied=policy_rules_applied,
                 )
             except Exception as e:
                 logger.warning(f"Failed to ingest feedback for learning: {e}")
@@ -169,6 +177,79 @@ class FeedbackAgent:
                         return True
         
         return False
+
+    def _determine_resolution_success(
+        self, exception: ExceptionRecord, context: dict[str, Any]
+    ) -> Optional[bool]:
+        """
+        Determine if resolution was successful.
+        
+        Phase 3: Analyzes exception status and context to determine success.
+        
+        Args:
+            exception: ExceptionRecord
+            context: Context from ResolutionAgent
+            
+        Returns:
+            True if successful, False if failed, None if unknown
+        """
+        # Check resolution status
+        if exception.resolution_status == ResolutionStatus.RESOLVED:
+            return True
+        elif exception.resolution_status == ResolutionStatus.FAILED:
+            return False
+        
+        # Check outcome from context
+        outcome = self._determine_outcome(exception, context)
+        if outcome in ("SUCCESS", "RESOLVED"):
+            return True
+        elif outcome in ("FAILED", "ESCALATED"):
+            return False
+        
+        return None
+
+    def _extract_policy_rules_applied(self, context: dict[str, Any]) -> list[str]:
+        """
+        Extract policy rule IDs that were applied during processing.
+        
+        Phase 3: Extracts rule IDs from context for outcome tracking.
+        
+        Args:
+            context: Context from previous agents
+            
+        Returns:
+            List of policy rule IDs
+        """
+        rule_ids = []
+        
+        # Check if policy rules are explicitly in context
+        if "policyRulesApplied" in context:
+            rules = context["policyRulesApplied"]
+            if isinstance(rules, list):
+                rule_ids.extend(rules)
+        
+        # Check if policy decision has evidence with rule information
+        if "prior_outputs" in context:
+            policy_output = context["prior_outputs"].get("policy")
+            if policy_output and hasattr(policy_output, "evidence"):
+                for evidence_item in policy_output.evidence:
+                    # Look for rule references in evidence
+                    if isinstance(evidence_item, str):
+                        # Try to extract rule IDs from evidence strings
+                        # Format: "Applied rule: rule_id" or "Rule: rule_id"
+                        if "rule:" in evidence_item.lower() or "applied rule" in evidence_item.lower():
+                            # Simple extraction - in production, would use more robust parsing
+                            parts = evidence_item.split(":")
+                            if len(parts) > 1:
+                                rule_id = parts[-1].strip()
+                                if rule_id:
+                                    rule_ids.append(rule_id)
+        
+        # If no explicit rules found, use exception type as a rule identifier (fallback)
+        if not rule_ids and "exception_type" in context:
+            rule_ids.append(f"exception_type:{context['exception_type']}")
+        
+        return rule_ids
 
     def _create_decision(
         self, exception: ExceptionRecord, context: dict[str, Any]

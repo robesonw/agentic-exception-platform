@@ -1,0 +1,44 @@
+{
+  "exception": {
+    "exceptionId": "5926c336-db79-4985-a8fd-55d2ba3a714c",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "UNKNOWN",
+    "exceptionType": null,
+    "severity": null,
+    "timestamp": "2025-11-26 23:35:46.127382+00:00",
+    "rawPayload": {
+      "error": "Missing tenant ID"
+    },
+    "normalizedContext": {
+      "pipelineId": "791559cd-7c61-4b21-a266-aba97cc69cda",
+      "normalizedAt": "2025-11-26T23:35:46.127382+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized",
+        "confidence": 0.8,
+        "evidence": [
+          "Normalized exception ID: 5926c336-db79-4985-a8fd-55d2ba3a714c",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: UNKNOWN",
+          "Warning: No exception type provided (will be inferred in triage)"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 5926c336-db79-4985-a8fd-55d2ba3a714c",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: UNKNOWN",
+      "Warning: No exception type provided (will be inferred in triage)"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T23:35:46.128307+00:00"
+}

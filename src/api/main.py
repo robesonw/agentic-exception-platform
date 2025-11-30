@@ -16,6 +16,13 @@ from src.api.routes import (
     exceptions,
     metrics,
     run,
+    router_config_view,
+    router_explanations,
+    router_guardrail_recommendations,
+    router_nlq,
+    router_operator,
+    router_simulation,
+    router_supervisor_dashboard,
     tools,
     ui_status,
 )
@@ -37,11 +44,20 @@ app.include_router(admin.router)
 app.include_router(tools.router)
 app.include_router(approvals.router)  # Phase 2: Approval workflow
 app.include_router(approval_ui.router)  # Phase 2: Approval UI
+# IMPORTANT: Register router_operator BEFORE ui_status to ensure more specific routes match first
+# ui_status now uses /ui/status/{tenant_id} to avoid conflict with router_operator's /ui/exceptions/{exception_id}
+app.include_router(router_operator.router)  # Phase 3: Operator UI Backend APIs
 app.include_router(ui_status.router)  # Phase 2: UI Status
 app.include_router(admin_domainpacks.router)  # Phase 2: Admin Domain Pack Management
 app.include_router(admin_tenantpolicies.router)  # Phase 2: Admin Tenant Policy Pack Management
 app.include_router(admin_tools.router)  # Phase 2: Admin Tool Management
 app.include_router(dashboards.router)  # Phase 2: Advanced Dashboards
+app.include_router(router_nlq.router)  # Phase 3: Natural Language Query API
+app.include_router(router_simulation.router)  # Phase 3: Re-Run and What-If Simulation API
+app.include_router(router_supervisor_dashboard.router)  # Phase 3: Supervisor Dashboard Backend APIs
+app.include_router(router_config_view.router)  # Phase 3: Configuration Viewing and Diffing APIs
+app.include_router(router_explanations.router)  # Phase 3: Explanation API Endpoints
+app.include_router(router_guardrail_recommendations.router)  # Phase 3: Guardrail Recommendation API (P3-10)
 
 
 @app.get("/health")

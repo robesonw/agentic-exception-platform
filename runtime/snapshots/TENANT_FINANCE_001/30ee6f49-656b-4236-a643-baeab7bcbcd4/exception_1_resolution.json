@@ -1,0 +1,121 @@
+{
+  "exception": {
+    "exceptionId": "ccae317f-40ad-4705-a237-839d94b2482c",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "AllocationSystem",
+    "exceptionType": "FAILED_ALLOCATION",
+    "severity": "HIGH",
+    "timestamp": "2025-11-27 00:14:06.067361+00:00",
+    "rawPayload": {
+      "orderId": "ORD-2024-002",
+      "blockQty": 10000,
+      "allocatedQty": 9500,
+      "failedAccounts": [
+        "ACC-001",
+        "ACC-002"
+      ],
+      "errorCode": "INSUFFICIENT_BALANCE"
+    },
+    "normalizedContext": {
+      "pipelineId": "fd8beaee-637e-4c8d-a05e-f733a17b95d2",
+      "normalizedAt": "2025-11-27T00:14:06.067361+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as FAILED_ALLOCATION",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: ccae317f-40ad-4705-a237-839d94b2482c",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: AllocationSystem",
+          "Exception type: FAILED_ALLOCATION",
+          "Warning: Exception type 'FAILED_ALLOCATION' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged FAILED_ALLOCATION HIGH",
+        "confidence": 0.8,
+        "evidence": [
+          "Classified as: FAILED_ALLOCATION",
+          "Severity: HIGH",
+          "Description: Allocations for a block trade failed or partially processed.",
+          "No severity rules matched (using default)"
+        ],
+        "nextStep": "ProceedToPolicy"
+      },
+      "policy": {
+        "decision": "Approved",
+        "confidence": 0.9,
+        "evidence": [
+          "Exception type: FAILED_ALLOCATION",
+          "Severity: HIGH",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS",
+          "Approved playbook found for: FAILED_ALLOCATION",
+          "selectedPlaybookId: FAILED_ALLOCATION",
+          "humanApprovalRequired: False"
+        ],
+        "nextStep": "ProceedToResolution"
+      },
+      "supervisor_post_policy": {
+        "decision": "SupervisorAgent approved: flow continues as planned",
+        "confidence": 0.8,
+        "evidence": [
+          "SupervisorAgent review: post-policy checkpoint",
+          "PolicyAgent confidence: 0.90"
+        ],
+        "nextStep": "ProceedToResolution"
+      },
+      "resolution": {
+        "decision": "Resolved plan created with 4 actions",
+        "confidence": 0.9,
+        "evidence": [
+          "Exception type: FAILED_ALLOCATION",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS",
+          "Resolved plan: 4 actions",
+          "Step 1: Review allocations using getAllocations",
+          "Step 2: Retry allocations using repairAllocation(orderId)",
+          "Step 3: Validate all child allocations total = block quantity",
+          "Step 4: If still failing: openCase('ALLOCATION_FAIL') and assign to AllocationsOps",
+          "resolvedPlan: 4 actions"
+        ],
+        "nextStep": "ProceedToFeedback"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: ccae317f-40ad-4705-a237-839d94b2482c",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: AllocationSystem",
+      "Exception type: FAILED_ALLOCATION",
+      "Warning: Exception type 'FAILED_ALLOCATION' validated against domain pack",
+      "Classified as: FAILED_ALLOCATION",
+      "Severity: HIGH",
+      "Description: Allocations for a block trade failed or partially processed.",
+      "No severity rules matched (using default)",
+      "Exception type: FAILED_ALLOCATION",
+      "Severity: HIGH",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Approved playbook found for: FAILED_ALLOCATION",
+      "selectedPlaybookId: FAILED_ALLOCATION",
+      "humanApprovalRequired: False",
+      "SupervisorAgent review: post-policy checkpoint",
+      "PolicyAgent confidence: 0.90",
+      "Exception type: FAILED_ALLOCATION",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Resolved plan: 4 actions",
+      "Step 1: Review allocations using getAllocations",
+      "Step 2: Retry allocations using repairAllocation(orderId)",
+      "Step 3: Validate all child allocations total = block quantity",
+      "Step 4: If still failing: openCase('ALLOCATION_FAIL') and assign to AllocationsOps",
+      "resolvedPlan: 4 actions"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-27T00:14:06.070875+00:00"
+}

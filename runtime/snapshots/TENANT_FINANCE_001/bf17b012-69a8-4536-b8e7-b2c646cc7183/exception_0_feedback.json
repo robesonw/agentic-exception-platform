@@ -1,0 +1,167 @@
+{
+  "exception": {
+    "exceptionId": "5a9615e9-0fad-46ff-aac1-743c86d8b6c8",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "TradingSystem",
+    "exceptionType": "POSITION_BREAK",
+    "severity": "CRITICAL",
+    "timestamp": "2025-11-27 00:13:45.374603+00:00",
+    "rawPayload": {
+      "accountId": "ACC-123",
+      "cusip": "CUSIP-456",
+      "expectedPosition": 1000,
+      "actualPosition": 950
+    },
+    "normalizedContext": {
+      "pipelineId": "60618e3f-ef60-42ce-b544-facdfdb3430c",
+      "normalizedAt": "2025-11-27T00:13:45.374603+00:00",
+      "feedbackCapturedAt": "2025-11-27T00:13:45.381600+00:00",
+      "learningArtifacts": []
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "IN_PROGRESS",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as POSITION_BREAK",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 5a9615e9-0fad-46ff-aac1-743c86d8b6c8",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: TradingSystem",
+          "Exception type: POSITION_BREAK",
+          "Warning: Exception type 'POSITION_BREAK' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged POSITION_BREAK CRITICAL",
+        "confidence": 0.9,
+        "evidence": [
+          "Classified as: POSITION_BREAK",
+          "Severity: CRITICAL",
+          "Description: Position quantity does not reconcile with trades + settlements.",
+          "Matched severity rules: 1",
+          "exceptionType == 'POSITION_BREAK' -> CRITICAL"
+        ],
+        "nextStep": "ProceedToPolicy"
+      },
+      "policy": {
+        "decision": "Approved - Human approval required",
+        "confidence": 0.8,
+        "evidence": [
+          "Exception type: POSITION_BREAK",
+          "Severity: CRITICAL",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS",
+          "Approved playbook found for: POSITION_BREAK",
+          "Human approval required",
+          "selectedPlaybookId: POSITION_BREAK",
+          "humanApprovalRequired: True"
+        ],
+        "nextStep": "ProceedToResolution"
+      },
+      "supervisor_post_policy": {
+        "decision": "SupervisorAgent approved: flow continues as planned",
+        "confidence": 0.8,
+        "evidence": [
+          "SupervisorAgent review: post-policy checkpoint",
+          "PolicyAgent confidence: 0.80"
+        ],
+        "nextStep": "ProceedToResolution"
+      },
+      "resolution": {
+        "decision": "Resolved plan created with 4 actions",
+        "confidence": 0.9,
+        "evidence": [
+          "Exception type: POSITION_BREAK",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS",
+          "Resolved plan: 4 actions",
+          "Step 1: Fetch positions and trade history evidence",
+          "Step 2: Identify missing/duplicate trade or settlement events",
+          "Step 3: Run recalculatePosition(accountId,cusip)",
+          "Step 4: If unresolved or severity CRITICAL: openCase('POSITION_BREAK') and escalate to BreaksReconTier2",
+          "resolvedPlan: 4 actions"
+        ],
+        "nextStep": "ProceedToFeedback"
+      },
+      "supervisor_post_resolution": {
+        "decision": "SupervisorAgent approved: resolution plan is safe",
+        "confidence": 0.8,
+        "evidence": [
+          "SupervisorAgent review: post-resolution checkpoint",
+          "ResolutionAgent confidence: 0.90"
+        ],
+        "nextStep": "ProceedToFeedback"
+      },
+      "feedback": {
+        "decision": "FEEDBACK_CAPTURED",
+        "confidence": 1.0,
+        "evidence": [
+          "Exception ID: 5a9615e9-0fad-46ff-aac1-743c86d8b6c8",
+          "Resolution status: IN_PROGRESS",
+          "Feedback captured at: 2025-11-27T00:13:45.381600+00:00",
+          "Resolution plan executed",
+          "Learning artifacts: 0 (MVP placeholder)",
+          "Policy suggestions available: 8",
+          "Suggestion: Exception type 'POSITION_BREAK' appears 125 times with consistent severity 'CRITICAL' (confidence: 0.90)",
+          "Suggestion: Exception type 'MISMATCHED_TRADE_DETAILS' appears 54 times with consistent severity 'LOW' (confidence: 0.90)",
+          "Suggestion: Exception type 'FAILED_ALLOCATION' appears 54 times with consistent severity 'HIGH' (confidence: 0.90)",
+          "Final status: IN_PROGRESS",
+          "Exception type: POSITION_BREAK",
+          "Severity: CRITICAL",
+          "policySuggestions: 8 available"
+        ],
+        "nextStep": "complete"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 5a9615e9-0fad-46ff-aac1-743c86d8b6c8",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: TradingSystem",
+      "Exception type: POSITION_BREAK",
+      "Warning: Exception type 'POSITION_BREAK' validated against domain pack",
+      "Classified as: POSITION_BREAK",
+      "Severity: CRITICAL",
+      "Description: Position quantity does not reconcile with trades + settlements.",
+      "Matched severity rules: 1",
+      "exceptionType == 'POSITION_BREAK' -> CRITICAL",
+      "Exception type: POSITION_BREAK",
+      "Severity: CRITICAL",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Approved playbook found for: POSITION_BREAK",
+      "Human approval required",
+      "selectedPlaybookId: POSITION_BREAK",
+      "humanApprovalRequired: True",
+      "SupervisorAgent review: post-policy checkpoint",
+      "PolicyAgent confidence: 0.80",
+      "Exception type: POSITION_BREAK",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Resolved plan: 4 actions",
+      "Step 1: Fetch positions and trade history evidence",
+      "Step 2: Identify missing/duplicate trade or settlement events",
+      "Step 3: Run recalculatePosition(accountId,cusip)",
+      "Step 4: If unresolved or severity CRITICAL: openCase('POSITION_BREAK') and escalate to BreaksReconTier2",
+      "resolvedPlan: 4 actions",
+      "SupervisorAgent review: post-resolution checkpoint",
+      "ResolutionAgent confidence: 0.90",
+      "Exception ID: 5a9615e9-0fad-46ff-aac1-743c86d8b6c8",
+      "Resolution status: IN_PROGRESS",
+      "Feedback captured at: 2025-11-27T00:13:45.381600+00:00",
+      "Resolution plan executed",
+      "Learning artifacts: 0 (MVP placeholder)",
+      "Policy suggestions available: 8",
+      "Suggestion: Exception type 'POSITION_BREAK' appears 125 times with consistent severity 'CRITICAL' (confidence: 0.90)",
+      "Suggestion: Exception type 'MISMATCHED_TRADE_DETAILS' appears 54 times with consistent severity 'LOW' (confidence: 0.90)",
+      "Suggestion: Exception type 'FAILED_ALLOCATION' appears 54 times with consistent severity 'HIGH' (confidence: 0.90)",
+      "Final status: IN_PROGRESS",
+      "Exception type: POSITION_BREAK",
+      "Severity: CRITICAL",
+      "policySuggestions: 8 available"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-27T00:13:45.387885+00:00"
+}

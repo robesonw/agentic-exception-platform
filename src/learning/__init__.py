@@ -1,7 +1,8 @@
 """
-Policy Learning module for Phase 2.
+Learning module for policy improvement and pattern detection.
 
-Exports PolicyLearning and related classes.
+Phase 2: Policy learning from feedback
+Phase 3: Severity rule recommendation engine, Playbook recommendation engine
 """
 
 from src.learning.policy_learning import (
@@ -9,10 +10,28 @@ from src.learning.policy_learning import (
     PolicyLearningError,
     PolicySuggestion,
 )
+from src.learning.playbook_recommender import (
+    PlaybookOptimizationSuggestion,
+    PlaybookRecommender,
+    PlaybookRecommenderError,
+    PlaybookSuggestion,
+)
+from src.learning.severity_recommender import (
+    SeverityRecommender,
+    SeverityRecommenderError,
+    SeverityRuleSuggestion,
+)
 
 __all__ = [
     "PolicyLearning",
     "PolicyLearningError",
     "PolicySuggestion",
+    "PlaybookRecommender",
+    "PlaybookRecommenderError",
+    "PlaybookSuggestion",
+    "PlaybookOptimizationSuggestion",
+    "SeverityRecommender",
+    "SeverityRecommenderError",
+    "SeverityRuleSuggestion",
 ]
 

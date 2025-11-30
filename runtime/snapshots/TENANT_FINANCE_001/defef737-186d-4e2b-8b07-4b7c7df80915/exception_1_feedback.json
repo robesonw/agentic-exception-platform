@@ -1,0 +1,161 @@
+{
+  "exception": {
+    "exceptionId": "1d5b5f89-699e-445d-bce2-e0a02c676e5e",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "AllocationSystem",
+    "exceptionType": "FAILED_ALLOCATION",
+    "severity": "HIGH",
+    "timestamp": "2025-11-26 22:46:55.576778+00:00",
+    "rawPayload": {
+      "orderId": "ORD-002",
+      "blockQty": 1000
+    },
+    "normalizedContext": {
+      "pipelineId": "63cb080b-50ff-40c0-8b08-d1755c3d2efe",
+      "normalizedAt": "2025-11-26T22:46:55.576778+00:00",
+      "feedbackCapturedAt": "2025-11-26T22:46:55.581998+00:00",
+      "learningArtifacts": []
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "IN_PROGRESS",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized as FAILED_ALLOCATION",
+        "confidence": 1.0,
+        "evidence": [
+          "Normalized exception ID: 1d5b5f89-699e-445d-bce2-e0a02c676e5e",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: AllocationSystem",
+          "Exception type: FAILED_ALLOCATION",
+          "Warning: Exception type 'FAILED_ALLOCATION' validated against domain pack"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "triage": {
+        "decision": "Triaged FAILED_ALLOCATION HIGH",
+        "confidence": 0.8,
+        "evidence": [
+          "Classified as: FAILED_ALLOCATION",
+          "Severity: HIGH",
+          "Description: Allocations for a block trade failed or partially processed.",
+          "No severity rules matched (using default)"
+        ],
+        "nextStep": "ProceedToPolicy"
+      },
+      "policy": {
+        "decision": "Approved",
+        "confidence": 0.9,
+        "evidence": [
+          "Exception type: FAILED_ALLOCATION",
+          "Severity: HIGH",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS",
+          "Approved playbook found for: FAILED_ALLOCATION",
+          "selectedPlaybookId: FAILED_ALLOCATION",
+          "humanApprovalRequired: False"
+        ],
+        "nextStep": "ProceedToResolution"
+      },
+      "supervisor_post_policy": {
+        "decision": "SupervisorAgent approved: flow continues as planned",
+        "confidence": 0.8,
+        "evidence": [
+          "SupervisorAgent review: post-policy checkpoint",
+          "PolicyAgent confidence: 0.90"
+        ],
+        "nextStep": "ProceedToResolution"
+      },
+      "resolution": {
+        "decision": "Resolved plan created with 4 actions",
+        "confidence": 0.9,
+        "evidence": [
+          "Exception type: FAILED_ALLOCATION",
+          "Actionability: ACTIONABLE_APPROVED_PROCESS",
+          "Resolved plan: 4 actions",
+          "Step 1: Review allocations using getAllocations",
+          "Step 2: Retry allocations using repairAllocation(orderId)",
+          "Step 3: Validate all child allocations total = block quantity",
+          "Step 4: If still failing: openCase('ALLOCATION_FAIL') and assign to AllocationsOps",
+          "resolvedPlan: 4 actions"
+        ],
+        "nextStep": "ProceedToFeedback"
+      },
+      "supervisor_post_resolution": {
+        "decision": "SupervisorAgent approved: resolution plan is safe",
+        "confidence": 0.8,
+        "evidence": [
+          "SupervisorAgent review: post-resolution checkpoint",
+          "ResolutionAgent confidence: 0.90"
+        ],
+        "nextStep": "ProceedToFeedback"
+      },
+      "feedback": {
+        "decision": "FEEDBACK_CAPTURED",
+        "confidence": 1.0,
+        "evidence": [
+          "Exception ID: 1d5b5f89-699e-445d-bce2-e0a02c676e5e",
+          "Resolution status: IN_PROGRESS",
+          "Feedback captured at: 2025-11-26T22:46:55.581998+00:00",
+          "Resolution plan executed",
+          "Learning artifacts: 0 (MVP placeholder)",
+          "Policy suggestions available: 8",
+          "Suggestion: Exception type 'POSITION_BREAK' appears 125 times with consistent severity 'CRITICAL' (confidence: 0.90)",
+          "Suggestion: Exception type 'MISMATCHED_TRADE_DETAILS' appears 54 times with consistent severity 'LOW' (confidence: 0.90)",
+          "Suggestion: Exception type 'FAILED_ALLOCATION' appears 54 times with consistent severity 'HIGH' (confidence: 0.90)",
+          "Final status: IN_PROGRESS",
+          "Exception type: FAILED_ALLOCATION",
+          "Severity: HIGH",
+          "policySuggestions: 8 available"
+        ],
+        "nextStep": "complete"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 1d5b5f89-699e-445d-bce2-e0a02c676e5e",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: AllocationSystem",
+      "Exception type: FAILED_ALLOCATION",
+      "Warning: Exception type 'FAILED_ALLOCATION' validated against domain pack",
+      "Classified as: FAILED_ALLOCATION",
+      "Severity: HIGH",
+      "Description: Allocations for a block trade failed or partially processed.",
+      "No severity rules matched (using default)",
+      "Exception type: FAILED_ALLOCATION",
+      "Severity: HIGH",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Approved playbook found for: FAILED_ALLOCATION",
+      "selectedPlaybookId: FAILED_ALLOCATION",
+      "humanApprovalRequired: False",
+      "SupervisorAgent review: post-policy checkpoint",
+      "PolicyAgent confidence: 0.90",
+      "Exception type: FAILED_ALLOCATION",
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "Resolved plan: 4 actions",
+      "Step 1: Review allocations using getAllocations",
+      "Step 2: Retry allocations using repairAllocation(orderId)",
+      "Step 3: Validate all child allocations total = block quantity",
+      "Step 4: If still failing: openCase('ALLOCATION_FAIL') and assign to AllocationsOps",
+      "resolvedPlan: 4 actions",
+      "SupervisorAgent review: post-resolution checkpoint",
+      "ResolutionAgent confidence: 0.90",
+      "Exception ID: 1d5b5f89-699e-445d-bce2-e0a02c676e5e",
+      "Resolution status: IN_PROGRESS",
+      "Feedback captured at: 2025-11-26T22:46:55.581998+00:00",
+      "Resolution plan executed",
+      "Learning artifacts: 0 (MVP placeholder)",
+      "Policy suggestions available: 8",
+      "Suggestion: Exception type 'POSITION_BREAK' appears 125 times with consistent severity 'CRITICAL' (confidence: 0.90)",
+      "Suggestion: Exception type 'MISMATCHED_TRADE_DETAILS' appears 54 times with consistent severity 'LOW' (confidence: 0.90)",
+      "Suggestion: Exception type 'FAILED_ALLOCATION' appears 54 times with consistent severity 'HIGH' (confidence: 0.90)",
+      "Final status: IN_PROGRESS",
+      "Exception type: FAILED_ALLOCATION",
+      "Severity: HIGH",
+      "policySuggestions: 8 available"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T22:46:55.582997+00:00"
+}

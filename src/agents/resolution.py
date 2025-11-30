@@ -1,21 +1,28 @@
 """
-ResolutionAgent implementation for MVP and Phase 2.
+ResolutionAgent implementation for MVP, Phase 2, and Phase 3.
 Plans resolution actions from playbooks.
 Phase 2: Supports partial automation with ToolExecutionEngine.
-Matches specification from docs/04-agent-templates.md and phase2-mvp-issues.md Issue 36.
+Phase 3: Enhanced with LLM-based action explanation.
+
+Matches specification from:
+- docs/04-agent-templates.md
+- phase2-mvp-issues.md Issue 36
+- phase3-mvp-issues.md P3-3
 """
 
+import json
 import logging
 import re
 from enum import Enum
 from typing import Any, Optional
 
 from src.audit.logger import AuditLogger
+from src.llm.fallbacks import llm_or_rules
+from src.llm.provider import LLMClient, LLMProvider
 from src.models.agent_contracts import AgentDecision
 from src.models.domain_pack import DomainPack, Playbook, PlaybookStep
 from src.models.exception_record import ExceptionRecord, ResolutionStatus, Severity
 from src.models.tenant_policy import TenantPolicyPack
-from src.llm.provider import LLMProvider
 from src.playbooks.generator import PlaybookGenerator, PlaybookGeneratorError
 from src.playbooks.manager import PlaybookManager, PlaybookManagerError
 from src.tools.execution_engine import ToolExecutionEngine, ToolExecutionError
@@ -69,6 +76,7 @@ class ResolutionAgent:
         playbook_manager: Optional[PlaybookManager] = None,
         execution_engine: Optional[ToolExecutionEngine] = None,
         approval_queue_registry: Optional[ApprovalQueueRegistry] = None,
+        llm_client: Optional[LLMClient] = None,
     ):
         """
         Initialize ResolutionAgent.
@@ -81,6 +89,8 @@ class ResolutionAgent:
             tenant_policy: Optional TenantPolicyPack for human approval checks
             playbook_manager: Optional PlaybookManager for playbook selection (Phase 2)
             execution_engine: Optional ToolExecutionEngine for automated execution (Phase 2)
+            approval_queue_registry: Optional ApprovalQueueRegistry for approval workflow
+            llm_client: Optional LLMClient for Phase 3 LLM-enhanced explanation
         """
         self.domain_pack = domain_pack
         self.tool_registry = tool_registry
@@ -93,6 +103,7 @@ class ResolutionAgent:
         )
         self.approval_queue_registry = approval_queue_registry
         self.playbook_generator: Optional[PlaybookGenerator] = None  # Phase 2: LLM-based generation
+        self.llm_client = llm_client  # Phase 3: LLM-enhanced explanation
         
         # Load playbooks into manager if domain pack and tenant policy are available
         if tenant_policy:
@@ -139,11 +150,14 @@ class ResolutionAgent:
         suggested_draft_playbook = None
         
         # If actionable and approved, load and resolve playbook
+        selected_playbook: Optional[Playbook] = None
         if actionability == "ACTIONABLE_APPROVED_PROCESS":
             if selected_playbook_id:
                 resolved_plan = await self._resolve_approved_playbook(
                     exception, selected_playbook_id, actionability=actionability, context=context
                 )
+                # Find the selected playbook for LLM explanation
+                selected_playbook = self._find_playbook_for_exception(exception)
             else:
                 # Use PlaybookManager to select playbook (Phase 2)
                 if self.tenant_policy:
@@ -155,6 +169,7 @@ class ResolutionAgent:
                     playbook = self._find_playbook_for_exception(exception)
                 
                 if playbook:
+                    selected_playbook = playbook
                     # Get confidence from context if available
                     confidence = 1.0
                     if context and "prior_outputs" in context:
@@ -211,9 +226,53 @@ class ResolutionAgent:
                 # Fallback to simple draft generation
                 suggested_draft_playbook = self._generate_draft_playbook(exception)
         
-        # Create agent decision
-        decision = self._create_decision(
-            exception, actionability, resolved_plan, suggested_draft_playbook
+        # Phase 3: Add LLM-based explanation if available (advisory only - does not change tools)
+        llm_reasoning: Optional[dict[str, Any]] = None
+        if self.llm_client and resolved_plan and selected_playbook:
+            try:
+                # Build prompt with exception, triage result, policy decision, selected playbook, and evidence
+                prompt = self.build_resolution_prompt(
+                    exception, context, selected_playbook, resolved_plan
+                )
+                
+                # Get rule-based result for fallback
+                rule_based_result = self._create_rule_based_resolution_result(
+                    exception, selected_playbook, resolved_plan, actionability
+                )
+                
+                # Call LLM with fallback to rule-based logic
+                llm_result = llm_or_rules(
+                    llm_client=self.llm_client,
+                    agent_name="ResolutionAgent",
+                    tenant_id=exception.tenant_id,
+                    schema_name="resolution",
+                    prompt=prompt,
+                    rule_based_fn=lambda: rule_based_result,
+                    audit_logger=self.audit_logger,
+                )
+                
+                # Extract reasoning from LLM result (advisory only - don't change tools)
+                llm_reasoning = {
+                    "playbook_selection_rationale": llm_result.get("playbook_selection_rationale", ""),
+                    "rejected_playbooks": llm_result.get("rejected_playbooks", []),
+                    "action_rationale": llm_result.get("action_rationale", ""),
+                    "tool_execution_plan": llm_result.get("tool_execution_plan", []),
+                    "expected_outcome": llm_result.get("expected_outcome"),
+                    "reasoning_steps": llm_result.get("reasoning_steps", []),
+                    "evidence_references": llm_result.get("evidence_references", []),
+                    "natural_language_summary": llm_result.get("natural_language_summary", ""),
+                }
+                
+            except Exception as e:
+                logger.warning(f"LLM-enhanced resolution explanation failed: {e}, continuing without LLM reasoning")
+        
+        # Create agent decision with LLM reasoning (if available)
+        decision = self._create_decision_with_reasoning(
+            exception,
+            actionability,
+            resolved_plan,
+            suggested_draft_playbook,
+            llm_reasoning,
         )
         
         # Log the event
@@ -445,6 +504,7 @@ class ResolutionAgent:
                             domain_pack=self.domain_pack,
                             tenant_id=exception.tenant_id,
                             mode="async",
+                            exception_id=exception.exception_id,  # Phase 3: Pass exception_id for evidence tracking (P3-29)
                         )
                         
                         action["status"] = StepExecutionStatus.SUCCESS.value
@@ -1023,6 +1083,336 @@ class ResolutionAgent:
         
         # Add resolved plan and draft playbook to evidence as structured data
         # (In production, these would be in a separate metadata field)
+        evidence.append(f"resolvedPlan: {len(resolved_plan)} actions")
+        if suggested_draft_playbook:
+            evidence.append("suggestedDraftPlaybook: available")
+        
+        return AgentDecision(
+            decision=decision_text,
+            confidence=confidence,
+            evidence=evidence,
+            nextStep="ProceedToFeedback",
+        )
+
+    def build_resolution_prompt(
+        self,
+        exception: ExceptionRecord,
+        context: Optional[dict[str, Any]],
+        selected_playbook: Playbook,
+        resolved_plan: list[dict[str, Any]],
+    ) -> str:
+        """
+        Build prompt for LLM resolution explanation.
+        
+        Combines exception details, triage result, policy decision, selected playbook,
+        and resolved plan into a structured prompt.
+        
+        Args:
+            exception: ExceptionRecord to explain
+            context: Optional context from previous agents (includes triage_result, policy_decision)
+            selected_playbook: Selected playbook that was executed
+            resolved_plan: Resolved action plan with tool execution results
+            
+        Returns:
+            Formatted prompt string for LLM
+        """
+        prompt_parts = []
+        
+        # Base prompt from agent template
+        prompt_parts.append(
+            "You are the ResolutionAgent. Select playbook from Domain/Tenant Packs matching exceptionType. "
+            "Explain why this playbook is appropriate, why alternative playbooks were rejected, "
+            "and explain the tool execution order and dependencies. Provide a natural language summary for operators."
+        )
+        
+        # Exception details
+        prompt_parts.append("\n## Exception Details:")
+        prompt_parts.append(f"- Exception ID: {exception.exception_id}")
+        prompt_parts.append(f"- Tenant ID: {exception.tenant_id}")
+        prompt_parts.append(f"- Exception Type: {exception.exception_type}")
+        prompt_parts.append(f"- Severity: {exception.severity.value if exception.severity else 'UNKNOWN'}")
+        prompt_parts.append(f"- Source System: {exception.source_system}")
+        
+        # Triage result from context
+        if context:
+            triage_decision = context.get("triage_decision")
+            triage_confidence = context.get("confidence", 0.0)
+            if triage_decision:
+                prompt_parts.append(f"\n## Triage Result:")
+                prompt_parts.append(f"- Decision: {triage_decision}")
+                prompt_parts.append(f"- Confidence: {triage_confidence:.2f}")
+        
+        # Policy decision from context
+        if context:
+            policy_decision = context.get("policy_decision")
+            if policy_decision:
+                prompt_parts.append(f"\n## Policy Decision:")
+                prompt_parts.append(f"- Decision: {policy_decision}")
+                actionability = self._extract_actionability(exception, context)
+                prompt_parts.append(f"- Actionability: {actionability}")
+        
+        # Selected playbook
+        prompt_parts.append(f"\n## Selected Playbook:")
+        prompt_parts.append(f"- Exception Type: {selected_playbook.exception_type}")
+        if hasattr(selected_playbook, "description") and selected_playbook.description:
+            prompt_parts.append(f"- Description: {selected_playbook.description}")
+        prompt_parts.append(f"- Number of Steps: {len(selected_playbook.steps)}")
+        
+        # Playbook steps
+        prompt_parts.append("\n## Playbook Steps:")
+        for i, step in enumerate(selected_playbook.steps, 1):
+            prompt_parts.append(f"{i}. {step.action}")
+            if step.parameters:
+                prompt_parts.append(f"   Parameters: {json.dumps(step.parameters, indent=2)}")
+        
+        # Alternative playbooks (other playbooks for same exception type)
+        alternative_playbooks = []
+        for playbook in self.domain_pack.playbooks:
+            if playbook.exception_type == exception.exception_type and playbook != selected_playbook:
+                alternative_playbooks.append(playbook)
+        
+        if alternative_playbooks:
+            prompt_parts.append("\n## Alternative Playbooks (Rejected):")
+            for alt_playbook in alternative_playbooks[:3]:  # Limit to first 3
+                prompt_parts.append(f"- {alt_playbook.exception_type}")
+                if hasattr(alt_playbook, "description") and alt_playbook.description:
+                    prompt_parts.append(f"  Description: {alt_playbook.description}")
+        else:
+            prompt_parts.append("\n## Alternative Playbooks: None found")
+        
+        # Resolved plan (tool execution results)
+        prompt_parts.append("\n## Resolved Action Plan:")
+        for action in resolved_plan:
+            step_num = action.get("stepNumber", "?")
+            tool_name = action.get("toolName", "N/A")
+            status = action.get("status", "UNKNOWN")
+            prompt_parts.append(f"Step {step_num}: {tool_name} - Status: {status}")
+            if action.get("executionResult"):
+                prompt_parts.append(f"  Result: {str(action['executionResult'])[:100]}")
+        
+        # Available tools in domain pack
+        prompt_parts.append("\n## Available Tools in Domain Pack:")
+        for tool_name, tool_def in list(self.domain_pack.tools.items())[:10]:  # Limit to first 10
+            prompt_parts.append(f"- {tool_name}: {tool_def.description}")
+        if len(self.domain_pack.tools) > 10:
+            prompt_parts.append(f"... and {len(self.domain_pack.tools) - 10} more tools")
+        
+        # Instructions
+        prompt_parts.append(
+            "\n## Instructions:"
+            "\nAnalyze the resolution plan and provide:"
+            "\n1. Explanation why this playbook is appropriate for this exception"
+            "\n2. Reasons for rejecting alternative playbooks (if any)"
+            "\n3. Explanation of tool execution order and dependencies"
+            "\n4. Expected outcome of the resolution"
+            "\n5. Natural language action summary for operators"
+            "\n6. Structured reasoning steps explaining your analysis"
+            "\n7. Evidence references (which tools, playbooks, and policies were considered)"
+            "\n\nIMPORTANT: Do NOT suggest adding new tools or changing the execution plan. "
+            "You are providing explanation only, not modifying the approved playbook."
+        )
+        
+        return "\n".join(prompt_parts)
+
+    def _create_rule_based_resolution_result(
+        self,
+        exception: ExceptionRecord,
+        selected_playbook: Playbook,
+        resolved_plan: list[dict[str, Any]],
+        actionability: str,
+    ) -> dict[str, Any]:
+        """
+        Create rule-based resolution result in LLM output format.
+        
+        This is used as fallback when LLM is unavailable.
+        
+        Args:
+            exception: ExceptionRecord
+            selected_playbook: Selected playbook
+            resolved_plan: Resolved action plan
+            actionability: Actionability classification
+            
+        Returns:
+            Dictionary in ResolutionLLMOutput format
+        """
+        # Build tool execution plan from resolved plan
+        tool_execution_plan = []
+        for action in resolved_plan:
+            if action.get("toolName"):
+                tool_execution_plan.append({
+                    "step_number": action.get("stepNumber", 0),
+                    "tool_name": action.get("toolName"),
+                    "action": action.get("action", ""),
+                    "status": action.get("status", "UNKNOWN"),
+                    "dependencies": [],  # Would need to analyze step dependencies
+                })
+        
+        # Determine resolution status
+        if not resolved_plan:
+            resolution_status = "PENDING"
+        elif all(action.get("status") == "SUCCESS" for action in resolved_plan if action.get("toolName")):
+            resolution_status = "RESOLVED"
+        elif any(action.get("status") == "SUCCESS" for action in resolved_plan if action.get("toolName")):
+            resolution_status = "PARTIAL"
+        elif any(action.get("status") == "FAILED" for action in resolved_plan if action.get("toolName")):
+            resolution_status = "FAILED"
+        else:
+            resolution_status = "PENDING"
+        
+        return {
+            "selected_playbook_id": selected_playbook.exception_type,
+            "playbook_selection_rationale": f"Playbook selected based on exception type {exception.exception_type} matching playbook exception type.",
+            "rejected_playbooks": [],
+            "action_rationale": f"Executed {len(resolved_plan)} steps from approved playbook. Actionability: {actionability}.",
+            "tool_execution_plan": tool_execution_plan,
+            "expected_outcome": f"Resolution of {exception.exception_type} exception using approved playbook.",
+            "resolution_status": resolution_status,
+            "reasoning_steps": [
+                {
+                    "step_number": 1,
+                    "description": "Selected playbook based on exception type",
+                    "outcome": f"Playbook {selected_playbook.exception_type} selected",
+                },
+                {
+                    "step_number": 2,
+                    "description": "Resolved playbook steps into action plan",
+                    "outcome": f"{len(resolved_plan)} actions planned",
+                },
+            ],
+            "evidence_references": [
+                {
+                    "reference_id": "selected_playbook",
+                    "description": f"Playbook: {selected_playbook.exception_type}",
+                    "relevance_score": 1.0,
+                },
+            ],
+            "confidence": 0.85 if resolved_plan else 0.65,
+            "natural_language_summary": f"Resolved {exception.exception_type} exception using playbook {selected_playbook.exception_type} with {len(resolved_plan)} actions.",
+        }
+
+    def _create_decision_with_reasoning(
+        self,
+        exception: ExceptionRecord,
+        actionability: str,
+        resolved_plan: list[dict[str, Any]],
+        suggested_draft_playbook: Optional[dict[str, Any]],
+        llm_reasoning: Optional[dict[str, Any]],
+    ) -> AgentDecision:
+        """
+        Create agent decision with structured reasoning from LLM.
+        
+        Args:
+            exception: ExceptionRecord
+            actionability: Actionability classification
+            resolved_plan: Resolved action plan
+            suggested_draft_playbook: Suggested draft playbook if applicable
+            llm_reasoning: Optional LLM reasoning dictionary
+            
+        Returns:
+            AgentDecision with enhanced evidence including reasoning
+        """
+        # Build evidence list
+        evidence = []
+        evidence.append(f"Exception type: {exception.exception_type}")
+        evidence.append(f"Actionability: {actionability}")
+        
+        # Add LLM reasoning if available
+        if llm_reasoning:
+            # Add natural language summary
+            if llm_reasoning.get("natural_language_summary"):
+                evidence.append(f"Summary: {llm_reasoning['natural_language_summary']}")
+            
+            # Add playbook selection rationale
+            if llm_reasoning.get("playbook_selection_rationale"):
+                evidence.append(f"Playbook selection rationale: {llm_reasoning['playbook_selection_rationale']}")
+            
+            # Add rejected playbooks
+            if llm_reasoning.get("rejected_playbooks"):
+                evidence.append("Rejected playbooks:")
+                for rejected in llm_reasoning["rejected_playbooks"]:
+                    playbook_id = rejected.get("playbook_id", "Unknown")
+                    reason = rejected.get("reason", "Not specified")
+                    evidence.append(f"  - {playbook_id}: {reason}")
+            
+            # Add action rationale
+            if llm_reasoning.get("action_rationale"):
+                evidence.append(f"Action rationale: {llm_reasoning['action_rationale']}")
+            
+            # Add tool execution plan explanation
+            if llm_reasoning.get("tool_execution_plan"):
+                evidence.append("Tool execution plan:")
+                for plan_item in llm_reasoning["tool_execution_plan"]:
+                    step_num = plan_item.get("step_number", "?")
+                    tool_name = plan_item.get("tool_name", "N/A")
+                    explanation = plan_item.get("explanation", "")
+                    evidence.append(f"  Step {step_num}: {tool_name}")
+                    if explanation:
+                        evidence.append(f"    Explanation: {explanation}")
+            
+            # Add expected outcome
+            if llm_reasoning.get("expected_outcome"):
+                evidence.append(f"Expected outcome: {llm_reasoning['expected_outcome']}")
+            
+            # Add reasoning steps
+            if llm_reasoning.get("reasoning_steps"):
+                evidence.append("Reasoning steps:")
+                for step in llm_reasoning["reasoning_steps"]:
+                    step_desc = step.get("description", "")
+                    step_outcome = step.get("outcome", "")
+                    evidence.append(f"  - {step_desc}")
+                    if step_outcome:
+                        evidence.append(f"    Outcome: {step_outcome}")
+            
+            # Add evidence references
+            if llm_reasoning.get("evidence_references"):
+                evidence.append("Evidence sources:")
+                for ref in llm_reasoning["evidence_references"]:
+                    ref_id = ref.get("reference_id", "Unknown")
+                    ref_desc = ref.get("description", "")
+                    evidence.append(f"  - {ref_id}: {ref_desc}")
+        
+        # Add resolved plan details
+        if resolved_plan:
+            evidence.append(f"Resolved plan: {len(resolved_plan)} actions")
+            for action in resolved_plan:
+                if action.get("toolName"):
+                    evidence.append(
+                        f"Step {action['stepNumber']}: {action['toolName']} - {action.get('toolDescription', '')} - Status: {action.get('status', 'UNKNOWN')}"
+                    )
+                else:
+                    evidence.append(f"Step {action['stepNumber']}: {action['action']}")
+        else:
+            evidence.append("No resolved plan (non-actionable or no playbook)")
+        
+        if suggested_draft_playbook:
+            evidence.append("Suggested draft playbook generated")
+            evidence.append(f"Draft steps: {len(suggested_draft_playbook.get('steps', []))}")
+        
+        # Calculate confidence
+        if actionability == "ACTIONABLE_APPROVED_PROCESS" and resolved_plan:
+            # All tools validated
+            all_validated = all(action.get("validated", False) for action in resolved_plan)
+            confidence = 0.9 if all_validated else 0.7
+        elif actionability == "ACTIONABLE_NON_APPROVED_PROCESS":
+            confidence = 0.6
+        else:
+            confidence = 0.5
+        
+        # Adjust confidence if LLM reasoning is available
+        if llm_reasoning:
+            confidence = min(1.0, confidence + 0.05)  # Slight boost for LLM explanation
+        
+        # Determine decision text
+        if resolved_plan:
+            decision_text = f"Resolved plan created with {len(resolved_plan)} actions"
+            if llm_reasoning:
+                decision_text += " (with LLM explanation)"
+        elif suggested_draft_playbook:
+            decision_text = "Draft playbook suggested (not approved)"
+        else:
+            decision_text = "No resolution plan available"
+        
+        # Add resolved plan and draft playbook to evidence as structured data
         evidence.append(f"resolvedPlan: {len(resolved_plan)} actions")
         if suggested_draft_playbook:
             evidence.append("suggestedDraftPlaybook: available")

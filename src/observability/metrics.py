@@ -186,6 +186,20 @@ class ConfidenceDistribution:
 
 
 @dataclass
+class ViolationMetrics:
+    """Metrics for violations."""
+
+    policy_violation_count: int = 0
+    tool_violation_count: int = 0
+    violation_count_by_severity: dict[str, int] = field(default_factory=lambda: {
+        "LOW": 0,
+        "MEDIUM": 0,
+        "HIGH": 0,
+        "CRITICAL": 0,
+    })
+
+
+@dataclass
 class TenantMetrics:
     """Metrics for a single tenant."""
 
@@ -205,6 +219,15 @@ class TenantMetrics:
     approval_queue_metrics: ApprovalQueueMetrics = field(default_factory=ApprovalQueueMetrics)
     exception_type_recurrence: dict[str, ExceptionTypeRecurrence] = field(default_factory=dict)
     confidence_distribution: ConfidenceDistribution = field(default_factory=ConfidenceDistribution)
+    
+    # Phase 3: Violation metrics
+    violation_metrics: ViolationMetrics = field(default_factory=ViolationMetrics)
+    
+    # Phase 3: Explanation metrics (P3-31)
+    explanations_generated_total: int = 0
+    explanations_per_exception: dict[str, int] = field(default_factory=dict)  # exception_id -> count
+    explanation_latency_samples: list[float] = field(default_factory=list)  # in milliseconds
+    explanation_quality_scores: list[float] = field(default_factory=list)  # quality scores
 
     def get_or_create_playbook_metrics(self, playbook_id: str) -> PlaybookMetrics:
         """Get or create playbook metrics."""
@@ -587,6 +610,77 @@ class MetricsCollector:
         logger.debug(
             f"Updated approval queue metrics for tenant {tenant_id}: "
             f"pending={queue_metrics.pending_count}, avg_age={queue_metrics.get_avg_pending_age()}s"
+        )
+
+    def record_explanation_generated(
+        self,
+        tenant_id: str,
+        exception_id: str,
+        latency_ms: float,
+        quality_score: Optional[float] = None,
+    ) -> None:
+        """
+        Record explanation generation metrics.
+        
+        Phase 3: Tracks explanation generation for analytics (P3-31).
+        
+        Args:
+            tenant_id: Tenant identifier
+            exception_id: Exception identifier
+            latency_ms: Generation latency in milliseconds
+            quality_score: Optional quality score
+        """
+        metrics = self.get_or_create_metrics(tenant_id)
+        
+        # Increment total count
+        metrics.explanations_generated_total += 1
+        
+        # Track per-exception count
+        if exception_id not in metrics.explanations_per_exception:
+            metrics.explanations_per_exception[exception_id] = 0
+        metrics.explanations_per_exception[exception_id] += 1
+        
+        # Record latency
+        metrics.explanation_latency_samples.append(latency_ms)
+        
+        # Record quality score if provided
+        if quality_score is not None:
+            metrics.explanation_quality_scores.append(quality_score)
+        
+        logger.debug(
+            f"Recorded explanation metrics for tenant {tenant_id}, "
+            f"exception {exception_id}, latency={latency_ms}ms, quality={quality_score}"
+        )
+
+    def record_violation(
+        self,
+        tenant_id: str,
+        violation_type: str,
+        severity: str,
+    ) -> None:
+        """
+        Record a violation (policy or tool).
+        
+        Args:
+            tenant_id: Tenant identifier
+            violation_type: Type of violation ("policy" or "tool")
+            severity: Severity level ("LOW", "MEDIUM", "HIGH", "CRITICAL")
+        """
+        metrics = self.get_or_create_metrics(tenant_id)
+        violation_metrics = metrics.violation_metrics
+        
+        if violation_type == "policy":
+            violation_metrics.policy_violation_count += 1
+        elif violation_type == "tool":
+            violation_metrics.tool_violation_count += 1
+        
+        # Track by severity
+        if severity in violation_metrics.violation_count_by_severity:
+            violation_metrics.violation_count_by_severity[severity] += 1
+        
+        logger.debug(
+            f"Recorded violation for tenant {tenant_id}: "
+            f"type={violation_type}, severity={severity}"
         )
 
     def record_pipeline_run(

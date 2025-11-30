@@ -1,0 +1,1 @@
+{"id": "tenant_001_TestDomain_policy_1", "tenant_id": "tenant_001", "domain": "TestDomain", "category": "policy", "description": "Test change", "impact_estimate": "High", "confidence": 0.85, "related_entities": ["rule_001"], "source": "policy_learning", "source_suggestion_id": "rule_001", "metadata": {}, "timestamp": "2025-11-26T21:03:44.319479+00:00"}

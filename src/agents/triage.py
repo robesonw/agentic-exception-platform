@@ -1,18 +1,25 @@
 """
-TriageAgent implementation for MVP.
+TriageAgent implementation for MVP and Phase 3.
 Classifies exceptions and assigns severity using domain pack rules.
-Matches specification from docs/04-agent-templates.md
+Phase 3: Enhanced with LLM reasoning and explainability.
+
+Matches specification from:
+- docs/04-agent-templates.md
+- phase3-mvp-issues.md P3-1
 """
 
+import json
 import logging
 from typing import Any, Optional
 
 from src.audit.logger import AuditLogger
+from src.llm.fallbacks import llm_or_rules
+from src.llm.provider import LLMClient
 from src.models.agent_contracts import AgentDecision
 from src.models.domain_pack import DomainPack, ExceptionTypeDefinition
 from src.models.exception_record import ExceptionRecord, Severity
 from src.memory.index import MemoryIndexRegistry
-from src.memory.rag import HybridSearchFilters, hybrid_search
+from src.memory.rag import HybridSearchFilters, HybridSearchResult, hybrid_search
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +56,7 @@ class TriageAgent:
         domain_pack: DomainPack,
         audit_logger: Optional[AuditLogger] = None,
         memory_index: Optional[MemoryIndexRegistry] = None,
+        llm_client: Optional[LLMClient] = None,
     ):
         """
         Initialize TriageAgent.
@@ -57,10 +65,12 @@ class TriageAgent:
             domain_pack: Domain Pack containing exception types and severity rules
             audit_logger: Optional AuditLogger for logging
             memory_index: Optional MemoryIndexRegistry for RAG similarity search
+            llm_client: Optional LLMClient for Phase 3 LLM-enhanced reasoning
         """
         self.domain_pack = domain_pack
         self.audit_logger = audit_logger
         self.memory_index = memory_index
+        self.llm_client = llm_client
 
     async def process(
         self,
@@ -70,21 +80,20 @@ class TriageAgent:
         """
         Classify exception, score severity, and generate diagnostic summary.
         
+        Phase 3: Enhanced with LLM reasoning and explainability.
+        Falls back to rule-based logic if LLM unavailable.
+        
         Args:
             exception: Normalized ExceptionRecord from IntakeAgent
             context: Optional context from previous agents
             
         Returns:
-            AgentDecision with triage results
+            AgentDecision with triage results (includes structured reasoning if LLM used)
             
         Raises:
             TriageAgentError: If classification fails
         """
-        # Classify exception type if not already set
-        classified_type = self._classify_exception_type(exception)
-        
         # Phase 2: Advanced semantic search with hybrid search
-        similar_exceptions = []
         hybrid_search_results = []
         if self.memory_index:
             try:
@@ -107,34 +116,100 @@ class TriageAgent:
                     logger.debug(
                         f"Found {len(hybrid_search_results)} similar exceptions via hybrid search"
                     )
-                    # Convert to legacy format for backward compatibility
-                    # (similar_exceptions is used in _create_decision)
-                    similar_exceptions = [
-                        (None, result.combined_score) for result in hybrid_search_results
-                    ]
             except Exception as e:
-                # Gracefully handle search failures, fallback to simple search
-                logger.warning(f"Hybrid search failed: {e}, falling back to simple search")
+                # Gracefully handle search failures
+                logger.warning(f"Hybrid search failed: {e}")
+        
+        # Phase 3: Use LLM-enhanced reasoning if available, otherwise fallback to rule-based
+        if self.llm_client:
+            try:
+                # Build prompt with exception, RAG evidence, and rules evidence
+                prompt = self.build_triage_prompt(exception, hybrid_search_results)
+                
+                # Get rule-based classification for fallback
+                rule_based_type = self._classify_exception_type(exception)
+                rule_based_severity = self._evaluate_severity(exception, rule_based_type)
+                matched_rules = self._get_matched_severity_rules(exception, rule_based_type)
+                
+                # Call LLM with fallback to rule-based logic
+                llm_result = llm_or_rules(
+                    llm_client=self.llm_client,
+                    agent_name="TriageAgent",
+                    tenant_id=exception.tenant_id,
+                    schema_name="triage",
+                    prompt=prompt,
+                    rule_based_fn=lambda: self._create_rule_based_triage_result(
+                        exception, rule_based_type, rule_based_severity, matched_rules
+                    ),
+                    audit_logger=self.audit_logger,
+                )
+                
+                # Phase 3: Record RAG evidence (P3-29)
+                if hybrid_search_results:
+                    try:
+                        from src.explainability.evidence_integration import record_rag_evidence
+                        
+                        evidence_ids = record_rag_evidence(
+                            exception_id=exception.exception_id,
+                            tenant_id=exception.tenant_id,
+                            search_results=hybrid_search_results,
+                            agent_name="TriageAgent",
+                            stage_name="triage",
+                        )
+                        logger.debug(f"Recorded {len(evidence_ids)} RAG evidence items for triage")
+                    except Exception as e:
+                        logger.warning(f"Failed to record RAG evidence: {e}")
+                
+                # Merge LLM result with rule-based and RAG evidence
+                final_type, final_severity, confidence, reasoning = self._merge_triage_results(
+                    exception,
+                    llm_result,
+                    rule_based_type,
+                    rule_based_severity,
+                    hybrid_search_results,
+                    matched_rules,
+                )
+                
+                # Update exception with final classification and severity
+                exception.exception_type = final_type
+                exception.severity = final_severity
+                
+                # Create agent decision with structured reasoning
+                context_with_search = (context or {}).copy()
+                context_with_search["hybrid_search_results"] = hybrid_search_results
+                context_with_search["llm_result"] = llm_result
+                decision = self._create_decision_with_reasoning(
+                    exception,
+                    final_type,
+                    final_severity,
+                    confidence,
+                    reasoning,
+                    context=context_with_search,
+                )
+                
+            except Exception as e:
+                logger.warning(f"LLM-enhanced triage failed: {e}, falling back to rule-based")
+                # Fall through to rule-based logic
+                return await self._process_rule_based(exception, context, hybrid_search_results)
+        else:
+            # No LLM client, use rule-based logic
+            # Phase 3: Record RAG evidence even in rule-based path (P3-29)
+            if hybrid_search_results:
                 try:
-                    similar_exceptions = self.memory_index.search_similar(
-                        exception.tenant_id, exception, k=5
+                    from src.explainability.evidence_integration import record_rag_evidence
+                    
+                    evidence_ids = record_rag_evidence(
+                        exception_id=exception.exception_id,
+                        tenant_id=exception.tenant_id,
+                        search_results=hybrid_search_results,
+                        agent_name="TriageAgent",
+                        stage_name="triage",
                     )
-                except Exception as e2:
-                    logger.warning(f"Fallback search also failed: {e2}")
-        
-        # Evaluate severity rules
-        severity = self._evaluate_severity(exception, classified_type)
-        
-        # Update exception with classification and severity
-        exception.exception_type = classified_type
-        exception.severity = severity
-        
-        # Create agent decision (pass hybrid_search_results via context)
-        context_with_search = (context or {}).copy()
-        context_with_search["hybrid_search_results"] = hybrid_search_results
-        decision = self._create_decision(
-            exception, classified_type, severity, context=context_with_search
-        )
+                    logger.debug(f"Recorded {len(evidence_ids)} RAG evidence items for triage (rule-based)")
+                except Exception as e:
+                    logger.warning(f"Failed to record RAG evidence: {e}")
+            
+            return await self._process_rule_based(exception, context, hybrid_search_results)
         
         # Log the event
         if self.audit_logger:
@@ -367,3 +442,401 @@ class TriageAgent:
             evidence=evidence,
             nextStep="ProceedToPolicy",
         )
+
+    def build_triage_prompt(
+        self,
+        exception: ExceptionRecord,
+        rag_evidence: list[HybridSearchResult],
+        rules_evidence: Optional[list[str]] = None,
+    ) -> str:
+        """
+        Build prompt for LLM triage reasoning.
+        
+        Combines exception details, RAG evidence, and rules evidence into a structured prompt.
+        
+        Args:
+            exception: ExceptionRecord to classify
+            rag_evidence: List of HybridSearchResult from RAG similarity search
+            rules_evidence: Optional list of matched severity rules
+            
+        Returns:
+            Formatted prompt string for LLM
+        """
+        prompt_parts = []
+        
+        # Base prompt from agent template
+        prompt_parts.append(
+            "You are the TriageAgent. Given the normalized exception and Domain Pack, "
+            "classify exceptionType, score severity using severityRules, identify root cause "
+            "via RAG query, generate diagnostic summary. Confidence based on match strength."
+        )
+        
+        # Exception details
+        prompt_parts.append("\n## Exception Details:")
+        prompt_parts.append(f"- Exception ID: {exception.exception_id}")
+        prompt_parts.append(f"- Tenant ID: {exception.tenant_id}")
+        prompt_parts.append(f"- Source System: {exception.source_system}")
+        prompt_parts.append(f"- Timestamp: {exception.timestamp}")
+        
+        if exception.exception_type:
+            prompt_parts.append(f"- Current Exception Type: {exception.exception_type}")
+        
+        if exception.severity:
+            prompt_parts.append(f"- Current Severity: {exception.severity.value}")
+        
+        # Raw payload summary
+        prompt_parts.append("\n## Raw Payload:")
+        payload_summary = json.dumps(exception.raw_payload, indent=2)
+        if len(payload_summary) > 500:
+            payload_summary = payload_summary[:500] + "... (truncated)"
+        prompt_parts.append(payload_summary)
+        
+        # Domain pack context
+        prompt_parts.append("\n## Available Exception Types:")
+        for exc_type, exc_def in list(self.domain_pack.exception_types.items())[:10]:  # Limit to first 10
+            prompt_parts.append(f"- {exc_type}: {exc_def.description}")
+        if len(self.domain_pack.exception_types) > 10:
+            prompt_parts.append(f"... and {len(self.domain_pack.exception_types) - 10} more types")
+        
+        # Severity rules
+        prompt_parts.append("\n## Severity Rules:")
+        for rule in self.domain_pack.severity_rules[:10]:  # Limit to first 10
+            prompt_parts.append(f"- {rule.condition} -> {rule.severity}")
+        if len(self.domain_pack.severity_rules) > 10:
+            prompt_parts.append(f"... and {len(self.domain_pack.severity_rules) - 10} more rules")
+        
+        # RAG evidence
+        if rag_evidence:
+            prompt_parts.append("\n## Similar Historical Exceptions (RAG Evidence):")
+            for i, result in enumerate(rag_evidence[:5], 1):  # Top 5
+                prompt_parts.append(
+                    f"{i}. Exception {result.exception_id}: "
+                    f"similarity={result.combined_score:.2f} ({result.explanation})"
+                )
+                if result.metadata:
+                    exc_type = result.metadata.get("exception_type", "unknown")
+                    severity = result.metadata.get("severity", "unknown")
+                    prompt_parts.append(f"   Type: {exc_type}, Severity: {severity}")
+        else:
+            prompt_parts.append("\n## Similar Historical Exceptions: None found")
+        
+        # Rules evidence
+        if rules_evidence:
+            prompt_parts.append("\n## Matched Severity Rules:")
+            for rule in rules_evidence:
+                prompt_parts.append(f"- {rule}")
+        
+        # Instructions
+        prompt_parts.append(
+            "\n## Instructions:"
+            "\nAnalyze the exception and provide:"
+            "\n1. Predicted exception type (must be one of the available types)"
+            "\n2. Predicted severity (LOW, MEDIUM, HIGH, or CRITICAL)"
+            "\n3. Confidence scores for both classification and severity"
+            "\n4. Root cause hypothesis based on RAG evidence and rules"
+            "\n5. List of matched severity rules"
+            "\n6. Detailed diagnostic summary"
+            "\n7. Structured reasoning steps explaining your decision"
+            "\n8. Evidence references (which RAG results and rules influenced the decision)"
+        )
+        
+        return "\n".join(prompt_parts)
+
+    def _get_matched_severity_rules(
+        self, exception: ExceptionRecord, exception_type: str
+    ) -> list[str]:
+        """
+        Get list of matched severity rules.
+        
+        Args:
+            exception: ExceptionRecord to evaluate
+            exception_type: Classified exception type
+            
+        Returns:
+            List of matched rule descriptions
+        """
+        matched_rules = []
+        for rule in self.domain_pack.severity_rules:
+            if self._evaluate_rule_condition(rule.condition, exception, exception_type):
+                matched_rules.append(f"{rule.condition} -> {rule.severity}")
+        return matched_rules
+
+    def _create_rule_based_triage_result(
+        self,
+        exception: ExceptionRecord,
+        exception_type: str,
+        severity: Severity,
+        matched_rules: list[str],
+    ) -> dict[str, Any]:
+        """
+        Create rule-based triage result in LLM output format.
+        
+        This is used as fallback when LLM is unavailable.
+        
+        Args:
+            exception: ExceptionRecord
+            exception_type: Classified exception type
+            severity: Assigned severity
+            matched_rules: List of matched severity rules
+            
+        Returns:
+            Dictionary in TriageLLMOutput format
+        """
+        # Calculate confidence based on rule matching
+        if matched_rules:
+            confidence = 0.85
+        elif exception.exception_type == exception_type:
+            confidence = 0.80
+        else:
+            confidence = 0.70
+        
+        return {
+            "predicted_exception_type": exception_type,
+            "predicted_severity": severity.value,
+            "severity_confidence": confidence,
+            "classification_confidence": confidence,
+            "root_cause_hypothesis": "Rule-based classification (no LLM reasoning available)",
+            "matched_rules": matched_rules,
+            "diagnostic_summary": f"Exception classified as {exception_type} with {severity.value} severity using rule-based logic.",
+            "reasoning_steps": [
+                {
+                    "step_number": 1,
+                    "description": "Classified exception type using domain pack taxonomy",
+                    "evidence_used": ["Domain Pack exception types"],
+                    "conclusion": f"Exception type: {exception_type}",
+                },
+                {
+                    "step_number": 2,
+                    "description": "Evaluated severity using severity rules",
+                    "evidence_used": matched_rules if matched_rules else ["Default severity"],
+                    "conclusion": f"Severity: {severity.value}",
+                },
+            ],
+            "evidence_references": [
+                {
+                    "source": "Domain Pack",
+                    "description": f"Exception type definition: {exception_type}",
+                }
+            ],
+            "confidence": confidence,
+            "natural_language_summary": f"This exception was classified as {exception_type} with {severity.value} severity using rule-based classification.",
+        }
+
+    def _merge_triage_results(
+        self,
+        exception: ExceptionRecord,
+        llm_result: dict[str, Any],
+        rule_based_type: str,
+        rule_based_severity: Severity,
+        rag_evidence: list[HybridSearchResult],
+        matched_rules: list[str],
+    ) -> tuple[str, Severity, float, dict[str, Any]]:
+        """
+        Merge LLM result with rule-based and RAG evidence.
+        
+        Combines:
+        - LLM predictions (if available and valid)
+        - Rule-based classification (as validation/fallback)
+        - RAG evidence (for confidence adjustment)
+        
+        Args:
+            exception: ExceptionRecord
+            llm_result: LLM output dictionary (may have _metadata if fallback was used)
+            rule_based_type: Rule-based classification
+            rule_based_severity: Rule-based severity
+            rag_evidence: RAG search results
+            matched_rules: Matched severity rules
+            
+        Returns:
+            Tuple of (final_type, final_severity, confidence, reasoning_dict)
+        """
+        # Check if LLM was used or fallback was triggered
+        used_llm = not llm_result.get("_metadata", {}).get("llm_fallback", False)
+        
+        if used_llm:
+            # Use LLM predictions, but validate against rules
+            llm_type = llm_result.get("predicted_exception_type", rule_based_type)
+            llm_severity_str = llm_result.get("predicted_severity", rule_based_severity.value)
+            
+            # Validate exception type exists in domain pack
+            if llm_type not in self.domain_pack.exception_types:
+                logger.warning(
+                    f"LLM predicted invalid exception type '{llm_type}', "
+                    f"using rule-based type '{rule_based_type}'"
+                )
+                final_type = rule_based_type
+            else:
+                final_type = llm_type
+            
+            # Validate severity
+            try:
+                final_severity = Severity(llm_severity_str.upper())
+            except (ValueError, AttributeError):
+                logger.warning(
+                    f"LLM predicted invalid severity '{llm_severity_str}', "
+                    f"using rule-based severity '{rule_based_severity.value}'"
+                )
+                final_severity = rule_based_severity
+            
+            # Use LLM confidence, but adjust based on agreement with rules
+            llm_confidence = llm_result.get("confidence", 0.7)
+            if final_type == rule_based_type and final_severity == rule_based_severity:
+                # Agreement increases confidence
+                confidence = min(1.0, llm_confidence + 0.1)
+            elif final_type == rule_based_type or final_severity == rule_based_severity:
+                # Partial agreement
+                confidence = llm_confidence
+            else:
+                # Disagreement decreases confidence
+                confidence = max(0.5, llm_confidence - 0.1)
+            
+            # Extract reasoning from LLM result
+            reasoning = {
+                "reasoning_steps": llm_result.get("reasoning_steps", []),
+                "evidence_references": llm_result.get("evidence_references", []),
+                "natural_language_summary": llm_result.get("natural_language_summary", ""),
+            }
+            
+        else:
+            # Fallback to rule-based
+            final_type = rule_based_type
+            final_severity = rule_based_severity
+            confidence = 0.75 if matched_rules else 0.65
+            
+            reasoning = {
+                "reasoning_steps": llm_result.get("reasoning_steps", []),
+                "evidence_references": llm_result.get("evidence_references", []),
+                "natural_language_summary": llm_result.get("natural_language_summary", ""),
+            }
+        
+        return final_type, final_severity, confidence, reasoning
+
+    def _create_decision_with_reasoning(
+        self,
+        exception: ExceptionRecord,
+        exception_type: str,
+        severity: Severity,
+        confidence: float,
+        reasoning: dict[str, Any],
+        context: Optional[dict[str, Any]] = None,
+    ) -> AgentDecision:
+        """
+        Create agent decision with structured reasoning from LLM.
+        
+        Args:
+            exception: ExceptionRecord with classification and severity
+            exception_type: Classified exception type
+            severity: Assigned severity
+            confidence: Confidence score
+            reasoning: Dictionary with reasoning_steps, evidence_references, natural_language_summary
+            context: Optional context (includes hybrid_search_results, llm_result)
+            
+        Returns:
+            AgentDecision with enhanced evidence including reasoning
+        """
+        # Build evidence list
+        evidence = []
+        evidence.append(f"Classified as: {exception_type}")
+        evidence.append(f"Severity: {severity.value}")
+        evidence.append(f"Confidence: {confidence:.2f}")
+        
+        # Add natural language summary
+        if reasoning.get("natural_language_summary"):
+            evidence.append(f"Summary: {reasoning['natural_language_summary']}")
+        
+        # Add exception type description if available
+        exc_type_def = self.domain_pack.exception_types.get(exception_type)
+        if exc_type_def:
+            evidence.append(f"Description: {exc_type_def.description}")
+        
+        # Add reasoning steps
+        if reasoning.get("reasoning_steps"):
+            evidence.append("Reasoning steps:")
+            for step in reasoning["reasoning_steps"]:
+                step_desc = step.get("description", "")
+                step_conc = step.get("conclusion", "")
+                evidence.append(f"  - {step_desc}")
+                if step_conc:
+                    evidence.append(f"    Conclusion: {step_conc}")
+        
+        # Add evidence references
+        if reasoning.get("evidence_references"):
+            evidence.append("Evidence sources:")
+            for ref in reasoning["evidence_references"]:
+                source = ref.get("source", "Unknown")
+                desc = ref.get("description", "")
+                evidence.append(f"  - {source}: {desc}")
+        
+        # Add RAG evidence
+        if context and "hybrid_search_results" in context:
+            hybrid_results = context["hybrid_search_results"]
+            if hybrid_results:
+                evidence.append(f"Found {len(hybrid_results)} similar cases via RAG:")
+                for i, result in enumerate(hybrid_results[:3], 1):  # Top 3
+                    evidence.append(
+                        f"  {i}. Case {result.exception_id}: "
+                        f"score={result.combined_score:.2f} ({result.explanation})"
+                    )
+        
+        # Add LLM metadata if available
+        if context and "llm_result" in context:
+            llm_result = context["llm_result"]
+            if llm_result.get("_metadata", {}).get("llm_fallback"):
+                evidence.append("Note: Used rule-based fallback (LLM unavailable)")
+            else:
+                evidence.append("Note: Used LLM-enhanced reasoning")
+        
+        decision_text = f"Triaged {exception_type} {severity.value}"
+
+        return AgentDecision(
+            decision=decision_text,
+            confidence=confidence,
+            evidence=evidence,
+            nextStep="ProceedToPolicy",
+        )
+
+    async def _process_rule_based(
+        self,
+        exception: ExceptionRecord,
+        context: Optional[dict[str, Any]],
+        hybrid_search_results: list[HybridSearchResult],
+    ) -> AgentDecision:
+        """
+        Process exception using rule-based logic (Phase 1 fallback).
+        
+        This preserves the original Phase 1 behavior when LLM is unavailable.
+        
+        Args:
+            exception: ExceptionRecord to process
+            context: Optional context from previous agents
+            hybrid_search_results: RAG search results
+            
+        Returns:
+            AgentDecision with rule-based triage results
+        """
+        # Classify exception type if not already set
+        classified_type = self._classify_exception_type(exception)
+        
+        # Evaluate severity rules
+        severity = self._evaluate_severity(exception, classified_type)
+        
+        # Update exception with classification and severity
+        exception.exception_type = classified_type
+        exception.severity = severity
+        
+        # Create agent decision (pass hybrid_search_results via context)
+        context_with_search = (context or {}).copy()
+        context_with_search["hybrid_search_results"] = hybrid_search_results
+        decision = self._create_decision(
+            exception, classified_type, severity, context=context_with_search
+        )
+        
+        # Log the event
+        if self.audit_logger:
+            input_data = {
+                "exception": exception.model_dump(),
+                "context": context or {},
+            }
+            self.audit_logger.log_agent_event("TriageAgent", input_data, decision, exception.tenant_id)
+        
+        return decision

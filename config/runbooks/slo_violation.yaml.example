@@ -1,0 +1,49 @@
+# Example Runbook for SLO Violations
+# Copy this file and customize for your environment
+
+id: slo_violation_recovery
+name: SLO Violation Recovery
+description: Standard procedure for recovering from SLO violations
+triggers:
+  - "slo_violation"
+  - "performance_degradation"
+severity: HIGH
+owner: "SRE Team"
+tags:
+  - "slo"
+  - "performance"
+  - "monitoring"
+component: "platform"
+error_codes:
+  - "SLO_VIOLATION_LATENCY"
+  - "SLO_VIOLATION_ERROR_RATE"
+  - "SLO_VIOLATION_MTTR"
+steps:
+  - title: "Assess Current State"
+    description: "Review SLO status and identify failed dimensions"
+    action: "check_slo_status"
+    expected_outcome: "Identified failed SLO dimensions"
+    timeout_seconds: 60
+    requires_approval: false
+  
+  - title: "Check System Metrics"
+    description: "Review system metrics for root cause indicators"
+    action: "check_metrics"
+    expected_outcome: "Identified potential root causes"
+    timeout_seconds: 120
+    requires_approval: false
+  
+  - title: "Review Recent Changes"
+    description: "Check for recent deployments or configuration changes"
+    action: "check_recent_changes"
+    expected_outcome: "List of recent changes"
+    timeout_seconds: 180
+    requires_approval: false
+  
+  - title: "Escalate if Needed"
+    description: "Escalate to on-call engineer if root cause not identified"
+    action: "escalate"
+    expected_outcome: "On-call engineer notified"
+    timeout_seconds: 300
+    requires_approval: true
+

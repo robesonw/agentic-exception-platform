@@ -18,7 +18,8 @@ from src.orchestrator.store import get_exception_store
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/ui/exceptions", tags=["ui-status"])
+# Changed prefix from /ui/exceptions to /ui/status to avoid conflict with router_operator's /ui/exceptions/{exception_id}
+router = APIRouter(prefix="/ui/status", tags=["ui-status"])
 
 
 @router.get("/{tenant_id}")

@@ -1,0 +1,48 @@
+# Example Runbook for Policy Violations
+# Copy this file and customize for your environment
+
+id: policy_violation_response
+name: Policy Violation Response
+description: Standard procedure for responding to policy violations
+triggers:
+  - "policy_violation"
+  - "compliance_issue"
+severity: CRITICAL
+owner: "Security Team"
+tags:
+  - "policy"
+  - "compliance"
+  - "security"
+component: "policy_engine"
+error_codes:
+  - "POLICY_VIOLATION_CRITICAL"
+  - "POLICY_VIOLATION_HIGH"
+steps:
+  - title: "Review Violation Details"
+    description: "Examine violation details and context"
+    action: "review_violation"
+    expected_outcome: "Understanding of violation scope"
+    timeout_seconds: 120
+    requires_approval: false
+  
+  - title: "Assess Impact"
+    description: "Determine impact and affected systems"
+    action: "assess_impact"
+    expected_outcome: "Impact assessment completed"
+    timeout_seconds: 180
+    requires_approval: false
+  
+  - title: "Block Affected Operations"
+    description: "Block operations that violate policy"
+    action: "block_operations"
+    expected_outcome: "Violating operations blocked"
+    timeout_seconds: 60
+    requires_approval: true
+  
+  - title: "Notify Stakeholders"
+    description: "Notify security and compliance teams"
+    action: "notify_stakeholders"
+    expected_outcome: "Stakeholders notified"
+    timeout_seconds: 300
+    requires_approval: false
+

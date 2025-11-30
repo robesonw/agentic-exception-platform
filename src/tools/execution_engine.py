@@ -24,6 +24,8 @@ import httpx
 from src.audit.logger import AuditLogger
 from src.models.domain_pack import DomainPack, ToolDefinition
 from src.models.tenant_policy import TenantPolicyPack
+from src.safety.violation_detector import ViolationDetector
+from src.safety.rules import SafetyViolation
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +169,9 @@ class ToolExecutionEngine:
         default_max_retries: int = 3,
         circuit_breaker_failure_threshold: int = 5,
         circuit_breaker_recovery_timeout: float = 60.0,
+        safety_enforcer: Optional[Any] = None,
+        violation_detector: Optional[ViolationDetector] = None,
+        quota_enforcer: Optional[Any] = None,
     ):
         """
         Initialize the execution engine.
@@ -177,12 +182,18 @@ class ToolExecutionEngine:
             default_max_retries: Default maximum retry attempts
             circuit_breaker_failure_threshold: Failures before opening circuit
             circuit_breaker_recovery_timeout: Seconds before attempting recovery
+            safety_enforcer: Optional SafetyEnforcer instance for safety rule enforcement
+            violation_detector: Optional ViolationDetector instance for violation detection
+            quota_enforcer: Optional QuotaEnforcer instance for quota enforcement (P3-26)
         """
         self.audit_logger = audit_logger
         self.default_timeout = default_timeout
         self.default_max_retries = default_max_retries
         self.circuit_breaker_failure_threshold = circuit_breaker_failure_threshold
         self.circuit_breaker_recovery_timeout = circuit_breaker_recovery_timeout
+        self.safety_enforcer = safety_enforcer
+        self.violation_detector = violation_detector
+        self.quota_enforcer = quota_enforcer
         
         # Per-tool circuit breakers: tool_name -> CircuitBreaker
         self._circuit_breakers: dict[str, CircuitBreaker] = {}
@@ -484,10 +495,89 @@ class ToolExecutionEngine:
             self._audit_log_attempt(tool_name, args, 0, None, error_msg, tenant_id)
             raise CircuitBreakerOpenError(error_msg)
         
+        # Estimate execution time for quota/safety checks
+        estimated_time_ms = int((tool_timeout or self.default_timeout) * 1000)
+
+        # Phase 3: Check safety rules before tool execution
+        if self.safety_enforcer:
+            try:
+                # Check safety rules
+                self.safety_enforcer.check_tool_call(
+                    tenant_id=tenant_id,
+                    tool_name=tool_name,
+                    estimated_time_ms=estimated_time_ms,
+                )
+            except SafetyViolation as e:
+                error_msg = f"Safety check failed: {e}"
+                self._audit_log_attempt(tool_name, args, 0, None, error_msg, tenant_id)
+                raise ToolExecutionError(error_msg) from e
+            except Exception as e:
+                error_msg = f"Safety check failed: {e}"
+                self._audit_log_attempt(tool_name, args, 0, None, error_msg, tenant_id)
+                raise ToolExecutionError(error_msg) from e
+
+        # Phase 3: Check quota before tool execution (P3-26)
+        if self.quota_enforcer:
+            try:
+                self.quota_enforcer.check_tool_quota(
+                    tenant_id=tenant_id,
+                    tool_name=tool_name,
+                    estimated_exec_time_ms=estimated_time_ms,
+                )
+            except Exception as e:
+                if hasattr(e, 'quota_type'):  # QuotaExceeded
+                    error_msg = f"Quota exceeded: {e}"
+                    self._audit_log_attempt(tool_name, args, 0, None, error_msg, tenant_id)
+                    raise ToolExecutionError(error_msg) from e
+                raise
+        
+        # Phase 3: Check for tool violations (unauthorized tool usage)
+        if self.violation_detector:
+            try:
+                tool_call_request = {
+                    "tool_name": tool_name,
+                    "args": args,
+                    "timeout": tool_timeout,
+                }
+                violation = self.violation_detector.check_tool_call(
+                    tenant_id=tenant_id,
+                    tool_def=tool_def,
+                    tool_call_request=tool_call_request,
+                    tenant_policy=tenant_policy,
+                    domain_pack=domain_pack,
+                    exception_id=None,  # ExecutionEngine doesn't have exception_id context
+                )
+                
+                if violation:
+                    error_msg = f"Tool violation detected: {violation.description}"
+                    self._audit_log_attempt(tool_name, args, 0, None, error_msg, tenant_id)
+                    raise ToolExecutionError(error_msg)
+            except ToolExecutionError:
+                raise  # Re-raise if already a ToolExecutionError
+            except Exception as e:
+                logger.warning(f"Violation detection failed: {e}")
+                # Continue execution if violation detection fails (non-blocking)
+        
         # Execute with retries
         last_error: Optional[Exception] = None
+        exec_start_time = time.time()
         
         for attempt in range(max_retries + 1):  # +1 for initial attempt
+            # Phase 3: Check retry limit with safety enforcer
+            if attempt > 0 and self.safety_enforcer:
+                try:
+                    self.safety_enforcer.check_tool_retries(
+                        tenant_id=tenant_id,
+                        tool_name=tool_name,
+                        current_retry_count=attempt,
+                    )
+                except Exception as e:
+                    # Re-raise SafetyViolation as-is
+                    if isinstance(e, Exception) and hasattr(e, 'rule_type'):
+                        raise
+                    error_msg = f"Retry limit check failed: {e}"
+                    self._audit_log_attempt(tool_name, args, attempt, None, error_msg, tenant_id)
+                    raise ToolExecutionError(error_msg) from e
             try:
                 # Execute based on mode
                 if mode == "async":
@@ -504,14 +594,58 @@ class ToolExecutionEngine:
                 # Record success in circuit breaker
                 circuit_breaker.record_success()
                 
+                # Phase 3: Record tool usage with safety enforcer
+                exec_time_ms = int((time.time() - exec_start_time) * 1000)
+                if self.safety_enforcer:
+                    try:
+                        self.safety_enforcer.record_tool_usage(
+                            tenant_id=tenant_id,
+                            tool_name=tool_name,
+                            exec_time_ms=exec_time_ms,
+                            retry_count=attempt,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to record tool usage with safety enforcer: {e}")
+
+                # Phase 3: Record tool usage with quota enforcer (P3-26)
+                if self.quota_enforcer:
+                    try:
+                        self.quota_enforcer.record_tool_usage(
+                            tenant_id=tenant_id,
+                            tool_name=tool_name,
+                            actual_exec_time_ms=exec_time_ms,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to record tool usage with quota enforcer: {e}")
+                
                 # Audit log success
                 self._audit_log_attempt(
                     tool_name, args, attempt, result, None, tenant_id
                 )
                 
                 logger.info(
-                    f"Tool '{tool_name}' executed successfully on attempt {attempt + 1}"
+                    f"Tool '{tool_name}' executed successfully on attempt {attempt + 1}, "
+                    f"exec_time={exec_time_ms}ms"
                 )
+                
+                # Phase 3: Record tool evidence (P3-29)
+                if exception_id:
+                    try:
+                        from src.explainability.evidence_integration import record_tool_evidence
+                        
+                        evidence_id = record_tool_evidence(
+                            exception_id=exception_id,
+                            tenant_id=tenant_id,
+                            tool_name=tool_name,
+                            tool_result=result,
+                            agent_name="ResolutionAgent",
+                            stage_name="resolution",
+                        )
+                        if evidence_id:
+                            logger.debug(f"Recorded tool evidence {evidence_id} for tool {tool_name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to record tool evidence: {e}")
+                
                 return result
                 
             except (ToolTimeoutError, ToolExecutionError) as e:
@@ -537,6 +671,19 @@ class ToolExecutionEngine:
                     logger.error(
                         f"Tool '{tool_name}' failed after {max_retries + 1} attempts: {e}"
                     )
+        
+        # Phase 3: Record tool usage even on failure
+        exec_time_ms = int((time.time() - exec_start_time) * 1000)
+        if self.safety_enforcer:
+            try:
+                self.safety_enforcer.record_tool_usage(
+                    tenant_id=tenant_id,
+                    tool_name=tool_name,
+                    exec_time_ms=exec_time_ms,
+                    retry_count=max_retries,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to record tool usage with safety enforcer: {e}")
         
         # All retries exhausted
         error_msg = (

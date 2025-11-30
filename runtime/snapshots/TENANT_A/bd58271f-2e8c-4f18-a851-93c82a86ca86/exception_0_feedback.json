@@ -1,0 +1,83 @@
+{
+  "exception": {
+    "exceptionId": "exc_ORD-001",
+    "tenantId": "TENANT_A",
+    "sourceSystem": "ERP",
+    "exceptionType": "SETTLEMENT_FAIL",
+    "severity": "HIGH",
+    "timestamp": "2025-11-26 23:35:45.511101+00:00",
+    "rawPayload": {
+      "orderId": "ORD-001"
+    },
+    "normalizedContext": {},
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "ESCALATED",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Intake",
+        "confidence": 0.9,
+        "evidence": [],
+        "nextStep": "triage"
+      },
+      "triage": {
+        "decision": "Triage",
+        "confidence": 0.8,
+        "evidence": [],
+        "nextStep": "policy"
+      },
+      "policy": {
+        "decision": "Policy",
+        "confidence": 0.8,
+        "evidence": [
+          "Actionability: ACTIONABLE_APPROVED_PROCESS"
+        ],
+        "nextStep": "resolution"
+      },
+      "supervisor_post_policy": {
+        "decision": "SupervisorAgent approved: flow continues as planned",
+        "confidence": 0.8,
+        "evidence": [
+          "SupervisorAgent review: post-policy checkpoint",
+          "PolicyAgent confidence: 0.80"
+        ],
+        "nextStep": "resolution"
+      },
+      "resolution": {
+        "decision": "Resolution",
+        "confidence": 0.8,
+        "evidence": [],
+        "nextStep": "ESCALATE"
+      },
+      "supervisor_post_resolution": {
+        "decision": "SupervisorAgent intervened: escalating due to safety concerns",
+        "confidence": 0.9,
+        "evidence": [
+          "SupervisorAgent review: post-resolution checkpoint",
+          "ResolutionAgent confidence: 0.80",
+          "Safety issue: Actionable exception but no resolved plan found"
+        ],
+        "nextStep": "ESCALATE"
+      },
+      "feedback": {
+        "decision": "Feedback",
+        "confidence": 0.8,
+        "evidence": [],
+        "nextStep": "complete"
+      }
+    },
+    "evidence": [
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "SupervisorAgent review: post-policy checkpoint",
+      "PolicyAgent confidence: 0.80",
+      "SupervisorAgent review: post-resolution checkpoint",
+      "ResolutionAgent confidence: 0.80",
+      "Safety issue: Actionable exception but no resolved plan found"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-26T23:35:45.516197+00:00"
+}

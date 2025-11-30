@@ -1,0 +1,64 @@
+{
+  "exception": {
+    "exceptionId": "exc_ORD-002",
+    "tenantId": "TENANT_A",
+    "sourceSystem": "ERP",
+    "exceptionType": "SETTLEMENT_FAIL",
+    "severity": "MEDIUM",
+    "timestamp": "2025-11-27 00:14:11.621575+00:00",
+    "rawPayload": {
+      "orderId": "ORD-002"
+    },
+    "normalizedContext": {},
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Intake",
+        "confidence": 0.9,
+        "evidence": [],
+        "nextStep": "triage"
+      },
+      "triage": {
+        "decision": "Triage",
+        "confidence": 0.8,
+        "evidence": [],
+        "nextStep": "policy"
+      },
+      "policy": {
+        "decision": "Policy",
+        "confidence": 0.8,
+        "evidence": [
+          "Actionability: ACTIONABLE_APPROVED_PROCESS"
+        ],
+        "nextStep": "resolution"
+      },
+      "supervisor_post_policy": {
+        "decision": "SupervisorAgent approved: flow continues as planned",
+        "confidence": 0.8,
+        "evidence": [
+          "SupervisorAgent review: post-policy checkpoint",
+          "PolicyAgent confidence: 0.80"
+        ],
+        "nextStep": "resolution"
+      },
+      "resolution": {
+        "decision": "Resolution",
+        "confidence": 0.8,
+        "evidence": [],
+        "nextStep": "feedback"
+      }
+    },
+    "evidence": [
+      "Actionability: ACTIONABLE_APPROVED_PROCESS",
+      "SupervisorAgent review: post-policy checkpoint",
+      "PolicyAgent confidence: 0.80"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-11-27T00:14:11.623338+00:00"
+}

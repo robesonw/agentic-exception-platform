@@ -2123,3 +2123,1862 @@ Policy learning introduced
 🎯 Phase 3 will make it fully autonomous, LLM-driven, self-improving, and capable of end-to-end execution.
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+phase 3:
+
+
+Read the following project specs and existing MVP phases:
+
+- docs/master_project_instruction_full.md
+- docs/01-architecture.md ... docs/09-tenant-onboarding.md
+- docs/06-mvp-plan.md
+- .github/ISSUE_TEMPLATE/phase1-mvp-issues.md
+- .github/ISSUE_TEMPLATE/phase2-mvp-issues.md
+
+Your task:
+Create a **Phase 3 MVP issues file** that extends Phase 1 + Phase 2, without duplicating them.
+
+Create a new file:
+
+  .github/ISSUE_TEMPLATE/phase3-mvp-issues.md
+
+### Phase 3 – Overall Goals
+
+Derive details from the documents, but Phase 3 should explicitly focus on:
+
+1) **LLM-Enhanced Agent Reasoning**
+   - LLM-augmented agents (Triage, Policy, Resolution, Supervisor) with explainable reasoning
+   - Natural language explanation of decisions for operators
+   - Safe, JSON-bounded outputs with schema validation
+   - Fallback strategies if LLMs fail or time out
+
+2) **Autonomous Optimization & Continuous Learning**
+   - Stronger policy learning loop (suggested policy/playbook changes based on outcomes)
+   - Automatic recommendation of:
+     * new severity rules
+     * new or updated playbooks
+     * guardrail adjustments
+   - Human-in-the-loop approval for any changes
+   - Metrics-driven optimization (success rates, MTTR, false positives/negatives)
+
+3) **Full UX & Workflow Layer**
+   - Rich operator UI backend support (APIs) for:
+     * browsing exceptions, decisions, evidence, and audit history
+     * interacting with agents in natural language (“Why did you do this?”)
+     * trigger re-runs or “what-if” simulations on selected exceptions
+   - Supervisor dashboards (cross-tenant / cross-domain view, if allowed by design)
+   - Configuration UX: viewing and diffing Domain Packs, Tenant Policies, Playbooks
+
+4) **Streaming / Near-Real-Time Capabilities**
+   - Optional streaming ingestion mode (e.g. Kafka, MQ stubs)
+   - Incremental decision streaming (stage-by-stage updates)
+   - Backpressure and rate control to protect downstream tools and vector DB
+
+5) **Safety, Guardrails & Red-Teaming**
+   - Expanded safety rules for LLM calls and tool usage
+   - Red-team / test harness to validate LLM prompts and outputs
+   - Scenarios to ensure no policy violation, no unauthorized tool usage
+   - Synthetic adversarial test suites for high-risk domains (finance, healthcare)
+
+6) **Multi-Domain & Multi-Tenant Scale Readiness**
+   - Hardening for many domains & tenants
+   - SLO/SLA metrics definitions (latency, throughput, error rates)
+   - Tenancy-aware quotas and limits (LLM usage, vector DB usage, tool calls)
+   - Operational runbooks (error handling, incident playbooks)
+
+7) **Explainability & Traceability**
+   - Human-readable decision timelines for each exception:
+     * which agents ran
+     * which evidence was used (from RAG, tools, policies)
+     * why certain actions/playbooks were chosen or rejected
+   - API endpoints to retrieve and present explanations
+   - Tie into existing audit + metrics
+
+### Structure of .github/ISSUE_TEMPLATE/phase3-mvp-issues.md
+
+Follow the same style and structure used in `phase1-mvp-issues.md` and `phase2-mvp-issues.md`, including:
+
+- Grouped epics/sections (e.g., "LLM-Enhanced Reasoning", "Autonomous Optimization", "UX & Workflow", etc.)
+- Numbered issues: P3-1, P3-2, ... (or a similar consistent scheme)
+- For each issue:
+  - Title
+  - Priority (high/medium/low)
+  - Description
+  - Dependencies (Phase 1/2 issues, if relevant)
+  - Acceptance criteria
+  - Relevant spec references (point back to existing docs where possible)
+
+Important constraints:
+- DO NOT duplicate Phase 1 or Phase 2 tasks.
+- Assume Phase 1 and Phase 2 are fully implemented and stable.
+- Focus Phase 3 on LLM integration, autonomy, UX, safety, and scale.
+- Keep issues granular enough that each one can map to a set of concrete coding prompts later.
+
+Deliverable:
+- A complete, well-structured `.github/ISSUE_TEMPLATE/phase3-mvp-issues.md` that can be used directly as the Phase 3 implementation backlog.
+
+
+
+
+
+Created the Phase 3 MVP issues file at .github/ISSUE_TEMPLATE/phase3-mvp-issues.md.
+Summary
+The file includes 31 issues organized into 7 component areas:
+LLM-Enhanced Agent Reasoning (6 issues) — P3-1 through P3-6
+LLM-augmented agents with explainable reasoning
+Safe JSON-bounded outputs with schema validation
+Fallback strategies and timeout handling
+Autonomous Optimization & Continuous Learning (5 issues) — P3-7 through P3-11
+Enhanced policy learning loop
+Automatic recommendations for severity rules, playbooks, and guardrails
+Metrics-driven optimization engine
+Full UX & Workflow Layer (5 issues) — P3-12 through P3-16
+Operator UI backend APIs
+Natural language interaction APIs
+Re-run and what-if simulation APIs
+Supervisor dashboards and configuration UX
+Streaming / Near-Real-Time Capabilities (3 issues) — P3-17 through P3-19
+Kafka/MQ streaming ingestion
+Incremental decision streaming
+Backpressure and rate control
+Safety, Guardrails & Red-Teaming (4 issues) — P3-20 through P3-23
+Expanded safety rules
+Red-team test harness
+Policy violation detection
+Adversarial test suites for high-risk domains
+Multi-Domain & Multi-Tenant Scale Readiness (4 issues) — P3-24 through P3-27
+Hardening for many domains/tenants
+SLO/SLA metrics and monitoring
+Tenancy-aware quotas and limits
+Operational runbooks
+Explainability & Traceability (4 issues) — P3-28 through P3-31
+Human-readable decision timelines
+Evidence tracking and attribution
+Explanation API endpoints
+Integration with audit and metrics
+Each issue includes:
+Title and labels
+Priority (high/medium/low)
+Description
+Dependencies on Phase 1/2 issues
+Acceptance criteria
+References to relevant spec documents
+The file follows the same structure as Phase 1 and Phase 2, avoids duplication, and focuses on Phase 3 goals. Ready to use as the Phase 3 implementation backlog.
+
+
+
+
+
+Phase 3 – Prompts 1–10 (LLM Reasoning + Optimization)
+⭐ Prompt P3-1 — Shared LLM Client + Agent Output Schemas (Foundation)
+
+Covers part of: P3-5 (safe JSON-bounded LLM outputs) and sets the foundation for P3-1..4, P3-6.
+
+Cursor prompt:
+
+Phase 3: Implement shared LLMClient + agent output schemas foundation.
+
+Spec refs:
+- docs/master_project_instruction_full.md (LLM usage, agent outputs)
+- docs/04-agent-templates.md
+- docs/03-data-models-apis.md
+- docs/phase3-mvp-issues.md (P3-5, P3-1..P3-4)
+
+Tasks:
+1) Create or extend src/llm/provider.py:
+   - Define LLMClient interface with:
+       * generate_json(self, prompt: str, schema_name: str, timeout_s: Optional[int]) -> dict
+       * provider-agnostic config (provider, model, max_tokens, temperature, etc.)
+   - Implement at least one concrete provider (e.g., OpenAI/Grok) using existing config conventions.
+   - Ensure we always request JSON-only output and handle token/cost logging hooks.
+
+2) Create src/llm/schemas.py:
+   - Define JSON schemas (or Pydantic models) for agent LLM outputs:
+       * TriageLLMOutput
+       * PolicyLLMOutput
+       * ResolutionLLMOutput
+       * SupervisorLLMOutput
+   - Each schema should include:
+       * structured reasoning (e.g., reasoning_steps[], evidence_references[])
+       * main decision payload (e.g., predicted_exception_type, predicted_severity, policy_decision, action_rationale, etc.)
+       * confidence scores
+       * natural_language_summary
+
+3) Wire schemas into LLMClient:
+   - LLMClient.generate_json() should accept schema_name and know which JSON schema to validate against later (but validation is a separate step).
+
+4) Keep everything tenant-aware:
+   - LLMClient must accept tenant_id for future per-tenant model/tuning (even if Phase 3 MVP simply logs it).
+
+Tests:
+- tests/test_llm_client.py
+   * mock provider HTTP calls
+   * ensure generate_json returns decoded dict and logs basic metadata
+- tests/test_llm_schemas.py
+   * basic instantiation/validation of each schema
+
+⭐ Prompt P3-2 — JSON Schema Validation + Sanitization Layer (Core of P3-5)
+
+Covers: P3-5 (safe JSON-bounded LLM outputs).
+
+Phase 3: Implement strict JSON schema validation and sanitization for all LLM agent outputs.
+
+Spec refs:
+- docs/master_project_instruction_full.md Section 7 (Agent Response Format)
+- docs/phase3-mvp-issues.md P3-5
+
+Tasks:
+1) Create src/llm/validation.py:
+   - validate_llm_output(schema_name: str, raw_text: str) -> dict
+     * tries to parse JSON
+     * validates against the appropriate schema (from src/llm/schemas.py)
+     * on failure, raises ValidationError with detailed info
+
+   - sanitize_llm_output(schema_name: str, parsed: dict) -> dict
+     * strips unknown fields
+     * clamps numeric values to safe ranges where relevant
+     * ensures required fields exist (or applies safe defaults)
+
+2) Add fallback JSON parsing:
+   - If raw_text is almost-JSON (extra text around JSON):
+     * attempt to extract inner JSON block heuristically
+     * re-validate
+
+3) Integrate with LLMClient:
+   - Add helper LLMClient.safe_generate(schema_name, prompt, timeout_s) that:
+       * calls provider
+       * runs validate_llm_output + sanitize_llm_output
+       * returns cleaned dict or raises a well-typed error.
+
+4) Logging & audit:
+   - On validation failure, log event into audit/metrics with:
+       * tenant_id, agent_name, schema_name, error_type.
+
+Tests:
+- tests/test_llm_validation.py
+   * valid vs invalid JSON
+   * extra fields stripped
+   * malformed JSON recovered via fallback
+   * validation errors raised correctly
+
+⭐ Prompt P3-3 — LLM Fallbacks, Timeouts, Circuit Breaker (P3-6)
+
+Covers: P3-6 (fallback strategies and graceful degradation).
+
+Phase 3: Implement LLM fallback strategies, timeouts, and circuit breaker.
+
+Spec refs:
+- docs/master_project_instruction_full.md Section 8 (Safety, Compliance, Reliability)
+- docs/phase3-mvp-issues.md P3-6
+
+Tasks:
+1) Create src/llm/fallbacks.py:
+   - LLMFallbackPolicy:
+       * timeout_s per agent
+       * max_retries
+       * backoff strategy
+       * circuit breaker thresholds (failure count/time window)
+   - implement call_with_fallback(agent_name, tenant_id, schema_name, prompt, rule_based_fn):
+       * try LLMClient.safe_generate with timeout and retries
+       * if persistent failure or circuit breaker open:
+           - call rule_based_fn() (existing deterministic logic)
+           - mark decision as LLM_FALLBACK in metadata
+
+2) Circuit breaker:
+   - Maintain in-memory per-agent/per-tenant breaker state (Phase 3 MVP).
+   - Support: CLOSED → OPEN → HALF_OPEN transitions.
+
+3) Agent integration point:
+   - Expose helper function that agents can call:
+       * llm_or_rules(agent_name, tenant_id, schema_name, prompt, rule_based_fn) -> dict
+
+4) Logging:
+   - All fallback events log:
+       * reason: timeout / validation_error / circuit_open
+       * which path used: LLM vs rule_based.
+
+Tests:
+- tests/test_llm_fallbacks.py
+   * timeouts trigger fallback
+   * repeated failures open circuit breaker
+   * half-open probes work as expected
+   * rule-based fallback used when breaker is open
+
+⭐ Prompt P3-4 — LLM-Augmented TriageAgent (P3-1)
+
+Covers: P3-1 (LLM-enhanced triage with explanations).
+
+Phase 3: Enhance TriageAgent with LLM reasoning + explainability.
+
+Spec refs:
+- docs/master_project_instruction_full.md Section 3 (Triage Agent)
+- docs/04-agent-templates.md
+- docs/phase3-mvp-issues.md P3-1
+
+Assume:
+- Existing src/agents/triage_agent.py from Phase 1.
+- RAG + vector search from Phase 2 already integrated.
+
+Tasks:
+1) Update src/agents/triage_agent.py:
+   - Add a method build_triage_prompt(exception_record, rag_evidence, rules_evidence) -> str
+   - Use llm_or_rules(...) from src/llm/fallbacks.py with schema_name="TriageLLMOutput".
+   - Merge:
+       * deterministic/rule-based classification
+       * LLM suggestions
+       * RAG evidence
+     into a final decision:
+       * exception_type
+       * severity
+       * confidence_score
+
+2) Expose structured reasoning:
+   - Persist LLM reasoning fields into triage output:
+       * reasoning_steps[]
+       * evidence_references[]
+       * natural_language_summary
+   - Ensure these are added to:
+       * audit trail
+       * evidence block used by downstream agents.
+
+3) Rule-based fallback:
+   - If LLM fails or circuit breaker open:
+       * fall back to existing Phase 1 logic (no behavior regression).
+
+Tests:
+- tests/test_triage_agent_llm.py
+   * mock LLMClient and RAG results
+   * verify final triage outcome respects policy + LLM reasoning
+   * verify fallback path works when LLM disabled
+   * ensure reasoning is stored in audit/evidence fields
+
+⭐ Prompt P3-5 — LLM-Augmented PolicyAgent (P3-2)
+Phase 3: Enhance PolicyAgent with LLM rule explanation and policy reasoning.
+
+Spec refs:
+- docs/master_project_instruction_full.md Section 5 (Policy & Guardrails)
+- docs/phase3-mvp-issues.md P3-2
+
+Assume:
+- Existing src/agents/policy_agent.py from Phase 1.
+- Tenant policies & guardrails from Domain/Tenant Policy Packs (Phase 2).
+
+Tasks:
+1) Update src/agents/policy_agent.py:
+   - Add build_policy_prompt(exception_record, triage_result, tenant_policy, domain_pack) -> str
+   - Use llm_or_rules("PolicyAgent", tenant_id, "PolicyLLMOutput", prompt, rule_based_fn).
+   - rule_based_fn should:
+       * use existing deterministic guardrail logic as baseline.
+
+2) LLM output handling:
+   - Explain which guardrails triggered and why.
+   - Provide:
+       * applied_rules[]
+       * violated_rules[]
+       * decision: ALLOW / REQUIRE_APPROVAL / BLOCK
+       * reasoning_steps[]
+       * tenant_policy_explanation
+       * human_readable_violation_report
+
+3) Persist explanations:
+   - Store policy reasoning in:
+       * audit
+       * evidence for SupervisorAgent + dashboards.
+
+Tests:
+- tests/test_policy_agent_llm.py
+   * verify LLM reasoning augmenting rule decisions (not contradicting guardrails)
+   * policy violation report generated
+   * fallback path uses pure rules when LLM unavailable
+
+⭐ Prompt P3-6 — LLM-Augmented ResolutionAgent (P3-3)
+Phase 3: Enhance ResolutionAgent with LLM-based action explanation.
+
+Spec refs:
+- docs/master_project_instruction_full.md Section 4 (Resolution Agent)
+- docs/phase3-mvp-issues.md P3-3
+
+Assume:
+- src/agents/resolution_agent.py exists with playbook execution (Phase 2).
+
+Tasks:
+1) Update src/agents/resolution_agent.py:
+   - Add build_resolution_prompt(exception_record, triage_result, policy_decision, selected_playbook, evidence) -> str
+   - Use llm_or_rules("ResolutionAgent", tenant_id, "ResolutionLLMOutput", prompt, rule_based_fn).
+
+2) LLM output semantics:
+   - Provide:
+       * explanation why this playbook is appropriate
+       * reasons for rejecting alternative playbooks
+       * explanation of tool execution order & dependencies
+       * natural_language_action_summary for operators.
+
+3) Integration with partial automation:
+   - Do NOT change which tools are executed (respect existing guardrails & playbooks).
+   - LLM is advisory on explanation, not an authority for adding new tools here (new playbooks come from P3-9).
+
+4) Persist reasoning:
+   - Store resolution reasoning in:
+       * audit trail
+       * timeline/evidence.
+
+Tests:
+- tests/test_resolution_agent_llm.py
+   * verify explanation fields populated
+   * verify no tools are executed that are not in the approved playbook
+   * fallback retains existing behavior when LLM fails
+
+⭐ Prompt P3-7 — LLM-Augmented SupervisorAgent (P3-4)
+Phase 3: Enhance SupervisorAgent with LLM oversight reasoning.
+
+Spec refs:
+- docs/04-agent-templates.md (SupervisorAgent)
+- docs/phase3-mvp-issues.md P3-4
+
+Assume:
+- src/agents/supervisor_agent.py exists from Phase 2.
+
+Tasks:
+1) Update src/agents/supervisor_agent.py:
+   - Add build_supervisor_prompt(context_snapshot) -> str
+     * includes triage, policy, resolution decisions
+     * includes key evidence and confidence scores
+   - Use llm_or_rules("SupervisorAgent", tenant_id, "SupervisorLLMOutput", prompt, rule_based_fn).
+
+2) Supervisor LLM responsibilities:
+   - Check for:
+       * inconsistencies between agents
+       * high risk + low confidence combos
+       * policy violation risks
+   - Output:
+       * oversight_decision: OK / ESCALATE / REQUIRE_APPROVAL
+       * escalation_reason
+       * anomaly_explanation
+       * suggested_human_message
+
+3) Integration:
+   - Orchestrator uses SupervisorAgent output to:
+       * override next step to ESCALATE or PENDING_APPROVAL when needed.
+
+Tests:
+- tests/test_supervisor_agent_llm.py
+   * verify oversight decisions can trigger escalation
+   * ensure LLM cannot “allow” flows that guardrails blocked
+   * verify fallback uses basic heuristic logic when LLM unavailable
+
+⭐ Prompt P3-8 — Enhanced Policy Learning Loop (P3-7)
+Phase 3: Enhance Policy Learning Loop with outcome analysis and suggestions.
+
+Spec refs:
+- docs/master_project_instruction_full.md Section 6 (Learning/Feedback)
+- docs/phase3-mvp-issues.md P3-7
+
+Assume:
+- src/learning/policy_learning.py exists from Phase 2.
+
+Tasks:
+1) Extend src/learning/policy_learning.py:
+   - Track per-policy-rule outcomes:
+       * success_count, failure_count
+       * MTTR distributions
+       * false_positive_count, false_negative_count (derived from overrides & post-fact corrections)
+
+2) Suggest improvements:
+   - implement suggest_policy_improvements(tenant_id) -> list[Suggestion]
+       * Suggestion includes:
+           - rule_id
+           - detected_issue (too strict / too lenient / low effectiveness)
+           - proposed_change (description only, not applied)
+           - impact_estimate (based on metrics)
+
+3) Feedback integration:
+   - FeedbackAgent should call policy learning with final outcome:
+       * whether resolution was considered successful
+       * whether human overrides occurred.
+
+4) Persist suggestions and surface them:
+   - store suggestions into ./runtime/learning/{tenantId}_policy_suggestions.jsonl.
+
+Tests:
+- tests/test_policy_learning_enhanced.py
+   * simulate rule outcomes
+   * verify suggestions generated correctly
+   * ensure no auto-policy change is applied
+
+⭐ Prompt P3-9 — Automatic Severity Rule Recommendation (P3-8)
+Phase 3: Implement automatic severity rule recommendation engine.
+
+Spec refs:
+- docs/03-data-models-apis.md (Severity rules in Domain Pack)
+- docs/phase3-mvp-issues.md P3-8
+
+Tasks:
+1) Create src/learning/severity_recommender.py:
+   - analyze_severity_patterns(tenant_id, domain_name) -> list[SeverityRuleSuggestion]
+   - data sources:
+       * historical exceptions
+       * triage decisions
+       * overrides where severity was changed by humans
+   - identify patterns like:
+       * specific attributes/fields that correlate with escalated cases
+       * combinations that should be HIGH instead of MEDIUM, etc.
+
+2) Suggest rules:
+   - each SeverityRuleSuggestion includes:
+       * candidate_rule (domain-pack-compatible structure)
+       * confidence_score
+       * example_exceptions (ids) that motivated the rule.
+
+3) Integrate with Policy Learning:
+   - policy_learning can call severity_recommender and aggregate into a combined suggestion report.
+
+4) Persist + audit:
+   - write suggestions to ./runtime/learning/{tenantId}_{domainName}_severity_suggestions.jsonl.
+
+Tests:
+- tests/test_severity_recommender.py
+   * synthetic data where a clear pattern exists → verify rule suggestion points it out
+   * ensure suggestions are non-destructive (no rules auto-applied)
+
+⭐ Prompt P3-10 — Automatic Playbook Recommendation & Optimization (P3-9)
+Phase 3: Implement automatic playbook recommendation and optimization engine.
+
+Spec refs:
+- docs/master_project_instruction_full.md Section 4 (Resolution Agent)
+- docs/03-data-models-apis.md (Playbooks)
+- docs/phase3-mvp-issues.md P3-9
+
+Assume:
+- PlaybookManager + LLM-based playbook generation exist from Phase 2.
+
+Tasks:
+1) Create src/learning/playbook_recommender.py:
+   - analyze_resolutions(tenant_id, domain_name) -> list[PlaybookSuggestion]
+   - use:
+       * historical successful resolutions (high success, low MTTR)
+       * patterns of repeated manual steps by operators
+   - output suggestions:
+       * candidate_playbook (playbook schema)
+       * effectiveness_prediction (based on historical stats)
+       * supporting_examples (exception ids).
+
+2) Optimization:
+   - optimize_existing_playbooks(tenant_id, domain_name):
+       * detect underperforming playbooks (low success, long MTTR)
+       * suggest modifications (e.g., remove redundant steps, adjust order)
+       * call into existing LLM-based playbook generator where appropriate BUT never auto-activate.
+
+3) Human-in-loop workflow:
+   - design structures for:
+       * mark_suggestion_reviewed(...)
+       * mark_playbook_accepted/rejected(...)
+   - persist suggestions and decisions into ./runtime/learning/{tenantId}_{domainName}_playbook_suggestions.jsonl.
+
+Tests:
+- tests/test_playbook_recommender.py
+   * verify suggestions based on synthetic success metrics
+   * verify optimization identifies poor playbooks and proposes changes
+
+
+We already covered P3-1…P3-10; let’s continue with the next 10 prompts, mapped to the Phase 3 issues and in a dependency-friendly order.
+
+Below are ready-to-paste Cursor prompts for:
+
+P3-11 – Metrics-driven optimization engine
+
+P3-12 – Operator UI backend APIs
+
+P3-13 – Natural language interaction API
+
+P3-14 – Re-run & what-if simulation API
+
+P3-15 – Supervisor dashboard APIs
+
+P3-16 – Config diff/view APIs
+
+P3-17 – Streaming ingestion mode
+
+P3-18 – Incremental decision streaming
+
+P3-19 – Backpressure & rate control
+
+P3-20 – Expanded safety rules
+
+They assume your existing structure (FastAPI app, agents in src/agents/*.py, learning modules, etc.).
+
+🔹 Prompt 11 — Metrics-Driven Optimization Engine (P3-11)
+Phase 3: Implement metrics-driven optimization engine (P3-11).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-11 (Metrics-Driven Optimization Engine)
+- docs/master_project_instruction_full.md Section 13 (Key Success Metrics)
+- Phase 2: metrics + policy learning modules
+
+Goals:
+- Central engine that consumes metrics (success rates, MTTR, false pos/neg)
+- Produces optimization recommendations across:
+  * policies
+  * severity rules
+  * playbooks
+  * guardrails
+
+Tasks:
+1) Create src/optimization/engine.py:
+   - Define dataclasses / Pydantic models:
+       * OptimizationSignal (source, metric_type, current_value, target_value, tenant_id, domain)
+       * OptimizationRecommendation (id, tenant_id, domain, category: ["policy","severity","playbook","guardrail"], description, impact_estimate, confidence, related_entities)
+   - Implement OptimizationEngine with methods:
+       * collect_signals(tenant_id, domain) -> list[OptimizationSignal]
+          - pulls from:
+              · policy learning metrics
+              · severity recommender metrics
+              · playbook recommender metrics
+              · guardrail recommender metrics
+       * generate_recommendations(tenant_id, domain) -> list[OptimizationRecommendation]
+          - calls into:
+              · policy_learning.suggest_policy_improvements(...)
+              · severity_recommender.analyze_severity_patterns(...)
+              · playbook_recommender.analyze_resolutions(...)
+              · guardrail_recommender.analyze_guardrail_outcomes(...)
+          - normalizes all into OptimizationRecommendation objects
+
+2) Storage:
+   - Write recommendations to:
+       ./runtime/optimization/{tenantId}_{domain}_recommendations.jsonl
+   - Each line = JSON of OptimizationRecommendation with timestamp.
+
+3) Integration:
+   - Add a service entry point:
+       src/services/optimization_service.py
+       * run_periodic_optimization(tenant_id, domain) -> None
+       * This will be used by ops/cron or admin API (Phase 3+).
+
+4) Tests:
+   - tests/test_optimization_engine.py:
+       * use fake policy/severity/playbook/guardrail suggestors
+       * verify combined recommendations are generated and written
+       * ensure categories, impact, and confidence fields are set.
+
+Keep implementation Phase-3-MVP simple: no A/B rollout yet, just analysis + recommendation objects.
+
+🔹 Prompt 12 — Operator UI Backend APIs for Exception Browsing (P3-12)
+Phase 3: Implement Operator UI backend APIs for exception browsing (P3-12).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-12 (Operator UI Backend APIs) 
+- docs/03-data-models-apis.md (System-Level REST APIs)
+- Phase 1: Status API + Audit Trail
+
+Goals:
+- REST APIs to power an operator UI:
+  * browse exceptions, decisions, evidence, audit history
+  * filter/search/paginate
+  * access RAG evidence and agent reasoning
+  * optional real-time updates via WebSocket/SSE
+
+Tasks:
+1) Create src/api/router_operator.py:
+   - FastAPI APIRouter with prefix e.g. "/ui":
+       * GET /ui/exceptions
+           - query params: tenant_id, domain, status, severity, from_ts, to_ts, page, page_size, search
+       * GET /ui/exceptions/{exception_id}
+           - returns full ExceptionRecord plus agent decisions
+       * GET /ui/exceptions/{exception_id}/evidence
+           - returns evidence chains, RAG results, tool outputs
+       * GET /ui/exceptions/{exception_id}/audit
+           - returns audit events related to this exception
+
+2) Data sources:
+   - reuse existing persistence from:
+       * exception store (Phase 2)
+       * audit trail (Phase 1)
+       * RAG memory references
+   - add helper functions in src/services/ui_query_service.py:
+       * search_exceptions(...)
+       * get_exception_detail(exception_id)
+       * get_exception_evidence(exception_id)
+       * get_exception_audit(exception_id)
+
+3) Real-time updates:
+   - For now, implement SSE or basic WebSocket stub:
+       * GET /ui/stream/exceptions (SSE)
+           - placeholder returning heartbeat and dummy "update" events
+           - actual incremental updates completed in P3-18
+
+4) Wire router:
+   - Include router_operator in main FastAPI app (e.g., src/server/app.py).
+
+5) Tests:
+   - tests/test_operator_apis.py:
+       * test browsing with pagination and filters using in-memory or test DB
+       * test detail/evidence/audit endpoints shape
+       * test SSE/WebSocket endpoint at least returns valid handshake/stream.
+
+🔹 Prompt 13 — Natural Language Interaction API (P3-13)
+Phase 3: Implement natural language interaction API for agent queries (P3-13).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-13 (Natural Language Interaction API) :contentReference[oaicite:1]{index=1}
+- docs/master_project_instruction_full.md Section 7 (Explainable decisions)
+- LLM client + schemas from P3-1..P3-6
+
+Goals:
+- Operators can ask:
+   * "Why did you block this?"
+   * "What evidence did Triage use?"
+   * "What alternative actions were possible?"
+- Answers use existing explainability data + LLM summarization.
+
+Tasks:
+1) Create src/api/router_nlq.py:
+   - POST /ui/nlq
+       * body:
+           - tenant_id
+           - exception_id
+           - question: str
+       * response:
+           - answer: str
+           - answer_sources: list[evidence_ids]
+           - agent_context_used: list[agent_names]
+
+2) Implement NLQ service:
+   - src/services/nlq_service.py with:
+       * answer_question(tenant_id, exception_id, question) -> dict
+   - Steps:
+       1. Fetch exception, decisions, evidence, timelines from stores.
+       2. Build compact "context bundle" (only relevant facts).
+       3. Build LLM prompt:
+           - include question
+           - include structured context (agents, decisions, evidence)
+           - instruct LLM to answer grounded in provided context only.
+       4. Use LLMClient.safe_generate(schema_name="NLQAnswer" or simple text mode).
+       5. Return answer + references (ids of evidence/decisions used).
+
+3) Safety:
+   - Ensure NLQ cannot see cross-tenant data.
+   - Ensure question + context are logged/audited.
+
+4) Tests:
+   - tests/test_nlq_api.py:
+       * mock LLM client
+       * verify the API shapes and that context bundle is constructed
+       * verify multi-question scenarios (short test).
+
+🔹 Prompt 14 — Re-Run & What-If Simulation API (P3-14)
+Phase 3: Implement re-run and what-if simulation API (P3-14).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-14 (Re-Run and What-If Simulation API) :contentReference[oaicite:2]{index=2}
+- docs/master_project_instruction_full.md Section 4 (Core Capabilities)
+- Orchestrator from Phase 1 + advanced orchestration from Phase 2
+
+Goals:
+- Allow operators to:
+   * re-run an exception with minor parameter changes
+   * run "what-if" scenarios (e.g. different severity or policy settings)
+   * run in simulation mode (no persistent side effects)
+
+Tasks:
+1) Create src/api/router_simulation.py:
+   - POST /ui/exceptions/{exception_id}/rerun
+       * body: { tenant_id, overrides?: { severity?, policies?, playbook? }, simulation: bool }
+   - GET /ui/simulations/{simulation_id}
+       * returns simulation result, including decisions, evidence, comparison to original.
+
+2) Orchestrator integration:
+   - In src/orchestrator/engine.py (or equivalent):
+       * add run_simulation(exception_record, overrides, tenant_id) -> SimulationResult
+       * simulation should:
+           - reuse same agent pipeline
+           - respect guardrails
+           - NOT persist changes to real exception state
+           - tag audit events as "SIMULATION".
+
+3) Comparison logic:
+   - Implement helper in src/services/simulation_compare.py:
+       * compare_runs(original_run, simulated_run) -> diff structure
+           - highlight changed: severity, decisions, actions, approvals required.
+
+4) Storage:
+   - Save simulation results to:
+       ./runtime/simulations/{tenantId}/{simulationId}.json
+
+5) Tests:
+   - tests/test_simulation_api.py
+       * verify rerun and what-if APIs
+       * verify simulation mode does not update main exception record
+       * verify comparison output is generated.
+
+🔹 Prompt 15 — Supervisor Dashboard Backend APIs (P3-15)
+Phase 3: Implement Supervisor Dashboard backend APIs (P3-15).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-15 (Supervisor Dashboard Backend APIs)
+- docs/master_project_instruction_full.md (Supervisor responsibilities, oversight, metrics)
+
+Goals:
+- Supervisor view over:
+   * high-risk exceptions
+   * escalations
+   * policy violations
+   * optimization suggestions
+
+Tasks:
+1) Create src/api/router_supervisor_dashboard.py:
+   - GET /ui/supervisor/overview
+       * query: tenant_id, domain, from_ts, to_ts
+       * returns:
+           - counts (by severity, status)
+           - number of escalations, pending approvals
+           - top policy violations
+           - summary of optimization suggestions.
+   - GET /ui/supervisor/escalations
+       * returns list of escalated exceptions with key metadata.
+   - GET /ui/supervisor/policy-violations
+       * returns recent policy violation events.
+
+2) Service layer:
+   - src/services/supervisor_dashboard_service.py:
+       * aggregate from:
+           - audit logs
+           - supervisor decisions
+           - policy violation detector (later P3-22)
+           - optimization engine suggestions.
+
+3) Performance:
+   - Do simple aggregation in MVP; no heavy analytics store required yet.
+
+4) Tests:
+   - tests/test_supervisor_dashboard_api.py
+       * use synthetic stored events
+       * verify API shapes and basic aggregation.
+
+🔹 Prompt 16 — Config Viewing & Diff APIs (P3-16)
+Phase 3: Implement configuration viewing and diffing APIs (P3-16).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-16 (Config Viewing & Diff APIs) :contentReference[oaicite:3]{index=3}
+- docs/03-data-models-apis.md (Domain Pack Schema, Tenant Policy Pack Schema)
+- Phase 2: Domain Pack loader + admin APIs
+
+Goals:
+- Backend APIs to:
+   * view Domain Packs, Tenant Policy Packs, Playbooks
+   * diff versions
+   * view history and support rollback stubs
+
+Tasks:
+1) Create src/api/router_config_view.py:
+   - GET /admin/config/domain-packs
+       * query: tenant_id?, domain?
+   - GET /admin/config/domain-packs/{id}
+   - GET /admin/config/tenant-policies/{id}
+   - GET /admin/config/playbooks/{id}
+   - GET /admin/config/diff
+       * query: type (domain_pack|tenant_policy|playbook), left_version, right_version
+
+2) Implement service layer:
+   - src/services/config_view_service.py:
+       * list_configs(type, tenant_id, domain)
+       * get_config_by_id(type, id)
+       * diff_configs(type, left_version, right_version) -> structured diff
+   - Use underlying storage where Domain Packs & Policies already live (Phase 2).
+
+3) History & rollback stubs:
+   - For MVP:
+       * history endpoints show ordered versions with timestamps
+       * rollback endpoint can be a stub that validates but does not apply in Phase 3.
+
+4) Tests:
+   - tests/test_config_view_apis.py
+       * verify listing, detail, diff responses on synthetic configs.
+
+🔹 Prompt 17 — Streaming Ingestion Mode (Kafka/MQ Stub) (P3-17)
+Phase 3: Implement streaming ingestion mode (Kafka/MQ stub) (P3-17).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-17 (Streaming Ingestion Mode) :contentReference[oaicite:4]{index=4}
+- docs/master_project_instruction_full.md Section 2 (Exception Intake & Normalization - streaming + batch)
+- Phase 1: Exception ingestion service + REST endpoint
+
+Goals:
+- Add optional streaming ingestion:
+   * Kafka or MQ stub abstraction
+   * both batch (existing REST) and streaming supported
+
+Tasks:
+1) Create src/ingestion/streaming.py:
+   - Define interface:
+       * class StreamingIngestionBackend(Protocol):
+           - start()
+           - stop()
+       * KafkaIngestionBackend(StreamingIngestionBackend) (stub implementation using aiokafka or placeholder interface).
+   - Define message schema for exception messages (consistent with ExceptionRecord input).
+
+2) Abstraction:
+   - Implement StreamingIngestionService:
+       * __init__(backend: StreamingIngestionBackend, normalizer)
+       * on message:
+           - normalize to ExceptionRecord
+           - pass into orchestrator / queue.
+
+3) Configuration:
+   - Add config entries:
+       * streaming.enabled
+       * streaming.backend = "kafka" | "stub"
+       * streaming.kafka.bootstrap_servers, topic, group_id etc.
+   - Provide default stub backend that just reads from an in-memory queue for tests.
+
+4) Tests:
+   - tests/test_streaming_ingestion.py
+       * use stub backend that pushes messages into service
+       * verify messages end up in orchestrator or processing queue.
+
+🔹 Prompt 18 — Incremental Decision Streaming (Stage-by-Stage Updates) (P3-18)
+Phase 3: Implement incremental decision streaming (stage-by-stage updates) (P3-18).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-18 (Incremental Decision Streaming) 
+- docs/master_project_instruction_full.md Section 4 (Agent Orchestration Workflow)
+- Phase 1: Orchestrator core
+- Phase 3: operator UI APIs (P3-12)
+
+Goals:
+- Send live updates as each stage completes:
+   * Intake → Triage → Policy → Resolution → Feedback
+- Expose via WebSocket/SSE for operator UI.
+
+Tasks:
+1) Orchestrator events:
+   - In src/orchestrator/engine.py:
+       * define EventBus or callback mechanism (simple MVP):
+           - on_stage_completed(event: StageCompletedEvent)
+       * StageCompletedEvent includes:
+           - exception_id, stage_name, timestamp, decision_summary
+
+2) Streaming transport:
+   - Implement src/streaming/decision_stream.py:
+       * subscribe to orchestrator events
+       * push updates into:
+           - in-memory pub/sub registry keyed by tenant_id, exception_id.
+
+3) API integration:
+   - Enhance /ui/stream/exceptions endpoint (from P3-12) to:
+       * allow subscription per exception_id
+       * use Server-Sent Events or WebSocket to stream StageCompletedEvent as JSON.
+
+4) Tests:
+   - tests/test_incremental_streaming.py
+       * simulate orchestrator running through all stages
+       * verify events are emitted in correct order
+       * verify SSE/WebSocket test client receives events.
+
+🔹 Prompt 19 — Backpressure & Rate Control for Streaming (P3-19)
+Phase 3: Implement backpressure and rate control for streaming (P3-19).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-19 (Backpressure and Rate Control) :contentReference[oaicite:6]{index=6}
+- docs/master_project_instruction_full.md Section 8 (Safety, Compliance, and Reliability)
+- Phase 3: streaming ingestion (P3-17) and incremental streaming (P3-18)
+- Phase 2: advanced vector DB integration
+
+Goals:
+- Protect:
+   * vector DB
+   * tool execution engine
+   * orchestrator
+- from overload via backpressure, rate limiting, and adaptive control.
+
+Tasks:
+1) Queue + metrics:
+   - Add queue depth tracking to StreamingIngestionService and orchestrator work queue:
+       * current_depth, max_depth thresholds.
+   - Expose metrics (e.g., via existing metrics subsystem).
+
+2) Backpressure policy:
+   - Create src/streaming/backpressure.py:
+       * BackpressurePolicy with:
+           - max_queue_depth
+           - max_in_flight_exceptions
+           - rate_limit_per_tenant
+       * controller that:
+           - when thresholds exceeded:
+               · slows down or pauses consuming from Kafka/MQ
+               · emits events/alerts
+               · optionally drops low-priority messages in MVP (configurable).
+
+3) Integration:
+   - In streaming backend(s), periodically consult BackpressurePolicy before polling/committing messages.
+   - For vector DB or tools:
+       * optional check to delay new operations when system under stress.
+
+4) Tests:
+   - tests/test_backpressure.py:
+       * simulate high message rates
+       * verify streaming slows or pauses
+       * verify events/metrics updated when thresholds crossed.
+
+🔹 Prompt 20 — Expanded Safety Rules for LLM Calls & Tool Usage (P3-20)
+Phase 3: Implement expanded safety rules for LLM calls and tool usage (P3-20).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-20 (Expanded Safety Rules for LLM Calls and Tool Usage) 
+- docs/08-security-compliance.md (Security & Compliance Checklist)
+- Phase 1: Tool Registry + Invocation
+- Phase 3: P3-5 (safe JSON-bounded outputs)
+
+Goals:
+- Central safety rules around:
+   * LLM usage (rate, tokens, cost)
+   * tool usage (execution time, resources, retries)
+   * per-tenant overrides
+
+Tasks:
+1) Create src/safety/rules.py:
+   - SafetyRuleConfig:
+       * llm:
+           - max_tokens_per_call
+           - max_calls_per_minute
+           - max_cost_per_hour (approx)
+       * tools:
+           - max_exec_time_ms
+           - max_retries
+           - disallowed_tools
+       * tenant_overrides: dict[tenant_id, SafetyRuleConfig]
+
+   - SafetyEnforcer:
+       * check_llm_call(tenant_id, tokens, estimated_cost) -> None or raises SafetyViolation
+       * check_tool_call(tenant_id, tool_name, estimated_time_ms) -> None or raises SafetyViolation
+       * record_usage(...) for metrics & enforcement.
+
+2) Integrate with LLMClient:
+   - Before making calls, consult SafetyEnforcer.check_llm_call.
+   - On completion, record_usage.
+
+3) Integrate with ExecutionEngine:
+   - Before invoking a tool, call SafetyEnforcer.check_tool_call.
+   - On completion, record usage and flag long-running executions.
+
+4) Config:
+   - Add safety configuration section to existing config files:
+       * global defaults
+       * per-tenant overrides.
+
+5) Tests:
+   - tests/test_safety_rules.py:
+       * verify rules block calls when limits exceeded
+       * verify tenant-specific overrides work
+       * ensure safety violations are logged/audited.
+
+
+If you want, next step I can generate the remaining Phase 3 prompts for:
+
+Red-team harness (P3-21), policy violation detection (P3-22)
+
+Quotas & SLO/SLA (P3-23–P3-26)
+
+Runbooks, decision timelines, evidence tracking, explanation APIs (P3-27–P3-31).
+
+
+
+
+
+
+
+Love it, let’s finish Phase 3 properly 💪
+
+Below are Phase 3 code prompts for P3-21 → P3-31 in a Cursor-friendly format, continuing the same style as before. Each is self-contained so you can paste them one by one.
+
+🔹 Prompt 21 — Red-Team Test Harness for LLM Prompts & Outputs (P3-21)
+Phase 3: Implement Red-Team Test Harness for LLM prompts and outputs (P3-21).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-21 (Red-Team Test Harness for LLM Prompts and Outputs)
+- docs/08-security-compliance.md (Security & Compliance Checklist)
+
+Goals:
+- Create a red-team harness that can:
+  * run adversarial tests against LLM prompts and outputs
+  * simulate prompt injection / jailbreaking attempts
+  * validate outputs against safety rules and schemas
+  * produce reports and plug into CI
+
+Tasks:
+1) Create src/redteam/harness.py:
+   - Define data models:
+       * RedTeamScenario(id, name, description, agent_name, schema_name, prompt_template, attack_type, expected_outcome)
+       * RedTeamResult(scenario_id, passed, violations, raw_output, parsed_output, metadata)
+   - Implement RedTeamHarness with:
+       * run_scenario(scenario: RedTeamScenario) -> RedTeamResult
+          - builds adversarial prompt from template + attack pattern
+          - calls LLMClient.safe_generate(schema_name=...)
+          - uses validation + safety modules to detect violations
+       * run_suite(scenarios: list[RedTeamScenario]) -> list[RedTeamResult]
+
+2) Scenario library:
+   - Add src/redteam/scenarios.py with predefined scenarios:
+       * injection into system prompt
+       * instruction to ignore safety rules
+       * attempts to bypass allow-lists
+       * attempts to generate unstructured, non-JSON output
+   - Focus on triage, policy, resolution, supervisor agents first.
+
+3) Reporting:
+   - Implement src/redteam/reporting.py:
+       * generate_report(results: list[RedTeamResult]) -> dict
+       * write JSON/Markdown reports under:
+           ./runtime/redteam/{timestamp}_report.json
+           ./runtime/redteam/{timestamp}_report.md
+
+4) CI entrypoint:
+   - Add a CLI/pytest-style entry:
+       * scripts/run_redteam.py
+       * can be called from CI to run default scenario suite and fail build on critical violations.
+
+5) Tests:
+   - tests/test_redteam_harness.py:
+       * mock LLM client to produce both safe and unsafe outputs
+       * verify detection of:
+           - schema violations
+           - safety rule violations
+           - obvious prompt injection patterns
+
+🔹 Prompt 22 — Policy Violation & Unauthorized Tool Usage Detection (P3-22)
+Phase 3: Implement policy violation and unauthorized tool usage detection (P3-22).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-22 (Policy Violation and Unauthorized Tool Usage Detection)
+- docs/master_project_instruction_full.md Section 8 (Safety, Compliance, and Reliability)
+
+Goals:
+- Detect when:
+  * decisions violate tenant/domain policies
+  * tools are used outside allow-lists or misconfigured
+- Provide real-time alerts + automatic blocking of unsafe actions.
+
+Tasks:
+1) Create src/safety/violation_detector.py:
+   - Data models:
+       * PolicyViolation(id, tenant_id, exception_id, agent_name, rule_id, description, severity, timestamp)
+       * ToolViolation(id, tenant_id, exception_id, tool_name, description, severity, timestamp)
+   - Implement ViolationDetector with:
+       * check_policy_decision(tenant_id, exception_record, triage_result, policy_decision, tenant_policy) -> list[PolicyViolation]
+       * check_tool_call(tenant_id, exception_id, tool_def, tool_call_request) -> Optional[ToolViolation]
+       * record_violation(violation) -> None
+
+2) Integration:
+   - In PolicyAgent (src/agents/policy.py):
+       * after final decision, call check_policy_decision(...)
+       * if severe violation detected -> mark decision as BLOCK and notify.
+   - In ExecutionEngine (before actual tool invocation):
+       * call check_tool_call(...)
+       * if violation returned -> block call and raise SafetyViolation.
+
+3) Monitoring & alerting:
+   - Integrate with observability:
+       * emit metrics per violation type (policy/tool, severity)
+       * send alerts via existing notification service (Phase 2).
+   - Store violations under:
+       ./runtime/violations/{tenantId}_violations.jsonl
+
+4) Incident workflow stub:
+   - Add src/safety/incidents.py:
+       * open_incident(violation) -> incident_id
+       * close_incident(incident_id, resolution_summary)
+     (Phase 3 MVP: just log and persist; full integration with ITSM can be later.)
+
+5) Tests:
+   - tests/test_violation_detector.py:
+       * simulate decisions that contradict policies
+       * simulate tool invocations not on allow-list
+       * verify violations emitted, logged, and block behavior executed.
+
+🔹 Prompt 23 — Synthetic Adversarial Test Suites for High-Risk Domains (P3-23)
+Phase 3: Implement synthetic adversarial test suites for high-risk domains (P3-23).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-23 (Synthetic Adversarial Test Suites for High-Risk Domains)
+- docs/08-security-compliance.md (Regulatory Alignment - FINRA/HIPAA)
+
+Goals:
+- Build domain-specific adversarial suites for:
+   * finance (FINRA-style constraints)
+   * healthcare (HIPAA-style constraints)
+- Plug into red-team harness for automated runs.
+
+Tasks:
+1) Create src/redteam/adversarial_suites.py:
+   - Define:
+       * build_finance_adversarial_suite() -> list[RedTeamScenario]
+       * build_healthcare_adversarial_suite() -> list[RedTeamScenario]
+   - Scenarios should:
+       * craft malicious or edge-case exceptions (e.g., sensitive data, suspicious patterns)
+       * attempt to steer agents to violate policies or regulatory constraints.
+   - Tag scenarios with metadata:
+       * domain = "finance" | "healthcare"
+       * regulation = "FINRA" | "HIPAA"
+
+2) Synthetic data generation:
+   - Under src/redteam/data_generators.py:
+       * generate_finance_exception_edge_cases()
+       * generate_healthcare_exception_edge_cases()
+   - Use Domain Packs for those domains where possible so exceptions are structurally valid.
+
+3) Execution integration:
+   - Update scripts/run_redteam.py:
+       * add flags: --domain finance|healthcare|all
+       * run appropriate adversarial suite(s) and produce domain-specific report sections.
+
+4) Reporting:
+   - Extend redteam/reporting.py to:
+       * include per-domain section with:
+           - scenarios run
+           - pass/fail counts
+           - regulatory-related violations.
+
+5) Tests:
+   - tests/test_adversarial_suites.py:
+       * ensure suites are built with expected number of scenarios
+       * ensure generated exceptions conform to the Domain Pack schema
+       * use stubbed harness to verify suite invocation.
+
+🔹 Prompt 24 — Infrastructure Hardening for Many Domains & Tenants (P3-24)
+Phase 3: Implement infrastructure hardening for many domains & tenants (P3-24).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-24 (Hardening for Many Domains & Tenants)
+- docs/01-architecture.md (Multi-Tenant Isolation Model)
+
+Goals:
+- Support:
+   * many domains per tenant
+   * many tenants on shared infra
+- Through:
+   * resource pooling/isolation
+   * domain pack caching and lazy loading
+   * DB partitioning/indexing hooks.
+
+Tasks:
+1) Domain pack caching:
+   - In src/domain/packs.py (or equivalent):
+       * implement DomainPackCache:
+           - get_pack(tenant_id, domain_name, version=None)
+               · use in-memory LRU cache
+               · load lazily from storage when missing
+           - invalidate(tenant_id, domain_name, version)
+       * ensure thread-safety.
+
+2) Tenant-specific resource pools:
+   - In src/infrastructure/resources.py:
+       * define TenantResourcePool:
+           - db_connections
+           - vector_db_clients
+           - tool_client_limiter
+       * implement simple registry:
+           - get_pool(tenant_id) -> TenantResourcePool
+       * use pooling for:
+           - DB access (where applicable)
+           - vector store adapters
+           - tool HTTP clients.
+
+3) DB partitioning / indexing:
+   - In persistence layer (e.g., src/storage/exception_store.py, audit_store, metrics_store):
+       * add partitioning key = tenant_id (and optionally domain).
+       * ensure compound indexes on:
+           - tenant_id, domain, created_at
+           - tenant_id, status, severity.
+
+4) Perf hooks:
+   - Add a small script:
+       * scripts/run_multitenant_smoke.py
+       * spins up synthetic tenants/domains, sends traffic, and logs latency + resource usage (MVP).
+
+5) Tests:
+   - tests/test_domain_pack_cache.py
+   - tests/test_tenant_resource_pool.py
+       * verify caching, invalidation, and tenant isolation
+       * verify no cross-tenant sharing of caches that should be isolated.
+
+🔹 Prompt 25 — SLO/SLA Metrics Definitions & Monitoring (P3-25)
+Phase 3: Implement SLO/SLA metrics definitions and monitoring (P3-25).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-25 (SLO/SLA Metrics Definitions and Monitoring)
+- docs/master_project_instruction_full.md Section 13 (Key Success Metrics)
+- Phase 2: metrics collection + dashboards
+
+Goals:
+- Define and track SLO/SLA per tenant:
+   * latency, throughput, error rates
+   * auto-resolution rate, MTTR
+- Provide monitoring, alerts, and reporting.
+
+Tasks:
+1) SLO config:
+   - Create src/observability/slo_config.py:
+       * SLOConfig(tenant_id, domain, target_latency_ms, target_error_rate, target_mttr_minutes, target_auto_resolution_rate, etc.)
+       * load from config file:
+           ./config/slo/{tenantId}_{domain}.yaml (if present) with sensible defaults otherwise.
+
+2) Metrics computation:
+   - In src/observability/slo_engine.py:
+       * compute_slo_status(tenant_id, domain, window) -> SLOStatus
+         - aggregates metrics from existing metrics subsystem:
+             · p95 latency
+             · error rate
+             · mttr
+             · auto-resolution rate
+       * SLOStatus includes:
+           - passed/failed threshold per dimension
+           - current vs target.
+
+3) Monitoring & alerting:
+   - Periodic job (or callable service):
+       * run_slo_check_all_tenants() -> list[SLOStatus]
+       * for any failures, generate alerts via notification service + log to:
+           ./runtime/slo/{timestamp}_slo_status.jsonl
+
+4) Dashboard support:
+   - Provide helper for APIs to expose SLOStatus summaries for supervisor dashboard (P3-15) – just implement a reusable function, not API wiring here.
+
+5) Tests:
+   - tests/test_slo_engine.py:
+       * feed synthetic metrics
+       * verify SLOStatus classification
+       * ensure tenant-specific configs override defaults.
+
+🔹 Prompt 26 — Tenancy-Aware Quotas & Limits (LLM, Vector DB, Tools) (P3-26)
+Phase 3: Implement tenancy-aware quotas and limits (LLM, vector DB, tool calls) (P3-26).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-26 (Tenancy-Aware Quotas and Limits)
+- docs/01-architecture.md (Multi-Tenant Isolation Model)
+- Phase 3: P3-20 (Expanded Safety Rules)
+
+Goals:
+- Implement hard quotas per tenant for:
+   * LLM API (tokens, requests, cost)
+   * vector DB operations
+   * tool executions
+- Connect to monitoring and enforcement.
+
+Tasks:
+1) Quota models:
+   - Create src/safety/quotas.py:
+       * QuotaConfig(tenant_id, llm_tokens_per_day, llm_requests_per_minute, llm_cost_per_day, vector_queries_per_minute, vector_storage_mb, tool_calls_per_minute, tool_exec_time_ms_per_minute, etc.)
+       * QuotaUsage trackers (in-memory + persisted snapshots):
+           - current usage counters per window.
+
+2) Enforcement:
+   - QuotaEnforcer with:
+       * check_llm_quota(tenant_id, tokens, estimated_cost) -> None or raises QuotaExceeded
+       * check_vector_quota(tenant_id, query_count, write_count, storage_mb_delta)
+       * check_tool_quota(tenant_id, tool_name, estimated_exec_time_ms)
+       * record_usage(...) for each resource type.
+
+3) Integration:
+   - Hook into:
+       * LLMClient before calls (besides SafetyEnforcer).
+       * VectorStore adapter methods (query, upsert).
+       * ExecutionEngine before tool execution.
+   - On QuotaExceeded:
+       * block operation
+       * log violation and emit alerts.
+
+4) Monitoring & reporting:
+   - Periodically persist quota usage to:
+       ./runtime/quotas/{tenantId}_usage.jsonl
+   - Provide helper to retrieve usage summaries for reporting and dashboards.
+
+5) Tests:
+   - tests/test_quota_enforcer.py:
+       * simulate usage that stays under quotas
+       * simulate overages and verify QuotaExceeded
+       * ensure per-tenant isolation.
+
+🔹 Prompt 27 — Operational Runbooks & Incident Playbooks (P3-27)
+Phase 3: Implement operational runbooks and incident playbooks (P3-27).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-27 (Operational Runbooks)
+- docs/master_project_instruction_full.md Section 8 (Safety, Compliance, and Reliability)
+
+Goals:
+- Provide structured runbooks for:
+   * common error conditions
+   * platform incidents
+- Integrate with observability + notification.
+
+Tasks:
+1) Runbook models:
+   - Create src/operations/runbooks.py:
+       * Runbook(id, name, description, triggers, steps, severity, owner, tags)
+       * RunbookExecution(id, runbook_id, incident_id, start_time, end_time, status, notes)
+   - Load runbook definitions from:
+       ./config/runbooks/*.yaml
+
+2) Triggering:
+   - Implement suggest_runbooks_for_incident(incident) -> list[Runbook]
+       * matches on tags, severity, component, error codes.
+
+3) Tracking:
+   - Implement RunbookExecutor:
+       * start_execution(runbook, incident) -> RunbookExecution
+       * complete_execution(execution_id, notes, status)
+       * persist executions to:
+           ./runtime/runbooks/executions.jsonl
+
+4) Integration hooks:
+   - Connect to:
+       * violation incidents (from P3-22)
+       * SLO/SLA violations (P3-25)
+       * major errors from observability subsystem.
+   - For Phase 3 MVP, simple function calls from wherever incidents are created.
+
+5) Tests:
+   - tests/test_runbooks.py:
+       * load sample runbooks
+       * verify suggestion logic
+       * verify execution tracking.
+
+🔹 Prompt 28 — Human-Readable Decision Timelines (P3-28)
+Phase 3: Implement human-readable decision timelines for exceptions (P3-28).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-28 (Decision Timelines)
+- docs/master_project_instruction_full.md Section 8 (Explainable decisions)
+
+Goals:
+- Build a timeline representation for each exception:
+   * which agents ran, when
+   * what evidence was used
+   * why actions/playbooks were chosen/rejected.
+
+Tasks:
+1) Timeline builder:
+   - Create src/explainability/timelines.py:
+       * TimelineEvent(id, timestamp, stage_name, agent_name, summary, evidence_ids, reasoning_excerpt)
+       * DecisionTimeline(exception_id, events: list[TimelineEvent])
+   - Implement:
+       * build_timeline_for_exception(exception_id) -> DecisionTimeline
+          - pulls from:
+              · audit trail events
+              · agent outputs (triage, policy, resolution, supervisor, feedback)
+              · evidence tracking (P3-29 will enrich this further).
+
+2) Visualization-friendly structure:
+   - Ensure DecisionTimeline can be serialized to:
+       * JSON for APIs
+       * a simple Markdown/ASCII representation for logs.
+
+3) Export and sharing:
+   - Add helper:
+       * export_timeline_markdown(timeline) -> str
+       * write to:
+           ./runtime/timelines/{exceptionId}.md
+
+4) Tests:
+   - tests/test_decision_timelines.py:
+       * seed synthetic audit + agent outputs
+       * verify correct event ordering and summaries
+       * verify evidence_ids and reasoning excerpts included.
+
+🔹 Prompt 29 — Evidence Tracking & Attribution System (P3-29)
+Phase 3: Implement evidence tracking and attribution system (P3-29).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-29 (Evidence Tracking and Attribution)
+- docs/master_project_instruction_full.md Section 7 (Agent Response Format - evidence field)
+
+Goals:
+- Track:
+   * RAG results and similarity scores
+   * tool outputs
+   * policy rules and guardrails
+- Provide full evidence chains for decisions.
+
+Tasks:
+1) Evidence model:
+   - Create src/explainability/evidence.py:
+       * EvidenceItem(id, type: ["rag","tool","policy","manual"], source_id, description, payload_ref, similarity_score?, created_at)
+       * EvidenceLink(id, exception_id, agent_name, stage_name, evidence_id, influence: ["support","contradict","contextual"])
+   - Provide helper functions:
+       * record_evidence_item(...)
+       * link_evidence_to_decision(...)
+
+2) Integration points:
+   - RAG:
+       * in memory/RAG service, whenever results are returned, record:
+           - each document/snippet as EvidenceItem(type="rag").
+   - Tools:
+       * in ToolExecutionEngine, record tool outputs as EvidenceItem(type="tool").
+   - Policy:
+       * in PolicyAgent, record applied rules and guardrails as EvidenceItem(type="policy").
+
+3) Retrieval:
+   - Implement:
+       * get_evidence_for_exception(exception_id) -> list[EvidenceItem]
+       * get_evidence_links_for_exception(exception_id) -> list[EvidenceLink]
+
+4) Storage:
+   - For MVP, store evidence in:
+       ./runtime/evidence/{tenantId}_{exceptionId}_evidence.jsonl
+
+5) Tests:
+   - tests/test_evidence_tracking.py:
+       * simulate RAG + tool + policy flows
+       * verify evidence items and links created and retrievable
+       * verify that influence types are respected.
+
+🔹 Prompt 30 — Explanation API Endpoints (P3-30)
+Phase 3: Implement Explanation API endpoints (P3-30).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-30 (Explanation API Endpoints)
+- docs/master_project_instruction_full.md Section 8 (Explainable decisions)
+
+Goals:
+- Expose explanations via API:
+   * by exception ID
+   * by agent
+   * by decision type
+- Support:
+   * JSON
+   * natural language
+   * structured formats.
+
+Tasks:
+1) API router:
+   - Create src/api/router_explanations.py:
+       * GET /explanations/{exception_id}
+           - query: format=json|text|structured
+       * GET /explanations/search
+           - query params: tenant_id, agent_name?, decision_type?, from_ts?, to_ts?, text?
+       * GET /explanations/{exception_id}/timeline
+           - returns DecisionTimeline JSON (from P3-28)
+       * GET /explanations/{exception_id}/evidence
+           - returns evidence graph (from P3-29).
+
+2) Service layer:
+   - src/services/explanation_service.py:
+       * get_explanation(exception_id, format) -> dict/str
+           - uses:
+               · decision timelines
+               · agent reasoning outputs
+               · evidence tracking records.
+       * search_explanations(...) -> list[ExplanationSummary]
+
+3) Natural language format:
+   - Build short NL summary by:
+       * composing from stored reasoning
+       * optionally using LLM to rephrase, but only using existing evidence (no new facts).
+
+4) Versioning & history:
+   - Model ExplanationVersion if needed (MVP can treat each pipeline run as version).
+   - Expose version info in responses.
+
+5) Tests:
+   - tests/test_explanation_apis.py:
+       * synthetic data for one exception
+       * verify /explanations/{id}, /timeline, /evidence shapes
+       * verify search endpoint filters correctly.
+
+🔹 Prompt 31 — Explanation Integration with Audit & Metrics (P3-31)
+Phase 3: Integrate explanations with audit and metrics (P3-31).
+
+Spec refs:
+- docs/phase3-mvp-issues.md Issue P3-31 (Explanation Integration with Audit and Metrics)
+- docs/master_project_instruction_full.md Section 7 (Observability)
+
+Goals:
+- Link explanations to:
+   * audit trail entries
+   * metrics and outcomes
+- Enable explanation-based analytics and quality scoring.
+
+Tasks:
+1) Audit integration:
+   - In audit subsystem (e.g., src/observability/audit.py):
+       * add fields on relevant events:
+           - explanation_id or explanation_hash
+           - explanation_quality_score (optional)
+       * when an explanation is generated (P3-30), log corresponding audit record:
+           - type="EXPLANATION_GENERATED"
+           - metadata: exception_id, agent_names_involved, format.
+
+2) Metrics integration:
+   - Extend metrics subsystem to track:
+       * explanations_generated_total
+       * explanations_per_exception
+       * explanation_latency_ms
+   - Add hooks in explanation_service to record metrics.
+
+3) Explanation quality:
+   - Define simple quality heuristic in src/explainability/quality.py:
+       * score_explanation(explanation) -> float
+         - e.g., length, presence of evidence references, avoidance of "I don't know"-style filler.
+   - Store quality scores in:
+       * explanation metadata
+       * metrics (histograms).
+
+4) Analytics support:
+   - Provide helper:
+       * get_explanation_analytics(tenant_id, domain, window) -> dict
+           - aggregates:
+               · average quality score
+               · correlation with resolution success/failure
+               · correlation with MTTR.
+
+5) Tests:
+   - tests/test_explanation_integration.py:
+       * ensure audit entries created when explanations generated
+       * ensure metrics counters updated
+       * verify quality scoring applied and retrievable.
+
+
+If you’d like, next step I can:
+
+Propose a Phase 3 “implementation order” checklist (a short plan you can pin in docs/phase3-prompts.md like we did for Phase 1/2), or
+
+Help you craft Cursor workspace prompts to refactor or tidy once Phase 3 coding is mostly done (e.g., consolidate safety, quotas, red-team, explainability into clean packages).
+
+
+
+
+retrofit for phase 3 remaining rompt : 
+Context
+
+We are implementing Phase 3 of the Domain-Abstracted Agentic Exception Platform.
+
+This task corresponds to:
+
+phase3-mvp-issues.md → Issue P3-10: Implement Guardrail Adjustment Recommendation System
+
+Guardrails are defined in Domain Packs and Tenant Policy Packs (see docs/03-data-models-apis.md – Guardrails sections).
+
+We already have:
+
+PolicyAgent + guardrail enforcement from Phase 1
+
+Rich metrics and outcome collection from Phase 2
+
+Policy learning & optimization scaffolding from Phase 3 (severity & playbook recommendation).
+
+Use existing patterns from:
+
+Policy learning / optimization (severity rule recommender, playbook recommender)
+
+Metrics & audit trail (Phase 2)
+
+JSON-bounded suggestion schema we use for other recommendation engines.
+
+Goal
+
+Implement a Guardrail Adjustment Recommendation System that:
+
+Analyzes policy violations, false positives, and false negatives for guardrails.
+
+Suggests guardrail tuning & adjustments (thresholds, conditions, scopes).
+
+Generates impact analysis for each recommendation (what would likely change).
+
+Supports human review and approval workflow — recommendations are proposed, not auto-applied.
+
+Tracks effectiveness over time, attached to metrics & audit.
+
+Follow Issue P3-10 acceptance criteria exactly.
+
+Files & Structure
+
+Please create / update the following:
+
+Core recommender implementation
+
+src/learning/guardrail_recommender.py
+
+Implement a GuardrailRecommender class that:
+
+Consumes:
+
+Historical exception decisions (including policy violations & guardrail checks)
+
+Policy/guardrail configs from DomainPack and TenantPolicyPack
+
+Metrics: false positives, false negatives, block/allow stats by guardrail
+
+Produces:
+
+A list of recommendations in a structured JSON-like Python dict format:
+
+{
+  "guardrailId": "...",
+  "tenantId": "...",
+  "currentConfig": { ... },
+  "proposedChange": { ... },
+  "reason": "short natural language explanation",
+  "impactAnalysis": {
+    "estimatedFalsePositiveChange": ...,
+    "estimatedFalseNegativeChange": ...,
+    "confidence": 0.0-1.0,
+  },
+  "reviewRequired": True,
+  "createdAt": "...",
+}
+
+
+Provide methods like:
+
+analyze_guardrail_performance(...)
+
+generate_recommendations(...)
+
+attach_impact_analysis(...)
+
+Use simple, explainable heuristics for MVP:
+
+Example: if a guardrail is causing very high false positives vs. false negatives, propose relaxing criteria; vice versa for tightening.
+
+Integration with policy learning / optimization pipeline
+
+Update src/learning/policy_learning.py (or equivalent Phase 3 policy-learning entry point) to:
+
+Call GuardrailRecommender alongside the existing severity and playbook recommenders.
+
+Combine outputs into a common “policy_learning_result” structure that includes:
+
+severitySuggestions
+
+playbookSuggestions
+
+guardrailSuggestions
+
+Ensure all suggestions are:
+
+Logged into the audit trail
+
+Tagged with tenant, domain, and time window analyzed.
+
+API / service boundary for recommendation retrieval (backend only)
+
+If we already have a metrics/learning API module (e.g., src/api/learning_routes.py or similar), add:
+
+Endpoint stub (just backend wiring, no UI) to fetch guardrail recommendations per:
+
+tenantId
+
+optionally filtered by guardrailId.
+
+Response is JSON that directly returns the structured recommendation objects.
+
+Audit & tracking hooks
+
+In our audit logging utility (where severity / playbook recommendations are logged), add:
+
+Support to log guardrail recommendation events with a type like:
+
+"eventType": "GUARDRAIL_RECOMMENDATION_GENERATED".
+
+Ensure we also support:
+
+"GUARDRAIL_RECOMMENDATION_ACCEPTED"
+
+"GUARDRAIL_RECOMMENDATION_REJECTED"
+
+These acceptance/rejection events can be triggered later by UX flows; for now it’s fine to assume corresponding methods exist or are TODO.
+
+Docs
+
+docs/learning/guardrail_recommender.md
+
+Document:
+
+Purpose of the Guardrail Recommender.
+
+Inputs: metrics, policy logs, guardrail configs.
+
+Output schema (same structure used in code).
+
+Examples:
+
+Overly strict rate-limit guardrail → suggestion to relax.
+
+Overly permissive tool-scope guardrail → suggestion to tighten.
+
+How it connects to PolicyAgent, Domain Pack, TenantPolicyPack, and Optimization Engine.
+
+Tests
+
+tests/learning/test_guardrail_recommender.py
+
+Cover at least:
+
+Case where guardrail is clearly too strict (very high false positives) → suggestion to relax.
+
+Case where guardrail is clearly too lax (very high false negatives) → suggestion to tighten.
+
+Case where performance is balanced → either no recommendation or low-confidence suggestion.
+
+Ensure recommendations include:
+
+impactAnalysis with non-null values.
+
+reviewRequired is True.
+
+Use in-memory fake data for metrics/decisions — no external dependencies.
+
+Requirements & Constraints
+
+Language: Python (consistent with the current codebase).
+
+Style: Follow existing patterns used for:
+
+Severity rule recommendation
+
+Playbook recommendation
+
+No domain hard-coding:
+
+All logic must work generically across finance / healthcare / other domains, using only:
+
+Domain Pack config
+
+Tenant Policy Pack config
+
+Metrics data
+
+Config-driven thresholds:
+
+Introduce simple, configurable thresholds (e.g. in a config module or constants) for:
+
+“High false positive ratio”
+
+“High false negative ratio”
+
+Do not inline magic numbers.
+
+Deliverable
+
+Please:
+
+Implement GuardrailRecommender and supporting code.
+
+Integrate it into the existing policy learning / optimization pipeline.
+
+Wire basic retrieval + audit hooks.
+
+Add the documentation and unit tests described above.
+
+When you respond, list the files you created/modified and briefly summarize the behavior of the Guardrail Adjustment Recommendation System.
