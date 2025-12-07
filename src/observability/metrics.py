@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -918,3 +918,21 @@ class MetricsCollector:
         """Clear all metrics for all tenants."""
         self._metrics.clear()
         logger.info("Cleared all metrics")
+
+
+# Global metrics collector instance
+# In production, this would be injected via dependency injection
+_metrics_collector: Optional[MetricsCollector] = None
+
+
+def get_metrics_collector() -> MetricsCollector:
+    """
+    Get the global metrics collector instance.
+    
+    Returns:
+        MetricsCollector instance
+    """
+    global _metrics_collector
+    if _metrics_collector is None:
+        _metrics_collector = MetricsCollector()
+    return _metrics_collector

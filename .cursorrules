@@ -32,3 +32,34 @@ alwaysApply: true
 ---
 - When running commands in a terminal, look at the environment to determine what the operating system is, and use this information to run appropriate terminal commands.
 - Always be sure that the Python virtual environment located at ./.venv is activated first.
+
+
+# UI / Frontend Rules
+
+When working under the ui/ folder:
+
+1. Tech stack:
+   - Use React 18 + TypeScript + Vite.
+   - Use react-router-dom for routing.
+   - Use Material UI (MUI) as the primary component library.
+   - Use TanStack Query (React Query) for data fetching & caching.
+
+2. Architecture:
+   - Follow guidelines in:
+     - docs/10-ui-guidelines.md
+     - docs/11-ui-phase4-mvp-plan.md
+   - Place API wrappers in ui/src/api/*.ts and NOT directly inside components.
+   - Keep components presentational where possible; move data fetching into hooks or page components.
+
+3. Multi-tenant awareness:
+   - Always respect TenantContext and ensure tenantId is passed to backend as required.
+   - Do not hardcode domain-specific logic; rely on backend/domain packs for semantics.
+
+4. UX basics:
+   - Provide loading and error states for all API calls.
+   - Use MUI layout components (Grid, Box, Stack) for consistent spacing.
+   - Use responsive layouts where simple (desktop-first is acceptable for MVP).
+
+5. Safety:
+   - Do not introduce stateful logic that bypasses backend validations.
+   - Assume backend is the source of truth for decisions, explanations, and configs.

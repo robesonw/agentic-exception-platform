@@ -3,6 +3,7 @@ FastAPI application entry point.
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.middleware import TenantRouterMiddleware
 from src.api.routes import (
@@ -31,6 +32,16 @@ app = FastAPI(
     title="Agentic Exception Processing Platform",
     description="Domain-Abstracted Agentic AI Platform for Multi-Tenant Exception Processing",
     version="0.1.0",
+)
+
+# Add CORS middleware (must be added before other middleware)
+# This handles OPTIONS preflight requests from browsers
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify exact origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, PUT, DELETE, OPTIONS, etc.)
+    allow_headers=["*"],  # Allow all headers (including X-API-KEY, X-Tenant-Id, etc.)
 )
 
 # Add tenant router middleware

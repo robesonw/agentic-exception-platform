@@ -1,0 +1,54 @@
+{
+  "exception": {
+    "exceptionId": "23242250-6924-4464-a3b4-bf61e7cbc23b",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "SettlementSystem",
+    "exceptionType": null,
+    "severity": null,
+    "timestamp": "2025-12-06 02:03:45.674537+00:00",
+    "rawPayload": {
+      "exceptionId": "EXC_TENANT_FINANCE_001_0013",
+      "timestamp": "2025-12-04T20:48:43.569666+00:00",
+      "type": "MarginCallException",
+      "amount": 2300.0,
+      "accountId": "ACC_00013",
+      "description": "Sample MarginCallException exception #14",
+      "metadata": {
+        "source": "seed_script",
+        "batch": "ui_demo",
+        "index": 13
+      }
+    },
+    "normalizedContext": {
+      "pipelineId": "0ae05b97-461b-455f-9756-1b8325406ff2",
+      "normalizedAt": "2025-12-06T02:03:45.674537+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized",
+        "confidence": 0.8,
+        "evidence": [
+          "Normalized exception ID: 23242250-6924-4464-a3b4-bf61e7cbc23b",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: SettlementSystem",
+          "Warning: No exception type provided (will be inferred in triage)"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 23242250-6924-4464-a3b4-bf61e7cbc23b",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: SettlementSystem",
+      "Warning: No exception type provided (will be inferred in triage)"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-12-06T02:03:45.674537+00:00"
+}

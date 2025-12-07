@@ -43,7 +43,6 @@ async def get_guardrail_recommendations(
     tenant_id: str = Query(..., description="Tenant identifier"),
     domain: str = Query(..., description="Domain name identifier"),
     guardrail_id: Optional[str] = Query(None, description="Optional guardrail ID filter"),
-    audit_logger: Optional[AuditLogger] = None,
 ) -> dict[str, Any]:
     """
     Get guardrail adjustment recommendations for a tenant and domain.
@@ -71,16 +70,24 @@ async def get_guardrail_recommendations(
         # Convert to dict format
         recommendations_dict = [r.model_dump(by_alias=True, mode="json") for r in recommendations]
         
-        # Log audit entry if audit logger provided
-        if audit_logger:
-            for rec in recommendations:
-                audit_logger.log_guardrail_recommendation_generated(
-                    tenant_id=tenant_id,
-                    domain=domain,
-                    recommendation_id=rec.guardrail_id,
-                    guardrail_id=rec.guardrail_id,
-                    recommendation_data=rec.model_dump(by_alias=True, mode="json"),
-                )
+        # Log audit entry (get audit logger if available)
+        try:
+            from src.audit.logger import get_audit_logger
+            audit_logger = get_audit_logger()
+            if audit_logger:
+                for rec in recommendations:
+                    # Check if method exists before calling
+                    if hasattr(audit_logger, "log_guardrail_recommendation_generated"):
+                        audit_logger.log_guardrail_recommendation_generated(
+                            tenant_id=tenant_id,
+                            domain=domain,
+                            recommendation_id=rec.guardrail_id,
+                            guardrail_id=rec.guardrail_id,
+                            recommendation_data=rec.model_dump(by_alias=True, mode="json"),
+                        )
+        except (ImportError, AttributeError):
+            # Audit logging is optional, continue if not available
+            pass
         
         return {
             "tenant_id": tenant_id,

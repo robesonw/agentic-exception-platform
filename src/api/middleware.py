@@ -190,6 +190,11 @@ class TenantRouterMiddleware(BaseHTTPMiddleware):
         if any(request.url.path.startswith(path) for path in self.exclude_paths):
             return await call_next(request)
         
+        # Skip authentication for OPTIONS requests (CORS preflight)
+        # Browsers send OPTIONS requests without custom headers, so they will always fail auth
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        
         # Extract authentication credentials
         api_key = request.headers.get("X-API-KEY")
         jwt_token = None

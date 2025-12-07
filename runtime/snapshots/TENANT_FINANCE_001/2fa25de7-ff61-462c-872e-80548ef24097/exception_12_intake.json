@@ -1,0 +1,54 @@
+{
+  "exception": {
+    "exceptionId": "307e1469-77fe-43ee-bf87-05c240dc2c94",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "TradingPlatform",
+    "exceptionType": null,
+    "severity": null,
+    "timestamp": "2025-12-06 01:59:48.145985+00:00",
+    "rawPayload": {
+      "exceptionId": "EXC_TENANT_FINANCE_001_0012",
+      "timestamp": "2025-12-04T22:59:46.073526+00:00",
+      "type": "RegulatoryViolation",
+      "amount": 2200.0,
+      "accountId": "ACC_00012",
+      "description": "Sample RegulatoryViolation exception #13",
+      "metadata": {
+        "source": "seed_script",
+        "batch": "ui_demo",
+        "index": 12
+      }
+    },
+    "normalizedContext": {
+      "pipelineId": "a214e8ae-b77e-45cd-94f9-7857afa7f86e",
+      "normalizedAt": "2025-12-06T01:59:48.145985+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized",
+        "confidence": 0.8,
+        "evidence": [
+          "Normalized exception ID: 307e1469-77fe-43ee-bf87-05c240dc2c94",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: TradingPlatform",
+          "Warning: No exception type provided (will be inferred in triage)"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 307e1469-77fe-43ee-bf87-05c240dc2c94",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: TradingPlatform",
+      "Warning: No exception type provided (will be inferred in triage)"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-12-06T01:59:48.145985+00:00"
+}

@@ -1,0 +1,88 @@
+{
+  "exception": {
+    "exceptionId": "e799a79a-a769-4058-ac7c-261e422f2979",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "RiskManagement",
+    "exceptionType": null,
+    "severity": null,
+    "timestamp": "2025-12-07 19:43:41.182232+00:00",
+    "rawPayload": {
+      "exceptionId": "EXC_TENANT_FINANCE_001_0014",
+      "timestamp": "2025-12-06T12:13:38.920701+00:00",
+      "type": "OrderExecutionError",
+      "amount": 2400.0,
+      "accountId": "ACC_00014",
+      "description": "Sample OrderExecutionError exception #15",
+      "metadata": {
+        "source": "seed_script",
+        "batch": "ui_demo",
+        "index": 14
+      }
+    },
+    "normalizedContext": {
+      "pipelineId": "28d4b259-8ec3-48aa-b057-79f751c52115",
+      "normalizedAt": "2025-12-07T19:43:41.182232+00:00",
+      "feedbackCapturedAt": "2025-12-07T19:43:41.197813+00:00",
+      "learningArtifacts": []
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "ESCALATED",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized",
+        "confidence": 0.8,
+        "evidence": [
+          "Normalized exception ID: e799a79a-a769-4058-ac7c-261e422f2979",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: RiskManagement",
+          "Warning: No exception type provided (will be inferred in triage)"
+        ],
+        "nextStep": "ProceedToTriage"
+      },
+      "feedback": {
+        "decision": "FEEDBACK_CAPTURED",
+        "confidence": 1.0,
+        "evidence": [
+          "Exception ID: e799a79a-a769-4058-ac7c-261e422f2979",
+          "Resolution status: ESCALATED",
+          "Feedback captured at: 2025-12-07T19:43:41.197813+00:00",
+          "No resolution plan (non-actionable or escalated)",
+          "Learning artifacts: 0 (MVP placeholder)",
+          "Policy suggestions available: 8",
+          "Suggestion: Exception type 'POSITION_BREAK' appears 125 times with consistent severity 'CRITICAL' (confidence: 0.90)",
+          "Suggestion: Exception type 'MISMATCHED_TRADE_DETAILS' appears 54 times with consistent severity 'LOW' (confidence: 0.90)",
+          "Suggestion: Exception type 'FAILED_ALLOCATION' appears 54 times with consistent severity 'HIGH' (confidence: 0.90)",
+          "Final status: ESCALATED",
+          "policySuggestions: 8 available"
+        ],
+        "nextStep": "complete"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: e799a79a-a769-4058-ac7c-261e422f2979",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: RiskManagement",
+      "Warning: No exception type provided (will be inferred in triage)",
+      "TriageAgent failed: Could not classify exception type. Available types: ['CASH_BREAK', 'FAILED_ALLOCATION', 'MISMATCHED_TRADE_DETAILS', 'POSITION_BREAK', 'REG_REPORT_REJECTED', 'SEC_MASTER_MISMATCH', 'SETTLEMENT_FAIL']",
+      "Exception ID: e799a79a-a769-4058-ac7c-261e422f2979",
+      "Resolution status: ESCALATED",
+      "Feedback captured at: 2025-12-07T19:43:41.197813+00:00",
+      "No resolution plan (non-actionable or escalated)",
+      "Learning artifacts: 0 (MVP placeholder)",
+      "Policy suggestions available: 8",
+      "Suggestion: Exception type 'POSITION_BREAK' appears 125 times with consistent severity 'CRITICAL' (confidence: 0.90)",
+      "Suggestion: Exception type 'MISMATCHED_TRADE_DETAILS' appears 54 times with consistent severity 'LOW' (confidence: 0.90)",
+      "Suggestion: Exception type 'FAILED_ALLOCATION' appears 54 times with consistent severity 'HIGH' (confidence: 0.90)",
+      "Final status: ESCALATED",
+      "policySuggestions: 8 available"
+    ],
+    "errors": [
+      "TriageAgent failed: Could not classify exception type. Available types: ['CASH_BREAK', 'FAILED_ALLOCATION', 'MISMATCHED_TRADE_DETAILS', 'POSITION_BREAK', 'REG_REPORT_REJECTED', 'SEC_MASTER_MISMATCH', 'SETTLEMENT_FAIL']"
+    ]
+  },
+  "timestamp": "2025-12-07T19:43:41.199304+00:00"
+}

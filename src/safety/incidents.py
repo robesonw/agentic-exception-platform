@@ -205,3 +205,21 @@ class IncidentManager:
         
         return None
 
+
+# Global incident manager instance
+# In production, this would be injected via dependency injection
+_incident_manager: Optional[IncidentManager] = None
+
+
+def get_incident_manager() -> IncidentManager:
+    """
+    Get the global incident manager instance.
+    
+    Returns:
+        IncidentManager instance
+    """
+    global _incident_manager
+    if _incident_manager is None:
+        _incident_manager = IncidentManager()
+    return _incident_manager
+

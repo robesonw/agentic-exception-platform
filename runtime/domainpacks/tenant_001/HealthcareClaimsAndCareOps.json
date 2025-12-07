@@ -1,0 +1,257 @@
+{
+    "domainName": "HealthcareClaimsAndCareOps",
+    "version": "1.0.0",
+    "description": "Domain pack for healthcare exception processing across claims, authorizations, provider credentialing, patient master data, and pharmacy safety checks.",
+    "entities": {
+      "Patient": {
+        "keys": ["patientId"],
+        "fields": ["patientId", "dob", "gender", "insuranceId", "coverageStart", "coverageEnd"]
+      },
+      "Claim": {
+        "keys": ["claimId"],
+        "fields": [
+          "claimId",
+          "patientId",
+          "providerId",
+          "facilityId",
+          "procedureCodes",
+          "diagnosisCodes",
+          "amount",
+          "serviceDate",
+          "receivedDate",
+          "status",
+          "authId"
+        ]
+      },
+      "Provider": {
+        "keys": ["providerId"],
+        "fields": ["providerId", "npi", "credentialStatus", "credentialExpiryDate", "facilityId", "specialty"]
+      },
+      "Authorization": {
+        "keys": ["authId"],
+        "fields": ["authId", "patientId", "procedureCodes", "status", "validFrom", "validTo", "issuer", "notes"]
+      },
+      "MedicationOrder": {
+        "keys": ["orderId"],
+        "fields": ["orderId", "patientId", "ndc", "dose", "frequency", "route", "orderDate", "activeTherapies"]
+      }
+    },
+  
+    "exceptionTypes": {
+      "CLAIM_MISSING_AUTH": {
+        "description": "Claim submitted without required prior authorization.",
+        "defaultSeverity": "HIGH",
+        "tags": ["claims", "authorization", "billing"]
+      },
+      "CLAIM_CODE_MISMATCH": {
+        "description": "Procedure code inconsistent with diagnosis or patient eligibility.",
+        "defaultSeverity": "MEDIUM",
+        "tags": ["claims", "coding", "clinical"]
+      },
+      "PROVIDER_CREDENTIAL_EXPIRED": {
+        "description": "Provider credential/NPI status expired at time of service.",
+        "defaultSeverity": "HIGH",
+        "tags": ["provider", "credentialing", "compliance"]
+      },
+      "PATIENT_DEMOGRAPHIC_CONFLICT": {
+        "description": "Patient demographics conflict across systems (DOB/coverage/gender).",
+        "defaultSeverity": "LOW",
+        "tags": ["patient-master", "data-quality"]
+      },
+      "PHARMACY_DUPLICATE_THERAPY": {
+        "description": "Medication order duplicates an active therapy or exceeds safe overlap.",
+        "defaultSeverity": "HIGH",
+        "tags": ["pharmacy", "patient-safety"]
+      },
+      "ELIGIBILITY_COVERAGE_LAPSE": {
+        "description": "Coverage inactive or lapsed on service date.",
+        "defaultSeverity": "HIGH",
+        "tags": ["eligibility", "coverage"]
+      }
+    },
+  
+    "severityRules": [
+      { "if": "exceptionType == 'PHARMACY_DUPLICATE_THERAPY'", "severity": "CRITICAL" },
+      { "if": "exceptionType == 'CLAIM_MISSING_AUTH'", "severity": "HIGH" },
+      { "if": "exceptionType == 'ELIGIBILITY_COVERAGE_LAPSE'", "severity": "HIGH" },
+      {
+        "if": "exceptionType == 'PATIENT_DEMOGRAPHIC_CONFLICT' && rawPayload.affectsBilling == true",
+        "severity": "MEDIUM"
+      }
+    ],
+  
+    "tools": {
+      "dbQueries": [
+        {
+          "name": "getAuthorization",
+          "description": "Fetch prior authorization for a patient + procedures.",
+          "argsSchema": { "patientId": "string", "procedureCodes": "string[]" },
+          "returns": "Authorization[]"
+        },
+        {
+          "name": "getClaim",
+          "description": "Fetch claim record by claimId.",
+          "argsSchema": { "claimId": "string" },
+          "returns": "Claim"
+        },
+        {
+          "name": "getPatient",
+          "description": "Fetch patient demographics by patientId.",
+          "argsSchema": { "patientId": "string" },
+          "returns": "Patient"
+        },
+        {
+          "name": "getProviderCredential",
+          "description": "Fetch provider credential status by providerId.",
+          "argsSchema": { "providerId": "string" },
+          "returns": "Provider"
+        },
+        {
+          "name": "getMedicationOrders",
+          "description": "Fetch active medication orders for patient.",
+          "argsSchema": { "patientId": "string" },
+          "returns": "MedicationOrder[]"
+        }
+      ],
+      "apiActions": [
+        {
+          "name": "attachAuthorizationToClaim",
+          "description": "Attach a valid authId to a claim.",
+          "argsSchema": { "claimId": "string", "authId": "string" }
+        },
+        {
+          "name": "reprocessClaim",
+          "description": "Replay adjudication for a claim.",
+          "argsSchema": { "claimId": "string" }
+        },
+        {
+          "name": "queueCodingReview",
+          "description": "Send claim to clinical coding review queue.",
+          "argsSchema": { "claimId": "string", "reason": "string" }
+        },
+        {
+          "name": "updateProviderCredential",
+          "description": "Update provider credential registry when renewal confirmed.",
+          "argsSchema": { "providerId": "string", "credentialExpiryDate": "string" }
+        },
+        {
+          "name": "flagMedicationOrder",
+          "description": "Flag medication order for pharmacist/clinical review.",
+          "argsSchema": { "orderId": "string", "risk": "string" }
+        },
+        {
+          "name": "notifyTeam",
+          "description": "Notify a care/ops team.",
+          "argsSchema": { "teamName": "string", "message": "string" }
+        }
+      ],
+      "workflowActions": [
+        {
+          "name": "openCase",
+          "description": "Open an operational/clinical case.",
+          "argsSchema": { "caseType": "string", "payload": "object" }
+        },
+        {
+          "name": "assignCase",
+          "description": "Assign case to a queue/group.",
+          "argsSchema": { "caseId": "string", "group": "string" }
+        },
+        {
+          "name": "escalateCase",
+          "description": "Escalate case to Tier2 queue.",
+          "argsSchema": { "caseId": "string", "queue": "string" }
+        }
+      ]
+    },
+  
+    "playbooks": [
+      {
+        "playbookId": "PB01_VALIDATE_AUTH_AND_REPROCESS",
+        "approved": true,
+        "appliesTo": ["CLAIM_MISSING_AUTH"],
+        "steps": [
+          "Fetch claim using getClaim(claimId).",
+          "Fetch authorizations using getAuthorization(patientId, procedureCodes).",
+          "If valid authorization exists for serviceDate: attachAuthorizationToClaim(claimId, authId).",
+          "Re-adjudicate using reprocessClaim(claimId).",
+          "Notify BillingOps."
+        ],
+        "successCriteria": [
+          "Claim status transitions to ACCEPTED or PENDED with clear reason.",
+          "Audit includes auth evidence."
+        ]
+      },
+      {
+        "playbookId": "PB02_PROVIDER_REMEDIATION",
+        "approved": true,
+        "appliesTo": ["PROVIDER_CREDENTIAL_EXPIRED"],
+        "steps": [
+          "Fetch provider using getProviderCredential(providerId).",
+          "Confirm renewal evidence if available in payload.",
+          "If renewal confirmed: updateProviderCredential(providerId, newExpiryDate).",
+          "Reprocess impacted claims via reprocessClaim for each claimId.",
+          "If renewal not confirmed: openCase('PROVIDER_CREDENTIAL_BREAK') and assign to ProviderOps."
+        ],
+        "successCriteria": [
+          "Provider credentialStatus is ACTIVE.",
+          "Impacted claims reprocessed or escalated."
+        ]
+      },
+      {
+        "playbookId": "PB03_CODE_CORRECTION_WORKFLOW",
+        "approved": true,
+        "appliesTo": ["CLAIM_CODE_MISMATCH"],
+        "steps": [
+          "Fetch claim using getClaim(claimId).",
+          "Cross-check diagnosis/procedure compatibility rules.",
+          "If mismatch: queueCodingReview(claimId, reason).",
+          "OpenCase('CODING_REVIEW') and assign to ClinicalCodingOps.",
+          "If corrected later: reprocessClaim(claimId)."
+        ],
+        "successCriteria": [
+          "Claim exits coding review with corrected codes or documented denial reason."
+        ]
+      },
+      {
+        "playbookId": "PB04_PATIENT_MASTER_RECON",
+        "approved": true,
+        "appliesTo": ["PATIENT_DEMOGRAPHIC_CONFLICT"],
+        "steps": [
+          "Fetch patient using getPatient(patientId).",
+          "Compare conflicting fields against source-of-truth system.",
+          "If billing impacted: openCase('PATIENT_MASTER_BREAK') and assign to PatientMasterOps.",
+          "If not billing impacted: log as INFO and monitor recurrence."
+        ],
+        "successCriteria": [
+          "Patient record is reconciled or case escalated with evidence."
+        ]
+      }
+    ],
+  
+    "guardrails": {
+      "noAutoActionIfSeverityIn": ["CRITICAL"],
+      "autoActionAllowedOnlyForApprovedPlaybooks": true,
+      "requireHumanApprovalFor": ["PHARMACY_DUPLICATE_THERAPY"],
+      "maxAutoRetries": 1,
+      "escalateIfConfidenceBelow": 0.75
+    },
+  
+    "testSuites": [
+      {
+        "suiteId": "HC-MVP-CORE",
+        "cases": [
+          {
+            "caseId": "HC-CASE-001",
+            "inputExceptionType": "CLAIM_MISSING_AUTH",
+            "expectedPlaybookId": "PB01_VALIDATE_AUTH_AND_REPROCESS"
+          },
+          {
+            "caseId": "HC-CASE-002",
+            "inputExceptionType": "PROVIDER_CREDENTIAL_EXPIRED",
+            "expectedPlaybookId": "PB02_PROVIDER_REMEDIATION"
+          }
+        ]
+      }
+    ]
+  }
+  

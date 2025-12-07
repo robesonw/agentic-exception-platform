@@ -374,3 +374,21 @@ class ViolationDetector:
             except Exception as e:
                 logger.error(f"Failed to send violation notification: {e}")
 
+
+# Global violation detector instance
+# In production, this would be injected via dependency injection
+_violation_detector: Optional[ViolationDetector] = None
+
+
+def get_violation_detector() -> ViolationDetector:
+    """
+    Get the global violation detector instance.
+    
+    Returns:
+        ViolationDetector instance
+    """
+    global _violation_detector
+    if _violation_detector is None:
+        _violation_detector = ViolationDetector()
+    return _violation_detector
+

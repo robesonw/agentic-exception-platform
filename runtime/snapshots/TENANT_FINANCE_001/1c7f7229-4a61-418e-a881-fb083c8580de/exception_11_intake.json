@@ -1,0 +1,54 @@
+{
+  "exception": {
+    "exceptionId": "4768091f-21ce-44aa-bfde-5db3102dec24",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "Compliance",
+    "exceptionType": null,
+    "severity": null,
+    "timestamp": "2025-12-06 02:03:45.671539+00:00",
+    "rawPayload": {
+      "exceptionId": "EXC_TENANT_FINANCE_001_0011",
+      "timestamp": "2025-12-05T01:18:43.569666+00:00",
+      "type": "PriceDiscrepancy",
+      "amount": 2100.0,
+      "accountId": "ACC_00011",
+      "description": "Sample PriceDiscrepancy exception #12",
+      "metadata": {
+        "source": "seed_script",
+        "batch": "ui_demo",
+        "index": 11
+      }
+    },
+    "normalizedContext": {
+      "pipelineId": "bb6b19b2-5167-47a3-b051-a572a13aedca",
+      "normalizedAt": "2025-12-06T02:03:45.671539+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized",
+        "confidence": 0.8,
+        "evidence": [
+          "Normalized exception ID: 4768091f-21ce-44aa-bfde-5db3102dec24",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: Compliance",
+          "Warning: No exception type provided (will be inferred in triage)"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 4768091f-21ce-44aa-bfde-5db3102dec24",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: Compliance",
+      "Warning: No exception type provided (will be inferred in triage)"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-12-06T02:03:45.671539+00:00"
+}

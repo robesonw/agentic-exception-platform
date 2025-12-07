@@ -1,0 +1,54 @@
+{
+  "exception": {
+    "exceptionId": "c4d4e79a-1915-426f-91a0-8dda5752946a",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "SettlementSystem",
+    "exceptionType": null,
+    "severity": null,
+    "timestamp": "2025-12-06 02:02:28.657297+00:00",
+    "rawPayload": {
+      "exceptionId": "EXC_TENANT_FINANCE_001_0009",
+      "timestamp": "2025-12-05T05:47:26.570168+00:00",
+      "type": "OrderExecutionError",
+      "amount": 1900.0,
+      "accountId": "ACC_00009",
+      "description": "Sample OrderExecutionError exception #10",
+      "metadata": {
+        "source": "seed_script",
+        "batch": "ui_demo",
+        "index": 9
+      }
+    },
+    "normalizedContext": {
+      "pipelineId": "515e8f19-5c5c-42c5-9502-bc927dc594f8",
+      "normalizedAt": "2025-12-06T02:02:28.657297+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized",
+        "confidence": 0.8,
+        "evidence": [
+          "Normalized exception ID: c4d4e79a-1915-426f-91a0-8dda5752946a",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: SettlementSystem",
+          "Warning: No exception type provided (will be inferred in triage)"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: c4d4e79a-1915-426f-91a0-8dda5752946a",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: SettlementSystem",
+      "Warning: No exception type provided (will be inferred in triage)"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-12-06T02:02:28.657297+00:00"
+}
