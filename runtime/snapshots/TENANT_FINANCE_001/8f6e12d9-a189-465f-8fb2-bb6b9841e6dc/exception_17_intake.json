@@ -1,0 +1,54 @@
+{
+  "exception": {
+    "exceptionId": "43232093-0671-4c84-8214-4d2e807c026f",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "SettlementSystem",
+    "exceptionType": null,
+    "severity": null,
+    "timestamp": "2025-12-08 15:37:03.967061+00:00",
+    "rawPayload": {
+      "exceptionId": "EXC_TENANT_FINANCE_001_0017",
+      "timestamp": "2025-12-07T01:22:01.881845+00:00",
+      "type": "RegulatoryViolation",
+      "amount": 2700.0,
+      "accountId": "ACC_00017",
+      "description": "Sample RegulatoryViolation exception #18",
+      "metadata": {
+        "source": "seed_script",
+        "batch": "ui_demo",
+        "index": 17
+      }
+    },
+    "normalizedContext": {
+      "pipelineId": "fa160439-35c3-49e0-8948-8c315d2a3957",
+      "normalizedAt": "2025-12-08T15:37:03.967061+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized",
+        "confidence": 0.8,
+        "evidence": [
+          "Normalized exception ID: 43232093-0671-4c84-8214-4d2e807c026f",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: SettlementSystem",
+          "Warning: No exception type provided (will be inferred in triage)"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: 43232093-0671-4c84-8214-4d2e807c026f",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: SettlementSystem",
+      "Warning: No exception type provided (will be inferred in triage)"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-12-08T15:37:03.967061+00:00"
+}

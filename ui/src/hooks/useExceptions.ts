@@ -12,7 +12,7 @@
 
 import { useQuery, UseQueryResult } from '@tanstack/react-query'
 import { useTenant } from './useTenant'
-import { getApiKeyForHttpClient } from '../utils/httpClient'
+import { getApiKeyForHttpClient, getTenantIdForHttpClient } from '../utils/httpClient'
 import {
   listExceptions,
   getExceptionDetail,
@@ -89,13 +89,30 @@ export function useExceptionDetail(
 ): UseQueryResult<ExceptionDetailResponse, Error> {
   const { tenantId, apiKey } = useTenant()
   const apiKeyFromHttpClient = getApiKeyForHttpClient()
+  const tenantIdFromHttpClient = getTenantIdForHttpClient()
   const hasApiKey = !!(apiKey || apiKeyFromHttpClient)
+  // Ensure tenantId is set in both React context AND httpClient before enabling query
+  const hasTenantId = !!(tenantId || tenantIdFromHttpClient)
 
   return useQuery({
     queryKey: exceptionKeys.detail(tenantId, id),
     queryFn: () => getExceptionDetail(id),
-    enabled: !!tenantId && !!id && hasApiKey, // Only fetch if tenantId, id, and API key are set
+    enabled: hasTenantId && !!id && hasApiKey, // Only fetch if tenantId, id, and API key are set
     staleTime: 60_000, // 1 minute (detail data changes less frequently)
+    retry: (failureCount, error) => {
+      // Don't retry on 404 errors (exception not found)
+      if (error && (error as any).message?.includes('404')) {
+        return false
+      }
+      // Don't retry on 400 errors (bad request, likely missing tenant_id)
+      if (error && (error as any).status === 400) {
+        // Only retry once for 400 errors in case tenantId wasn't set yet
+        return failureCount < 1
+      }
+      // Retry up to 2 times for other errors (network issues, etc.)
+      return failureCount < 2
+    },
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 3000), // Exponential backoff
   })
 }
 

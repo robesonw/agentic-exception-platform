@@ -2,14 +2,13 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Box,
-  Card,
-  CardContent,
+  Paper,
   Tabs,
   Tab,
   TextField,
   Grid,
+  Typography,
 } from '@mui/material'
-import PageHeader from '../components/common/PageHeader.tsx'
 import DomainPacksList, { type CommonConfigFilters } from '../components/config/DomainPacksList.tsx'
 import TenantPoliciesList from '../components/config/TenantPoliciesList.tsx'
 import PlaybooksList from '../components/config/PlaybooksList.tsx'
@@ -151,45 +150,47 @@ export default function ConfigPage() {
   }
 
   return (
-    <Box>
-      <PageHeader
-        title="Config & Learning Console"
-        subtitle="Browse domain packs, tenant policy packs, and playbooks"
-      />
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {/* Header */}
+      <Box>
+        <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5 }}>
+          Config & Learning Console
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Browse domain packs, tenant policy packs, and playbooks
+        </Typography>
+      </Box>
 
       {/* Filters */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={6} md={4}>
-              <TextField
-                fullWidth
-                label="Tenant ID"
-                value={tenantFilter}
-                onChange={(e) => setTenantFilter(e.target.value)}
-                placeholder="Filter by tenant ID"
-                size="small"
-                helperText="Leave empty to show all tenants"
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <TextField
-                fullWidth
-                label="Domain"
-                value={domainFilter}
-                onChange={(e) => setDomainFilter(e.target.value)}
-                placeholder="Filter by domain"
-                size="small"
-                helperText="Leave empty to show all domains"
-              />
-            </Grid>
+      <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+        <Grid container spacing={2}>
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              fullWidth
+              label="Tenant ID"
+              value={tenantFilter}
+              onChange={(e) => setTenantFilter(e.target.value)}
+              placeholder="Filter by tenant ID"
+              size="small"
+              helperText="Leave empty to show all tenants"
+            />
           </Grid>
-        </CardContent>
-      </Card>
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              fullWidth
+              label="Domain"
+              value={domainFilter}
+              onChange={(e) => setDomainFilter(e.target.value)}
+              placeholder="Filter by domain"
+              size="small"
+              helperText="Leave empty to show all domains"
+            />
+          </Grid>
+        </Grid>
+      </Paper>
 
       {/* Config Type Tabs */}
-      <Card>
-        <CardContent>
+      <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
           <Tabs value={activeTab} onChange={handleTabChange} aria-label="config type tabs">
             <Tab label="Domain Packs" id="config-tab-0" aria-controls="config-tabpanel-0" />
             <Tab label="Tenant Policy Packs" id="config-tab-1" aria-controls="config-tabpanel-1" />
@@ -216,8 +217,7 @@ export default function ConfigPage() {
           <TabPanel value={activeTab} index={3}>
             <ConfigRecommendationsTab tenantId={filters.tenantId} domain={filters.domain} />
           </TabPanel>
-        </CardContent>
-      </Card>
+        </Paper>
     </Box>
   )
 }

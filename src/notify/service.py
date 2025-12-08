@@ -318,3 +318,31 @@ class NotificationService:
             logger.error(error_msg)
             return {"sent": False, "error": error_msg}
 
+
+# Global notification service instance
+_notification_service: Optional[NotificationService] = None
+
+
+def get_notification_service() -> NotificationService:
+    """
+    Get the global notification service instance.
+    
+    Creates a singleton instance if it doesn't exist.
+    
+    Returns:
+        NotificationService instance
+    """
+    global _notification_service
+    
+    if _notification_service is None:
+        # Initialize with environment variables or defaults
+        _notification_service = NotificationService(
+            smtp_host=None,  # Can be set via env vars in future
+            smtp_port=587,
+            smtp_user=None,
+            smtp_password=None,
+            smtp_use_tls=True,
+            webhook_timeout=10.0,
+        )
+    
+    return _notification_service

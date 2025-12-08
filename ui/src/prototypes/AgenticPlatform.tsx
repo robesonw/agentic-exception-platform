@@ -87,75 +87,6 @@ const StatusBadge = ({ status, severity }) => {
   );
 };
 
-const AICopilot = ({ onClose }) => {
-  const [messages, setMessages] = useState([
-    { role: 'ai', text: 'Hello, Operator. I am monitoring 4 active critical exceptions. How can I assist you today?' }
-  ]);
-  const [input, setInput] = useState('');
-  const messagesEndRef = useRef(null);
-
-  const handleSend = () => {
-    if (!input.trim()) return;
-    const newMsgs = [...messages, { role: 'user', text: input }];
-    setMessages(newMsgs);
-    setInput('');
-    setTimeout(() => {
-      setMessages([...newMsgs, { role: 'ai', text: 'I am analyzing the correlation between the recent trade failures and the SWIFT gateway latency. One moment...' }]);
-    }, 1000);
-  };
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  return (
-    <div className="fixed bottom-6 right-6 w-96 h-[600px] bg-[#0f1219] border border-slate-700 shadow-2xl rounded-xl flex flex-col z-50 overflow-hidden font-sans">
-      <div className="bg-[#1a1f2e] p-4 border-b border-slate-700 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-          <span className="font-semibold text-slate-100 flex items-center gap-2">
-             <Bot size={16} className="text-blue-400" /> AI Co-Pilot
-          </span>
-        </div>
-        <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={16} /></button>
-      </div>
-      
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#0B0E14]">
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] p-3 rounded-lg text-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 border border-slate-700'}`}>
-              {msg.text}
-            </div>
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
-
-      <div className="p-4 bg-[#1a1f2e] border-t border-slate-700">
-        <div className="flex gap-2">
-          <input 
-            type="text" 
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Ask about exceptions, trends, or rules..."
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-slate-500"
-          />
-          <button onClick={handleSend} className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-md transition-colors">
-            <Send size={16} />
-          </button>
-        </div>
-        <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-          {['Summarize risks', 'Draft response', 'Show similar cases'].map(suggestion => (
-            <button key={suggestion} className="whitespace-nowrap px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded text-xs text-slate-400 transition-colors">
-              {suggestion}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
 
 const ExceptionsTable = ({ onSelectException }) => {
   return (
@@ -507,6 +438,76 @@ const DashboardAnalytics = () => {
             </div>
           </div>
        </div>
+    </div>
+  );
+};
+
+const AICopilot = ({ onClose }) => {
+  const [messages, setMessages] = useState([
+    { role: 'ai', text: 'Hello, Operator. I am monitoring 4 active critical exceptions. How can I assist you today?' }
+  ]);
+  const [input, setInput] = useState('');
+  const messagesEndRef = useRef(null);
+
+  const handleSend = () => {
+    if (!input.trim()) return;
+    const newMsgs = [...messages, { role: 'user', text: input }];
+    setMessages(newMsgs);
+    setInput('');
+    setTimeout(() => {
+      setMessages([...newMsgs, { role: 'ai', text: 'I am analyzing the correlation between the recent trade failures and the SWIFT gateway latency. One moment...' }]);
+    }, 1000);
+  };
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  return (
+    <div className="fixed bottom-6 right-6 w-96 h-[600px] bg-[#0f1219] border border-slate-700 shadow-2xl rounded-xl flex flex-col z-50 overflow-hidden font-sans">
+      <div className="bg-[#1a1f2e] p-4 border-b border-slate-700 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+          <span className="font-semibold text-slate-100 flex items-center gap-2">
+             <Bot size={16} className="text-blue-400" /> AI Co-Pilot
+          </span>
+        </div>
+        <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={16} /></button>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#0B0E14]">
+        {messages.map((msg, i) => (
+          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[85%] p-3 rounded-lg text-sm ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 border border-slate-700'}`}>
+              {msg.text}
+            </div>
+          </div>
+        ))}
+        <div ref={messagesEndRef} />
+      </div>
+
+      <div className="p-4 bg-[#1a1f2e] border-t border-slate-700">
+        <div className="flex gap-2">
+          <input 
+            type="text" 
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+            placeholder="Ask about exceptions, trends, or rules..."
+            className="flex-1 bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-slate-500"
+          />
+          <button onClick={handleSend} className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-md transition-colors">
+            <Send size={16} />
+          </button>
+        </div>
+        <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+          {['Summarize risks', 'Draft response', 'Show similar cases'].map(suggestion => (
+            <button key={suggestion} className="whitespace-nowrap px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded text-xs text-slate-400 transition-colors">
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 };

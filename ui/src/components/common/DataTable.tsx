@@ -98,6 +98,13 @@ export default function DataTable<TRow extends Record<string, unknown>>({
                   align={column.numeric ? 'right' : 'left'}
                   style={{ minWidth: column.minWidth }}
                   sortDirection={sortField === column.id ? sortDirection : false}
+                  sx={{
+                    backgroundColor: 'background.default',
+                    borderBottom: '2px solid',
+                    borderColor: 'divider',
+                    fontWeight: 600,
+                    fontSize: '0.875rem',
+                  }}
                 >
                   {column.disableSort || !onSortChange ? (
                     column.label
@@ -136,7 +143,14 @@ export default function DataTable<TRow extends Record<string, unknown>>({
                   <TableRow
                     key={rowIndex}
                     hover
-                    sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
+                    sx={{
+                      '&:last-child td, &:last-child th': { border: 0 },
+                      '&:hover': {
+                        backgroundColor: 'action.hover',
+                        cursor: 'pointer',
+                      },
+                      transition: 'background-color 0.2s ease',
+                    }}
                   >
                     {columns.map((column) => (
                       <TableCell

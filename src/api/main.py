@@ -18,6 +18,7 @@ from src.api.routes import (
     metrics,
     run,
     router_config_view,
+    router_copilot,
     router_explanations,
     router_guardrail_recommendations,
     router_nlq,
@@ -69,6 +70,7 @@ app.include_router(router_supervisor_dashboard.router)  # Phase 3: Supervisor Da
 app.include_router(router_config_view.router)  # Phase 3: Configuration Viewing and Diffing APIs
 app.include_router(router_explanations.router)  # Phase 3: Explanation API Endpoints
 app.include_router(router_guardrail_recommendations.router)  # Phase 3: Guardrail Recommendation API (P3-10)
+app.include_router(router_copilot.router)  # Phase 5: Copilot Chat API (P5-9)
 
 
 @app.get("/health")
@@ -76,3 +78,13 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
+
+# TODO (LR-11): Expose Prometheus metrics endpoint
+# If prometheus_client is available, mount /metrics endpoint
+# Example:
+#   try:
+#       from prometheus_client import make_asgi_app
+#       metrics_app = make_asgi_app()
+#       app.mount("/metrics", metrics_app)
+#   except ImportError:
+#       logger.warning("prometheus_client not available, /metrics endpoint not mounted")

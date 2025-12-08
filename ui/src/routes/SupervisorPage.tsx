@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Box,
-  Card,
-  CardContent,
+  Paper,
   Typography,
   Alert,
   Stack,
@@ -25,7 +24,6 @@ import {
   CheckCircle as CheckCircleIcon,
   Pending as PendingIcon,
 } from '@mui/icons-material'
-import PageHeader from '../components/common/PageHeader.tsx'
 import CardSkeleton from '../components/common/CardSkeleton.tsx'
 import { SeverityChip } from '../components/common'
 import { SupervisorKpiCard } from '../components/supervisor'
@@ -161,62 +159,64 @@ export default function SupervisorPage() {
   }
 
   return (
-    <Box>
-      <PageHeader
-        title="Supervisor Dashboard"
-        subtitle="Cross-tenant and cross-domain exception oversight"
-      />
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {/* Header */}
+      <Box>
+        <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5 }}>
+          Supervisor Dashboard
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Cross-tenant and cross-domain exception oversight
+        </Typography>
+      </Box>
 
       {/* Filters */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={6} md={3}>
-              <TextField
-                fullWidth
-                label="Domain"
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                placeholder="All domains"
-                size="small"
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <TextField
-                fullWidth
-                type="date"
-                label="From Date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-                size="small"
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <TextField
-                fullWidth
-                type="date"
-                label="To Date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-                size="small"
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
-                <Typography variant="body2" color="text.secondary">
-                  Tenant: {tenantId || 'Not selected'}
-                </Typography>
-              </Box>
-            </Grid>
+      <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+        <Grid container spacing={2}>
+          <Grid item xs={12} sm={6} md={3}>
+            <TextField
+              fullWidth
+              label="Domain"
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+              placeholder="All domains"
+              size="small"
+            />
           </Grid>
-        </CardContent>
-      </Card>
+          <Grid item xs={12} sm={6} md={3}>
+            <TextField
+              fullWidth
+              type="date"
+              label="From Date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              size="small"
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <TextField
+              fullWidth
+              type="date"
+              label="To Date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              size="small"
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+              <Typography variant="body2" color="text.secondary">
+                Tenant: {tenantId || 'Not selected'}
+              </Typography>
+            </Box>
+          </Grid>
+        </Grid>
+      </Paper>
 
       {/* Tabs */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
+      <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
           <Tabs value={activeTab} onChange={handleTabChange} aria-label="supervisor dashboard tabs">
             <Tab label="Overview" id="supervisor-tab-0" aria-controls="supervisor-tabpanel-0" />
             <Tab label="Escalations" id="supervisor-tab-1" aria-controls="supervisor-tabpanel-1" />
@@ -238,7 +238,7 @@ export default function SupervisorPage() {
                 <Typography variant="h6" gutterBottom sx={{ mt: 3, mb: 2 }}>
                   Status Summary
                 </Typography>
-                <Grid container spacing={3} sx={{ mb: 4 }}>
+                <Grid container spacing={2} sx={{ mb: 4 }}>
                   {[1, 2, 3, 4].map((i) => (
                     <Grid item xs={12} sm={6} md={3} key={i}>
                       <CardSkeleton lines={3} />
@@ -254,34 +254,32 @@ export default function SupervisorPage() {
           <Typography variant="h6" gutterBottom sx={{ mt: 3, mb: 2 }}>
             Severity Overview
           </Typography>
-          <Grid container spacing={3} sx={{ mb: 4 }}>
+          <Grid container spacing={2} sx={{ mb: 4 }}>
             {severityLevels.map((severity) => {
               const total = getSeverityTotal(counts, severity)
               const severityCounts = counts[severity] || {}
               return (
                 <Grid item xs={12} sm={6} md={3} key={severity}>
-                  <Card>
-                    <CardContent>
-                      <Stack spacing={1}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Typography variant="h4">{total}</Typography>
-                          <SeverityChip severity={severity} size="small" />
-                        </Box>
-                        <Stack spacing={0.5}>
-                          {Object.entries(severityCounts).map(([status, count]) => (
-                            <Box key={status} sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <Typography variant="caption" color="text.secondary">
-                                {status.replace('_', ' ')}:
-                              </Typography>
-                              <Typography variant="body2" fontWeight="medium">
-                                {count}
-                              </Typography>
-                            </Box>
-                          ))}
-                        </Stack>
+                  <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                    <Stack spacing={1}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="h4">{total}</Typography>
+                        <SeverityChip severity={severity} size="small" />
+                      </Box>
+                      <Stack spacing={0.5}>
+                        {Object.entries(severityCounts).map(([status, count]) => (
+                          <Box key={status} sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Typography variant="caption" color="text.secondary">
+                              {status.replace('_', ' ')}:
+                            </Typography>
+                            <Typography variant="body2" fontWeight="medium">
+                              {count}
+                            </Typography>
+                          </Box>
+                        ))}
                       </Stack>
-                    </CardContent>
-                  </Card>
+                    </Stack>
+                  </Paper>
                 </Grid>
               )
             })}
@@ -293,7 +291,7 @@ export default function SupervisorPage() {
               <Typography variant="h6" gutterBottom sx={{ mt: 3, mb: 2 }}>
                 Status Summary
               </Typography>
-              <Grid container spacing={3} sx={{ mb: 4 }}>
+              <Grid container spacing={2} sx={{ mb: 4 }}>
                 <Grid item xs={12} sm={6} md={3}>
                   <SupervisorKpiCard
                     label="Open exceptions"
@@ -335,58 +333,66 @@ export default function SupervisorPage() {
             Top Policy Violations
           </Typography>
           {topViolations.length > 0 ? (
-            <Card sx={{ mb: 4 }}>
-              <CardContent>
-                <TableContainer>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Rule</TableCell>
-                        <TableCell>Violation Type</TableCell>
-                        <TableCell>Exception ID</TableCell>
-                        <TableCell>Tenant</TableCell>
-                        <TableCell>Domain</TableCell>
-                        <TableCell>Last Seen</TableCell>
+            <Paper sx={{ mb: 4, borderRadius: 2, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ backgroundColor: 'background.default', fontWeight: 600 }}>Rule</TableCell>
+                      <TableCell sx={{ backgroundColor: 'background.default', fontWeight: 600 }}>Violation Type</TableCell>
+                      <TableCell sx={{ backgroundColor: 'background.default', fontWeight: 600 }}>Exception ID</TableCell>
+                      <TableCell sx={{ backgroundColor: 'background.default', fontWeight: 600 }}>Tenant</TableCell>
+                      <TableCell sx={{ backgroundColor: 'background.default', fontWeight: 600 }}>Domain</TableCell>
+                      <TableCell sx={{ backgroundColor: 'background.default', fontWeight: 600 }}>Last Seen</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {topViolations.slice(0, 10).map((violation, index) => (
+                      <TableRow 
+                        key={`${violation.exception_id}-${index}`} 
+                        hover
+                        sx={{
+                          '&:hover': {
+                            backgroundColor: 'action.hover',
+                            cursor: 'pointer',
+                          },
+                          transition: 'background-color 0.2s ease',
+                        }}
+                      >
+                        <TableCell>
+                          <Typography variant="body2" fontWeight="medium">
+                            {violation.violated_rule}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={violation.violation_type}
+                            size="small"
+                            color="error"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
+                            {violation.exception_id}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">{violation.tenant_id}</Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">{violation.domain || '—'}</Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color="text.secondary">
+                            {formatDateTime(violation.timestamp)}
+                          </Typography>
+                        </TableCell>
                       </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {topViolations.slice(0, 10).map((violation, index) => (
-                        <TableRow key={`${violation.exception_id}-${index}`} hover>
-                          <TableCell>
-                            <Typography variant="body2" fontWeight="medium">
-                              {violation.violated_rule}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              label={violation.violation_type}
-                              size="small"
-                              color="error"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                              {violation.exception_id}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2">{violation.tenant_id}</Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2">{violation.domain || '—'}</Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2" color="text.secondary">
-                              {formatDateTime(violation.timestamp)}
-                            </Typography>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </CardContent>
-            </Card>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
           ) : (
             <Alert severity="info" sx={{ mb: 4 }}>
               No policy violations found for the selected filters.
@@ -401,22 +407,20 @@ export default function SupervisorPage() {
             Optimization Suggestions
           </Typography>
           {Object.keys(optimizationSuggestions).length > 0 ? (
-            <Card>
-              <CardContent>
-                <Stack spacing={1}>
-                  {Object.entries(optimizationSuggestions).map(([key, value]) => (
-                    <Box key={key} sx={{ pl: 2, borderLeft: 2, borderColor: 'primary.main' }}>
-                      <Typography variant="body2">
-                        <strong>{key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}:</strong>{' '}
-                        {typeof value === 'object' && value !== null
-                          ? JSON.stringify(value, null, 2)
-                          : String(value)}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Stack>
-              </CardContent>
-            </Card>
+            <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+              <Stack spacing={1}>
+                {Object.entries(optimizationSuggestions).map(([key, value]) => (
+                  <Box key={key} sx={{ pl: 2, borderLeft: 2, borderColor: 'primary.main' }}>
+                    <Typography variant="body2">
+                      <strong>{key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}:</strong>{' '}
+                      {typeof value === 'object' && value !== null
+                        ? JSON.stringify(value, null, 2)
+                        : String(value)}
+                    </Typography>
+                  </Box>
+                ))}
+              </Stack>
+            </Paper>
           ) : (
             <Alert severity="info">
               No optimization suggestions at this time.
@@ -442,8 +446,7 @@ export default function SupervisorPage() {
           <TabPanel value={activeTab} index={2}>
             <SupervisorPolicyViolationsTab filters={filterProps} />
           </TabPanel>
-        </CardContent>
-      </Card>
+        </Paper>
     </Box>
   )
 }

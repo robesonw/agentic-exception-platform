@@ -1,0 +1,50 @@
+# Test routing configuration for LR-12 comprehensive tests
+# This file is used by test_routing_end_to_end.py
+
+default_provider: "dummy"
+default_model: "dummy-1"
+default_fallback_chain:
+  - "dummy"
+
+domains:
+  Finance:
+    provider: "openrouter"
+    model: "openrouter:finance-model"
+    fallback_chain:
+      - "openrouter"
+      - "openai"
+      - "dummy"
+  
+  Healthcare:
+    provider: "dummy"
+    model: "dummy-healthcare"
+    fallback_chain:
+      - "dummy"  # No external providers for compliance
+  
+  Insurance:
+    provider: "openrouter"
+    model: "openrouter:insurance-model"
+    # No fallback_chain specified, will use default
+
+tenants:
+  TENANT_FINANCE_001:
+    provider: "dummy"
+    model: "dummy-tenant-special"
+    fallback_chain:
+      - "openrouter"
+      - "dummy"
+  
+  TENANT_HEALTHCARE_001:
+    provider: "dummy"
+    model: "dummy-healthcare-tenant"
+    fallback_chain:
+      - "dummy"
+  
+  TENANT_INSURANCE_001:
+    # Tenant with fallback chain but inherits provider/model from domain
+    provider: "openrouter"  # Inherit from Insurance domain
+    model: "openrouter:insurance-model"  # Inherit from Insurance domain
+    fallback_chain:
+      - "openrouter"
+      - "dummy"
+

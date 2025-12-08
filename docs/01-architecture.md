@@ -25,6 +25,7 @@ TriageAgent --> PolicyAgent --> ResolutionAgent --> FeedbackAgent
 Supporting Layers:
 Skill/Tool Registry (per-tenant)
 Memory Layer (per-tenant RAG index)
+LLM Routing Layer (Phase 5: domain/tenant-aware provider selection)
 Audit & Observability System
 Admin UI / API
 Output: Resolved Exceptions, Dashboards, Audit Trails

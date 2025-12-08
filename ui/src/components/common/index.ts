@@ -1,6 +1,7 @@
 // Common reusable components
 // See: PageHeader.tsx, DataTable.tsx, FilterBar.tsx, etc.
 
+export { default as AICopilot } from './AICopilot'
 export { default as PageHeader } from './PageHeader'
 export { default as DataTable } from './DataTable'
 export { default as FilterBar } from './FilterBar'

@@ -1,0 +1,78 @@
+# LLM Routing Configuration Sample
+# 
+# This file defines how the platform selects LLM providers and models
+# based on domain and tenant configuration.
+#
+# Precedence: tenant > domain > global defaults
+#
+# Copy this file to llm-routing.yaml and customize for your environment.
+# Set LLM_ROUTING_CONFIG_PATH environment variable to point to your config file.
+
+# Global defaults (used when no domain/tenant-specific config exists)
+default_provider: openrouter
+default_model: openrouter:gpt-4.1-mini
+
+# Default fallback chain for all requests (if not overridden by domain/tenant)
+# Providers are tried in order until one succeeds
+default_fallback_chain:
+  - openrouter
+  - openai
+  - dummy
+
+# Domain-specific routing configurations
+# These override global defaults for specific domains
+domains:
+  Finance:
+    provider: openrouter
+    model: openrouter:gpt-4.1-mini
+    # Finance domain uses OpenRouter with GPT-4.1-mini for cost efficiency
+    fallback_chain:
+      - openrouter
+      - openai
+      - dummy
+  
+  Healthcare:
+    provider: openrouter
+    model: openrouter:gpt-4o-mini
+    # Healthcare domain uses GPT-4o-mini for better medical understanding
+    fallback_chain:
+      - dummy  # Healthcare: no external providers for PHI/PII compliance
+  
+  Insurance:
+    provider: openrouter
+    model: openrouter:gpt-4.1-mini
+    # Insurance domain uses GPT-4.1-mini
+  
+  ITOps:
+    provider: openrouter
+    model: openrouter:gpt-4.1-mini
+    # IT Ops domain uses GPT-4.1-mini
+
+# Tenant-specific routing configurations
+# These override both global defaults and domain configs for specific tenants
+tenants:
+  TENANT_FINANCE_001:
+    provider: openrouter
+    model: openrouter:gpt-4o
+    # Premium tenant uses GPT-4o for higher quality responses
+  
+  TENANT_FINANCE_002:
+    provider: openrouter
+    model: openrouter:gpt-4.1-mini
+    # Standard tenant uses GPT-4.1-mini
+  
+  TENANT_HEALTHCARE_001:
+    provider: openrouter
+    model: openrouter:gpt-4o-mini
+    # Healthcare tenant uses GPT-4o-mini
+  
+  TENANT_INSURANCE_001:
+    provider: openrouter
+    model: openrouter:gpt-4.1-mini
+    # Insurance tenant uses GPT-4.1-mini
+
+# Example: Tenant with dummy provider (for testing/development)
+# TENANT_TEST_001:
+#   provider: dummy
+#   model: dummy-model
+

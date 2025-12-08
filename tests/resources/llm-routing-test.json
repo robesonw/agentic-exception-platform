@@ -1,0 +1,25 @@
+{
+  "default_provider": "dummy",
+  "default_model": "dummy-1",
+  "default_fallback_chain": ["dummy"],
+  "domains": {
+    "Finance": {
+      "provider": "openrouter",
+      "model": "openrouter:finance-model",
+      "fallback_chain": ["openrouter", "openai", "dummy"]
+    },
+    "Healthcare": {
+      "provider": "dummy",
+      "model": "dummy-healthcare",
+      "fallback_chain": ["dummy"]
+    }
+  },
+  "tenants": {
+    "TENANT_FINANCE_001": {
+      "provider": "dummy",
+      "model": "dummy-tenant-special",
+      "fallback_chain": ["openrouter", "dummy"]
+    }
+  }
+}
+

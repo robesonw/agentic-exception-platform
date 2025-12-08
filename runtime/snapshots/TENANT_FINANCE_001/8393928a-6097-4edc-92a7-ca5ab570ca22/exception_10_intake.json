@@ -1,0 +1,54 @@
+{
+  "exception": {
+    "exceptionId": "e01570b7-1635-4be0-b233-aa3c594ca436",
+    "tenantId": "TENANT_FINANCE_001",
+    "sourceSystem": "RiskManagement",
+    "exceptionType": null,
+    "severity": null,
+    "timestamp": "2025-12-07 23:16:18.878358+00:00",
+    "rawPayload": {
+      "exceptionId": "EXC_TENANT_FINANCE_001_0010",
+      "timestamp": "2025-12-07T00:46:16.793929+00:00",
+      "type": "TradeSettlementFailure",
+      "amount": 2000.0,
+      "accountId": "ACC_00010",
+      "description": "Sample TradeSettlementFailure exception #11",
+      "metadata": {
+        "source": "seed_script",
+        "batch": "ui_demo",
+        "index": 10
+      }
+    },
+    "normalizedContext": {
+      "pipelineId": "d8d64c62-cd1a-4612-90a5-3262ff83e984",
+      "normalizedAt": "2025-12-07T23:16:18.878358+00:00"
+    },
+    "detectedRules": [],
+    "suggestedActions": [],
+    "resolutionStatus": "OPEN",
+    "auditTrail": []
+  },
+  "context": {
+    "stages": {
+      "intake": {
+        "decision": "Normalized",
+        "confidence": 0.8,
+        "evidence": [
+          "Normalized exception ID: e01570b7-1635-4be0-b233-aa3c594ca436",
+          "Tenant ID: TENANT_FINANCE_001",
+          "Source system: RiskManagement",
+          "Warning: No exception type provided (will be inferred in triage)"
+        ],
+        "nextStep": "ProceedToTriage"
+      }
+    },
+    "evidence": [
+      "Normalized exception ID: e01570b7-1635-4be0-b233-aa3c594ca436",
+      "Tenant ID: TENANT_FINANCE_001",
+      "Source system: RiskManagement",
+      "Warning: No exception type provided (will be inferred in triage)"
+    ],
+    "errors": []
+  },
+  "timestamp": "2025-12-07T23:16:18.878358+00:00"
+}

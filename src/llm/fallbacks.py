@@ -5,10 +5,12 @@ Provides:
 - LLMFallbackPolicy for configuration
 - Circuit breaker pattern (CLOSED → OPEN → HALF_OPEN)
 - call_with_fallback() with timeout, retries, and exponential backoff
+- call_with_fallback_chain() for provider-specific fallback chains (LR-10)
 - llm_or_rules() helper for agent integration
 - Comprehensive logging for fallback events
 
 Matches Phase 3 requirements from phase3-mvp-issues.md P3-6.
+Phase 5: Provider-specific fallback chains (LR-10).
 """
 
 import logging
@@ -17,7 +19,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Optional
 
-from src.llm.provider import LLMClient, LLMProviderError
+from src.llm.base import LLMClient, LLMResponse
+from src.llm.factory import load_llm_provider
+from src.llm.metrics import record_fallback_event
+from src.llm.provider import LLMClient as Phase3LLMClient, LLMProviderError
+from src.llm.routing_config import get_routing_config
+from src.llm.utils import mask_secret
 from src.llm.validation import LLMValidationError
 
 logger = logging.getLogger(__name__)
@@ -539,4 +546,233 @@ def llm_or_rules(
         circuit_breaker=circuit_breaker,
         audit_logger=audit_logger,
     )
+
+
+async def call_with_fallback_chain(
+    prompt: str,
+    context: dict,
+    domain: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+) -> LLMResponse:
+    """
+    Call LLM with provider-specific fallback chain (LR-10).
+    
+    This function attempts to call LLM providers in order based on the fallback chain
+    configured for the given domain/tenant. If one provider fails, it automatically
+    tries the next provider in the chain.
+    
+    Fallback chain resolution:
+    - Tenant-level chain (highest precedence)
+    - Domain-level chain
+    - Global default chain
+    - Default: ["dummy"]
+    
+    Args:
+        prompt: The prompt text to send to the LLM
+        context: Context dictionary (should include domain and tenant_id if available)
+        domain: Optional domain name (can also be in context["domain"])
+        tenant_id: Optional tenant ID (can also be in context["tenant_id"])
+    
+    Returns:
+        LLMResponse from the first successful provider, or a safe DummyLLMClient
+        response if all providers fail
+    
+    Example:
+        # Finance domain with fallback chain: openrouter → openai → dummy
+        response = await call_with_fallback_chain(
+            prompt="Explain this exception",
+            context={"domain": "Finance", "tenant_id": "TENANT_001"},
+            domain="Finance",
+            tenant_id="TENANT_001"
+        )
+    """
+    # Extract domain and tenant_id from context if not provided
+    if not domain and context:
+        domain = context.get("domain")
+    if not tenant_id and context:
+        tenant_id = context.get("tenant_id")
+    
+    # Get routing config to resolve fallback chain
+    routing_config = get_routing_config()
+    if routing_config:
+        fallback_chain = routing_config.get_fallback_chain(domain=domain, tenant_id=tenant_id)
+    else:
+        # No routing config, use default chain
+        fallback_chain = ["dummy"]
+    
+    logger.info(
+        f"Using fallback chain for domain={domain}, tenant_id={tenant_id}: {fallback_chain}"
+    )
+    
+    # Track attempts for auditing
+    attempts = []
+    last_error: Optional[Exception] = None
+    
+    # Try each provider in the fallback chain
+    for provider_index, provider_name in enumerate(fallback_chain):
+        provider_name = provider_name.lower().strip()
+        
+        logger.debug(
+            f"Attempting provider {provider_index + 1}/{len(fallback_chain)}: "
+            f"{provider_name} for domain={domain}, tenant_id={tenant_id}"
+        )
+        
+        try:
+            # Load provider with override (pass provider explicitly to override routing)
+            # Note: We pass provider=provider_name to override the routing config's provider
+            # but still use domain/tenant for model selection
+            llm_client = load_llm_provider(
+                domain=domain,
+                tenant_id=tenant_id,
+                provider=provider_name,  # Override to use this specific provider
+            )
+            
+            # Get model info for logging (without secrets)
+            model_info = "unknown"
+            if hasattr(llm_client, 'config') and hasattr(llm_client.config, 'model'):
+                model_info = llm_client.config.model
+            elif hasattr(llm_client, 'model'):
+                model_info = llm_client.model
+            
+            # Attempt LLM call
+            start_time = time.time()
+            try:
+                response = await llm_client.generate(prompt, context=context)
+                elapsed = time.time() - start_time
+                
+                # Check if response indicates an error
+                if response.raw and response.raw.get("error"):
+                    # Response indicates an error, treat as failure
+                    error_msg = response.raw.get("error_message", "Unknown error")
+                    raise Exception(f"Provider returned error: {error_msg}")
+                
+                # Success! Log and return
+                logger.info(
+                    f"LLM call succeeded with provider={provider_name}, model={model_info} "
+                    f"for domain={domain}, tenant_id={tenant_id} in {elapsed:.2f}s"
+                )
+                
+                # Add metadata to response about which provider was used
+                if response.raw is None:
+                    response.raw = {}
+                response.raw["fallback_chain_used"] = True
+                response.raw["provider_used"] = provider_name
+                response.raw["provider_index"] = provider_index
+                response.raw["total_providers_attempted"] = provider_index + 1
+                
+                # Log audit event
+                attempts.append({
+                    "provider": provider_name,
+                    "model": model_info,
+                    "outcome": "success",
+                    "elapsed_s": elapsed,
+                })
+                
+                return response
+                
+            except Exception as e:
+                elapsed = time.time() - start_time
+                last_error = e
+                
+                # Log failure
+                error_type = type(e).__name__
+                error_msg = str(e)
+                
+                logger.warning(
+                    f"LLM call failed with provider={provider_name}, model={model_info} "
+                    f"for domain={domain}, tenant_id={tenant_id} after {elapsed:.2f}s: "
+                    f"{error_type}: {error_msg}"
+                )
+                
+                # Log audit event
+                attempts.append({
+                    "provider": provider_name,
+                    "model": model_info,
+                    "outcome": "failure",
+                    "error_type": error_type,
+                    "error_message": error_msg,
+                    "elapsed_s": elapsed,
+                })
+                
+                # If this is not the last provider, continue to next
+                if provider_index < len(fallback_chain) - 1:
+                    next_provider = fallback_chain[provider_index + 1]
+                    logger.info(
+                        f"Falling back to next provider in chain: {next_provider} "
+                        f"(reason: {error_type})"
+                    )
+                    # Record fallback event metric (LR-11)
+                    record_fallback_event(
+                        tenant_id=tenant_id,
+                        domain=domain,
+                        from_provider=provider_name,
+                        to_provider=next_provider,
+                    )
+                    continue
+                else:
+                    # Last provider failed, will fall through to final fallback
+                    break
+                    
+        except Exception as e:
+            # Error loading provider or other unexpected error
+            error_type = type(e).__name__
+            error_msg = str(e)
+            
+            logger.warning(
+                f"Failed to load or use provider={provider_name} "
+                f"for domain={domain}, tenant_id={tenant_id}: {error_type}: {error_msg}"
+            )
+            
+            attempts.append({
+                "provider": provider_name,
+                "model": "unknown",
+                "outcome": "failure",
+                "error_type": error_type,
+                "error_message": error_msg,
+                "elapsed_s": 0.0,
+            })
+            
+            # If this is not the last provider, continue to next
+            if provider_index < len(fallback_chain) - 1:
+                next_provider = fallback_chain[provider_index + 1]
+                logger.info(
+                    f"Falling back to next provider in chain: {next_provider} "
+                    f"(reason: {error_type})"
+                )
+                # Record fallback event metric (LR-11)
+                record_fallback_event(
+                    tenant_id=tenant_id,
+                    domain=domain,
+                    from_provider=provider_name,
+                    to_provider=next_provider,
+                )
+                continue
+            else:
+                # Last provider failed, will fall through to final fallback
+                break
+    
+    # All providers in chain failed, return safe DummyLLMClient response
+    logger.error(
+        f"All providers in fallback chain failed for domain={domain}, tenant_id={tenant_id}. "
+        f"Attempts: {attempts}. Final error: {last_error}"
+    )
+    
+    # Create a safe error response
+    from src.llm.dummy_llm import DummyLLMClient
+    dummy_client = DummyLLMClient()
+    error_response = await dummy_client.generate(
+        prompt="I apologize, but I'm unable to process your request right now. "
+               "All AI service providers are currently unavailable. Please try again later.",
+        context=context
+    )
+    
+    # Add metadata about the failure
+    if error_response.raw is None:
+        error_response.raw = {}
+    error_response.raw["fallback_chain_exhausted"] = True
+    error_response.raw["all_providers_failed"] = True
+    error_response.raw["attempts"] = attempts
+    error_response.raw["final_error"] = str(last_error) if last_error else "Unknown error"
+    
+    return error_response
 

@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { Box, Button, Alert } from '@mui/material'
-import PageHeader from '../components/common/PageHeader.tsx'
+import { Box, Button, Alert, Grid, Paper, Typography } from '@mui/material'
 import FilterBar, { type ExceptionFilters } from '../components/common/FilterBar.tsx'
 import DataTable, { type DataTableColumn } from '../components/common/DataTable.tsx'
 import { SeverityChip, StatusChip } from '../components/common'
@@ -10,6 +9,7 @@ import { useTenant } from '../hooks/useTenant.tsx'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import { formatDateTime } from '../utils/dateFormat.ts'
 import type { ExceptionSummary } from '../types'
+import { themeColors } from '../theme/theme.ts'
 
 
 export default function ExceptionsPage() {
@@ -105,9 +105,16 @@ export default function ExceptionsPage() {
   // Show message if API key is missing (but tenant is set)
   if (!apiKey && tenantId) {
     return (
-      <Box>
-        <PageHeader title="Exceptions" subtitle="Monitor and investigate exceptions for the current tenant" />
-        <Alert severity="warning" sx={{ mt: 3 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5 }}>
+            Operations Center
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Monitor and triage exceptions across all tenants and domains.
+          </Typography>
+        </Box>
+        <Alert severity="warning">
           API key is required to access exceptions. Please go to <Link to="/login">Login</Link> to set your API key.
         </Alert>
       </Box>
@@ -120,6 +127,11 @@ export default function ExceptionsPage() {
   // Use the data and loading state
   const exceptions = data?.items || []
   const totalCount = data?.total || 0
+
+  // Compute quick stats from current page data
+  // Note: These are approximate for open/critical since we only have current page
+  const openCount = exceptions.filter((e) => e.resolution_status !== 'RESOLVED').length
+  const criticalCount = exceptions.filter((e) => e.severity === 'CRITICAL').length
 
   // Handle filter change
   const handleFilterChange = (newFilters: ExceptionFilters) => {
@@ -224,60 +236,292 @@ export default function ExceptionsPage() {
   )
 
   return (
-    <Box>
-      <PageHeader
-        title="Exceptions"
-        subtitle="Monitor and investigate exceptions for the current tenant"
-        actions={
-          <Button variant="contained" onClick={handleNewException}>
-            New Exception
-          </Button>
-        }
-      />
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {/* Header Section */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5 }}>
+            Operations Center
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Monitor and triage exceptions across all tenants and domains.
+          </Typography>
+        </Box>
+        <Button variant="contained" onClick={handleNewException}>
+          New Exception
+        </Button>
+      </Box>
 
-      {/* Filter Bar */}
-      <FilterBar value={filters} onChange={handleFilterChange} />
+      {/* Quick Stats / KPI Cards */}
+      <Grid container spacing={2}>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper
+            sx={{
+              p: 3,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: themeColors.borderPrimary,
+              bgcolor: themeColors.bgSecondary,
+              background: `linear-gradient(135deg, ${themeColors.error}15, transparent)`,
+              borderLeft: '4px solid',
+              borderLeftColor: themeColors.error,
+              position: 'relative',
+              overflow: 'hidden',
+              '&:hover': {
+                borderColor: themeColors.borderSecondary,
+                boxShadow: `0 4px 12px ${themeColors.error}20`,
+                transform: 'translateY(-2px)',
+              },
+              transition: 'all 0.2s',
+            }}
+          >
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                width: 80,
+                height: 80,
+                background: `radial-gradient(circle, ${themeColors.error}10, transparent)`,
+                borderRadius: '50%',
+                transform: 'translate(20px, -20px)',
+              }}
+            />
+            <Typography
+              variant="caption"
+              sx={{
+                textTransform: 'uppercase',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                letterSpacing: '0.05em',
+                display: 'block',
+                mb: 1,
+                color: themeColors.textTertiary,
+                position: 'relative',
+                zIndex: 1,
+              }}
+            >
+              Critical Exceptions
+            </Typography>
+            <Typography
+              variant="h4"
+              sx={{
+                fontWeight: 700,
+                color: themeColors.textPrimary,
+                position: 'relative',
+                zIndex: 1,
+              }}
+            >
+              {criticalCount.toLocaleString()}
+            </Typography>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper
+            sx={{
+              p: 3,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: themeColors.borderPrimary,
+              bgcolor: themeColors.bgSecondary,
+              background: `linear-gradient(135deg, ${themeColors.primary}15, transparent)`,
+              borderLeft: '4px solid',
+              borderLeftColor: themeColors.primary,
+              position: 'relative',
+              overflow: 'hidden',
+              '&:hover': {
+                borderColor: themeColors.borderSecondary,
+                boxShadow: `0 4px 12px ${themeColors.primary}20`,
+                transform: 'translateY(-2px)',
+              },
+              transition: 'all 0.2s',
+            }}
+          >
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                width: 80,
+                height: 80,
+                background: `radial-gradient(circle, ${themeColors.primary}10, transparent)`,
+                borderRadius: '50%',
+                transform: 'translate(20px, -20px)',
+              }}
+            />
+            <Typography
+              variant="caption"
+              sx={{
+                textTransform: 'uppercase',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                letterSpacing: '0.05em',
+                display: 'block',
+                mb: 1,
+                color: themeColors.textTertiary,
+                position: 'relative',
+                zIndex: 1,
+              }}
+            >
+              AI Resolution Rate
+            </Typography>
+            <Typography
+              variant="h4"
+              sx={{
+                fontWeight: 700,
+                color: themeColors.textPrimary,
+                position: 'relative',
+                zIndex: 1,
+              }}
+            >
+              —
+            </Typography>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper
+            sx={{
+              p: 3,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: themeColors.borderPrimary,
+              bgcolor: themeColors.bgSecondary,
+              position: 'relative',
+              overflow: 'hidden',
+              '&:hover': {
+                borderColor: themeColors.borderSecondary,
+                boxShadow: `0 4px 12px ${themeColors.warning}20`,
+                transform: 'translateY(-2px)',
+              },
+              transition: 'all 0.2s',
+            }}
+          >
+            <Typography
+              variant="caption"
+              sx={{
+                textTransform: 'uppercase',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                letterSpacing: '0.05em',
+                display: 'block',
+                mb: 1,
+                color: themeColors.textTertiary,
+              }}
+            >
+              Open Exceptions
+            </Typography>
+            <Typography variant="h4" sx={{ fontWeight: 700, color: themeColors.textPrimary }}>
+              {openCount.toLocaleString()}
+            </Typography>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper
+            sx={{
+              p: 3,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: themeColors.borderPrimary,
+              bgcolor: themeColors.bgSecondary,
+              position: 'relative',
+              overflow: 'hidden',
+              '&:hover': {
+                borderColor: themeColors.borderSecondary,
+                boxShadow: `0 4px 12px ${themeColors.info}20`,
+                transform: 'translateY(-2px)',
+              },
+              transition: 'all 0.2s',
+            }}
+          >
+            <Typography
+              variant="caption"
+              sx={{
+                textTransform: 'uppercase',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                letterSpacing: '0.05em',
+                display: 'block',
+                mb: 1,
+                color: themeColors.textTertiary,
+              }}
+            >
+              Total Exceptions
+            </Typography>
+            <Typography variant="h4" sx={{ fontWeight: 700, color: themeColors.textPrimary }}>
+              {totalCount.toLocaleString()}
+            </Typography>
+          </Paper>
+        </Grid>
+      </Grid>
 
-      {/* Error State */}
-      {isError && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          Failed to load exceptions: {error?.message || 'Unknown error'}
-        </Alert>
-      )}
+      {/* Filters + Table Section */}
+      <Paper
+        sx={{
+          p: 2,
+          borderRadius: 2,
+          border: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'background.paper',
+        }}
+      >
+        {/* Filter Bar */}
+        <Box sx={{ mb: 2 }}>
+          <FilterBar value={filters} onChange={handleFilterChange} />
+        </Box>
 
-      {/* Data Table */}
-      {tenantId ? (
-        <DataTable
-          columns={columns}
-          rows={exceptions}
-          loading={isLoading}
-          page={page}
-          pageSize={pageSize}
-          totalCount={totalCount}
-          onPageChange={handlePageChange}
-          onPageSizeChange={handlePageSizeChange}
-          sortField={sortField}
-          sortDirection={sortDirection}
-          onSortChange={handleSortChange}
-          emptyTitle="No exceptions found"
-          emptyMessage={
-            hasActiveFilters
-              ? 'Try clearing filters or expanding your date range to see more results.'
-              : 'No exceptions have been recorded yet for this tenant.'
-          }
-          emptyAction={
-            hasActiveFilters ? (
-              <Button variant="outlined" size="small" onClick={handleClearFilters}>
-                Clear filters
-              </Button>
-            ) : undefined
-          }
-        />
-      ) : (
-        <Alert severity="info" sx={{ mt: 3 }}>
-          Please select a tenant to view exceptions.
-        </Alert>
-      )}
+        {/* Error State */}
+        {isError && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            Failed to load exceptions: {error?.message || 'Unknown error'}
+          </Alert>
+        )}
+
+        {/* Data Table */}
+        {tenantId ? (
+          <Box
+            sx={{
+              '& .MuiPaper-root': {
+                backgroundColor: 'background.paper',
+                borderRadius: 2,
+                border: '1px solid',
+                borderColor: 'divider',
+                boxShadow: 'none',
+              },
+            }}
+          >
+            <DataTable
+              columns={columns}
+              rows={exceptions}
+              loading={isLoading}
+              page={page}
+              pageSize={pageSize}
+              totalCount={totalCount}
+              onPageChange={handlePageChange}
+              onPageSizeChange={handlePageSizeChange}
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSortChange={handleSortChange}
+              emptyTitle="No exceptions found"
+              emptyMessage={
+                hasActiveFilters
+                  ? 'Try clearing filters or expanding your date range to see more results.'
+                  : 'No exceptions have been recorded yet for this tenant.'
+              }
+              emptyAction={
+                hasActiveFilters ? (
+                  <Button variant="outlined" size="small" onClick={handleClearFilters}>
+                    Clear filters
+                  </Button>
+                ) : undefined
+              }
+            />
+          </Box>
+        ) : (
+          <Alert severity="info">
+            Please select a tenant to view exceptions.
+          </Alert>
+        )}
+      </Paper>
     </Box>
   )
 }
