@@ -85,7 +85,7 @@ async def get_exception_detail(
     - Full pipeline result
     """
     ui_query_service = get_ui_query_service()
-    detail = ui_query_service.get_exception_detail(tenant_id, exception_id)
+    detail = await ui_query_service.get_exception_detail(tenant_id, exception_id)
     if not detail:
         raise HTTPException(status_code=404, detail="Exception not found")
     
@@ -139,8 +139,8 @@ async def browse_exceptions(
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid severity: {severity}")
     
-    # Search exceptions
-    result = ui_query_service.search_exceptions(
+    # Search exceptions (now async)
+    result = await ui_query_service.search_exceptions(
         tenant_id=tenant_id,
         domain=domain,
         status=status_enum,
@@ -196,7 +196,7 @@ async def get_exception_evidence(
     - Agent evidence (evidence from each agent stage)
     """
     ui_query_service = get_ui_query_service()
-    evidence = ui_query_service.get_exception_evidence(tenant_id, exception_id)
+    evidence = await ui_query_service.get_exception_evidence(tenant_id, exception_id)
     if not evidence:
         raise HTTPException(status_code=404, detail="Exception not found")
     
@@ -222,7 +222,7 @@ async def get_exception_audit(
     - data (event-specific data)
     """
     ui_query_service = get_ui_query_service()
-    audit_events = ui_query_service.get_exception_audit(tenant_id, exception_id)
+    audit_events = await ui_query_service.get_exception_audit(tenant_id, exception_id)
     
     return {
         "exception_id": exception_id,

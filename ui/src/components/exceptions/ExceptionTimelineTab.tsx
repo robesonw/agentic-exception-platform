@@ -1,8 +1,25 @@
-import { Box, Card, CardContent, Typography, Alert, Stack, Chip, LinearProgress } from '@mui/material'
+import { useState, useMemo } from 'react'
+import {
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  Alert,
+  Stack,
+  Chip,
+  Paper,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  TextField,
+  Button,
+} from '@mui/material'
 import CardSkeleton from '../common/CardSkeleton.tsx'
-import { useTimeline } from '../../hooks/useExplanations.ts'
+import { useExceptionEvents } from '../../hooks/useExceptions.ts'
+import { useTenant } from '../../hooks/useTenant.tsx'
 import { formatDateTime } from '../../utils/dateFormat.ts'
-import type { TimelineEntry, TimelineStage } from '../../types'
+import type { ExceptionEvent } from '../../api/exceptions.ts'
 
 /**
  * Props for ExceptionTimelineTab component
@@ -13,51 +30,75 @@ export interface ExceptionTimelineTabProps {
 }
 
 /**
- * Format stage name for display (capitalize first letter)
+ * Format event type for display
  */
-function formatStageName(stage: TimelineStage): string {
-  return stage.charAt(0).toUpperCase() + stage.slice(1)
+function formatEventType(eventType: string): string {
+  // Convert camelCase to Title Case
+  return eventType
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, (str) => str.toUpperCase())
+    .trim()
 }
 
 /**
- * Get stage color for visual distinction
+ * Get event color based on event type
  */
-function getStageColor(stage: TimelineStage): 'primary' | 'secondary' | 'success' | 'error' | 'info' | 'warning' {
-  switch (stage) {
-    case 'intake':
-      return 'info'
-    case 'triage':
+function getEventColor(eventType: string): 'primary' | 'secondary' | 'success' | 'error' | 'info' | 'warning' {
+  if (eventType.includes('Created')) return 'info'
+  if (eventType.includes('Completed')) return 'success'
+  if (eventType.includes('Approved')) return 'success'
+  if (eventType.includes('Rejected') || eventType.includes('Failed')) return 'error'
+  if (eventType.includes('Escalated')) return 'warning'
+  if (eventType.includes('Evaluated') || eventType.includes('Proposed')) return 'primary'
+  return 'secondary'
+}
+
+/**
+ * Get actor type color
+ */
+function getActorTypeColor(actorType: string): 'default' | 'primary' | 'secondary' | 'success' | 'error' | 'info' | 'warning' {
+  switch (actorType.toLowerCase()) {
+    case 'agent':
       return 'primary'
-    case 'policy':
-      return 'warning'
-    case 'resolution':
+    case 'user':
       return 'success'
-    case 'feedback':
-      return 'secondary'
-    default:
+    case 'system':
       return 'info'
+    default:
+      return 'default'
   }
 }
 
 /**
- * Format confidence score as percentage
+ * Format payload summary for display
  */
-function formatConfidence(confidence?: number | null): string {
-  if (confidence === null || confidence === undefined) {
-    return 'N/A'
+function formatPayloadSummary(payload: Record<string, unknown>): string {
+  if (!payload || Object.keys(payload).length === 0) {
+    return 'No additional details'
   }
-  return `${Math.round(confidence * 100)}%`
+  
+  // Try to extract meaningful summary
+  const keys = Object.keys(payload)
+  if (keys.length === 1) {
+    const value = payload[keys[0]]
+    if (typeof value === 'string' && value.length < 100) {
+      return `${keys[0]}: ${value}`
+    }
+  }
+  
+  // Return a generic summary
+  return `${keys.length} field${keys.length !== 1 ? 's' : ''}`
 }
 
 /**
- * Timeline entry card component
+ * Event timeline card component
  */
-interface TimelineEntryCardProps {
-  entry: TimelineEntry
+interface EventTimelineCardProps {
+  event: ExceptionEvent
   isLast: boolean
 }
 
-function TimelineEntryCard({ entry, isLast }: TimelineEntryCardProps) {
+function EventTimelineCard({ event, isLast }: EventTimelineCardProps) {
   return (
     <Box sx={{ position: 'relative', pb: isLast ? 0 : 3 }}>
       {/* Vertical connector line */}
@@ -74,7 +115,7 @@ function TimelineEntryCard({ entry, isLast }: TimelineEntryCardProps) {
         />
       )}
 
-      {/* Stage indicator dot */}
+      {/* Event indicator dot */}
       <Box
         sx={{
           position: 'absolute',
@@ -83,7 +124,7 @@ function TimelineEntryCard({ entry, isLast }: TimelineEntryCardProps) {
           width: 16,
           height: 16,
           borderRadius: '50%',
-          bgcolor: (theme) => theme.palette[getStageColor(entry.stage)].main,
+          bgcolor: (theme) => theme.palette[getEventColor(event.eventType)].main,
           border: (theme) => `2px solid ${theme.palette.background.paper}`,
           zIndex: 1,
         }}
@@ -93,64 +134,45 @@ function TimelineEntryCard({ entry, isLast }: TimelineEntryCardProps) {
       <Card sx={{ ml: 4, position: 'relative' }}>
         <CardContent>
           <Stack spacing={1.5}>
-            {/* Stage name and timestamp */}
+            {/* Event type and timestamp */}
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 1 }}>
               <Chip
-                label={formatStageName(entry.stage)}
-                color={getStageColor(entry.stage)}
+                label={formatEventType(event.eventType)}
+                color={getEventColor(event.eventType)}
                 size="small"
               />
               <Typography variant="caption" color="text.secondary">
-                {formatDateTime(entry.timestamp)}
+                {formatDateTime(event.createdAt)}
               </Typography>
             </Box>
 
-            {/* Decision */}
+            {/* Actor information */}
             <Box>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                Decision
+                Actor
               </Typography>
-              <Typography variant="body2">{entry.decision}</Typography>
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Chip
+                  label={event.actorType.charAt(0).toUpperCase() + event.actorType.slice(1)}
+                  color={getActorTypeColor(event.actorType)}
+                  size="small"
+                  variant="outlined"
+                />
+                {event.actorId && (
+                  <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                    {event.actorId}
+                  </Typography>
+                )}
+              </Box>
             </Box>
 
-            {/* Confidence score */}
-            {entry.confidence !== null && entry.confidence !== undefined && (
-              <Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-                  <Typography variant="caption" color="text.secondary">
-                    Confidence
-                  </Typography>
-                  <Typography variant="caption" fontWeight="medium">
-                    {formatConfidence(entry.confidence)}
-                  </Typography>
-                </Box>
-                <LinearProgress
-                  variant="determinate"
-                  value={(entry.confidence || 0) * 100}
-                  sx={{ height: 6, borderRadius: 1 }}
-                />
-              </Box>
-            )}
-
-            {/* Evidence IDs (if available) */}
-            {entry.evidenceIds && entry.evidenceIds.length > 0 && (
-              <Box>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                  Evidence IDs
-                </Typography>
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                  {entry.evidenceIds.map((evidenceId) => (
-                    <Chip
-                      key={evidenceId}
-                      label={evidenceId}
-                      size="small"
-                      variant="outlined"
-                      sx={{ fontFamily: 'monospace', fontSize: '0.7rem' }}
-                    />
-                  ))}
-                </Box>
-              </Box>
-            )}
+            {/* Payload summary */}
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                Details
+              </Typography>
+              <Typography variant="body2">{formatPayloadSummary(event.payload)}</Typography>
+            </Box>
           </Stack>
         </CardContent>
       </Card>
@@ -161,12 +183,56 @@ function TimelineEntryCard({ entry, isLast }: TimelineEntryCardProps) {
 /**
  * Exception Timeline Tab Component
  * 
- * Displays the decision timeline for an exception, showing all agent stages
- * (Intake → Triage → Policy → Resolution → Feedback) with their decisions,
- * confidence scores, and timestamps.
+ * P6-27: Updated to use DB-backed event timeline from /exceptions/{id}/events
+ * 
+ * Displays the event timeline for an exception, showing all events in chronological order
+ * with event type, actor information, timestamps, and payload summaries.
  */
 export default function ExceptionTimelineTab({ exceptionId }: ExceptionTimelineTabProps) {
-  const { data, isLoading, isError, error } = useTimeline(exceptionId)
+  const { tenantId } = useTenant()
+  
+  // Filter state
+  const [eventTypeFilter, setEventTypeFilter] = useState<string>('')
+  const [actorTypeFilter, setActorTypeFilter] = useState<string>('')
+  const [dateFromFilter, setDateFromFilter] = useState<string>('')
+  const [dateToFilter, setDateToFilter] = useState<string>('')
+
+  // Build API params from filters
+  const apiParams = useMemo(() => {
+    const params: {
+      eventType?: string
+      actorType?: string
+      dateFrom?: string
+      dateTo?: string
+    } = {}
+    
+    if (eventTypeFilter) params.eventType = eventTypeFilter
+    if (actorTypeFilter) params.actorType = actorTypeFilter
+    if (dateFromFilter) {
+      const date = new Date(dateFromFilter)
+      params.dateFrom = date.toISOString()
+    }
+    if (dateToFilter) {
+      const date = new Date(dateToFilter)
+      date.setHours(23, 59, 59, 999)
+      params.dateTo = date.toISOString()
+    }
+    
+    return params
+  }, [eventTypeFilter, actorTypeFilter, dateFromFilter, dateToFilter])
+
+  // Fetch events
+  const { data, isLoading, isError, error } = useExceptionEvents(exceptionId, apiParams)
+
+  // Handle clear filters
+  const handleClearFilters = () => {
+    setEventTypeFilter('')
+    setActorTypeFilter('')
+    setDateFromFilter('')
+    setDateToFilter('')
+  }
+
+  const hasActiveFilters = Boolean(eventTypeFilter || actorTypeFilter || dateFromFilter || dateToFilter)
 
   // Loading state
   if (isLoading) {
@@ -181,32 +247,134 @@ export default function ExceptionTimelineTab({ exceptionId }: ExceptionTimelineT
 
   // Error state
   if (isError) {
+    // Check for 404 or tenant mismatch
+    const isNotFound = error?.message?.includes('404') || error?.message?.includes('not found')
+    const isTenantMismatch = error?.message?.includes('tenant') || error?.message?.includes('403')
+    
     return (
       <Alert severity="error">
-        Failed to load timeline: {error?.message || 'Unknown error'}
+        {isNotFound
+          ? 'Exception not found or does not belong to the current tenant.'
+          : isTenantMismatch
+          ? 'Tenant mismatch. Please ensure you are viewing the correct tenant.'
+          : `Failed to load timeline: ${error?.message || 'Unknown error'}`}
       </Alert>
     )
   }
 
   // Empty state
-  if (!data || !data.entries || data.entries.length === 0) {
+  if (!data || !data.items || data.items.length === 0) {
     return (
-      <Alert severity="info">
-        No timeline data available for this exception.
-      </Alert>
+      <Box>
+        {hasActiveFilters && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            No events found matching the current filters.
+            <Button size="small" onClick={handleClearFilters} sx={{ ml: 2 }}>
+              Clear filters
+            </Button>
+          </Alert>
+        )}
+        {!hasActiveFilters && (
+          <Alert severity="info">
+            No events available for this exception yet.
+          </Alert>
+        )}
+      </Box>
     )
   }
 
-  const entries = data.entries
+  // Events are already sorted chronologically by the backend (oldest first)
+  const events = data.items
 
   return (
     <Box>
+      {/* Filter controls */}
+      <Paper sx={{ p: 2, mb: 3, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ flexWrap: 'wrap' }}>
+          {/* Event Type Filter */}
+          <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 180 } }}>
+            <InputLabel>Event Type</InputLabel>
+            <Select
+              value={eventTypeFilter}
+              label="Event Type"
+              onChange={(e) => setEventTypeFilter(e.target.value)}
+            >
+              <MenuItem value="">
+                <em>All</em>
+              </MenuItem>
+              <MenuItem value="ExceptionCreated">Exception Created</MenuItem>
+              <MenuItem value="ExceptionNormalized">Exception Normalized</MenuItem>
+              <MenuItem value="TriageCompleted">Triage Completed</MenuItem>
+              <MenuItem value="PolicyEvaluated">Policy Evaluated</MenuItem>
+              <MenuItem value="ResolutionSuggested">Resolution Suggested</MenuItem>
+              <MenuItem value="ResolutionApproved">Resolution Approved</MenuItem>
+              <MenuItem value="FeedbackCaptured">Feedback Captured</MenuItem>
+            </Select>
+          </FormControl>
+
+          {/* Actor Type Filter */}
+          <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 150 } }}>
+            <InputLabel>Actor Type</InputLabel>
+            <Select
+              value={actorTypeFilter}
+              label="Actor Type"
+              onChange={(e) => setActorTypeFilter(e.target.value)}
+            >
+              <MenuItem value="">
+                <em>All</em>
+              </MenuItem>
+              <MenuItem value="agent">Agent</MenuItem>
+              <MenuItem value="user">User</MenuItem>
+              <MenuItem value="system">System</MenuItem>
+            </Select>
+          </FormControl>
+
+          {/* Date From Filter */}
+          <TextField
+            size="small"
+            label="From"
+            type="date"
+            value={dateFromFilter}
+            onChange={(e) => setDateFromFilter(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: { xs: '100%', sm: 150 } }}
+          />
+
+          {/* Date To Filter */}
+          <TextField
+            size="small"
+            label="To"
+            type="date"
+            value={dateToFilter}
+            onChange={(e) => setDateToFilter(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: { xs: '100%', sm: 150 } }}
+          />
+
+          {/* Clear Filters Button */}
+          {hasActiveFilters && (
+            <Button variant="outlined" size="small" onClick={handleClearFilters} sx={{ alignSelf: 'flex-end' }}>
+              Clear
+            </Button>
+          )}
+        </Stack>
+      </Paper>
+
+      {/* Event count info */}
+      {data.total > 0 && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+          Showing {events.length} of {data.total} event{data.total !== 1 ? 's' : ''}
+          {hasActiveFilters && ' (filtered)'}
+        </Typography>
+      )}
+
+      {/* Timeline */}
       <Stack spacing={0}>
-        {entries.map((entry, index) => (
-          <TimelineEntryCard
-            key={`${entry.stage}-${entry.timestamp}-${index}`}
-            entry={entry}
-            isLast={index === entries.length - 1}
+        {events.map((event, index) => (
+          <EventTimelineCard
+            key={event.eventId || `${event.eventType}-${event.createdAt}-${index}`}
+            event={event}
+            isLast={index === events.length - 1}
           />
         ))}
       </Stack>

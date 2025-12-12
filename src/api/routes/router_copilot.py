@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from src.copilot.models import CopilotRequest, CopilotResponse
 from src.copilot.orchestrator import CopilotOrchestrator
+from src.infrastructure.db.session import get_db_session_context
 from src.llm.factory import LLMProviderError, load_llm_provider
 
 logger = logging.getLogger(__name__)
@@ -132,10 +133,13 @@ async def copilot_chat(
             detail="Internal server error: Failed to initialize orchestrator",
         )
     
-    # Process request through orchestrator
+    # Process request through orchestrator with database session
     http_status = 200
     try:
-        response = await orchestrator.process(request)
+        # Get database session for repository access
+        async with get_db_session_context() as session:
+            response = await orchestrator.process(request, session=session)
+        
         # Calculate latency
         latency_ms = (time.perf_counter() - start_time) * 1000
         

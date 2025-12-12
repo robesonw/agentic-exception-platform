@@ -145,8 +145,9 @@ axiosInstance.interceptors.request.use(
     // Inject tenantId as query parameter if available
     // Backend UI endpoints expect tenant_id as query param
     if (currentTenantId) {
+      // Ensure config.params exists before spreading
       config.params = {
-        ...config.params,
+        ...(config.params || {}),
         tenant_id: currentTenantId,
       }
     }

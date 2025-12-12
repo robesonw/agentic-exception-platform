@@ -17,6 +17,7 @@ import {
   TableRow,
   Tabs,
   Tab,
+  Button,
 } from '@mui/material'
 import {
   Error as ErrorIcon,
@@ -115,6 +116,35 @@ export default function SupervisorPage() {
   const [domain, setDomain] = useState<string>('')
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
+  
+  // Date range preset handlers
+  const handleDatePreset = (preset: 'today' | 'last7days' | 'last30days' | 'clear') => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    switch (preset) {
+      case 'today':
+        setDateFrom(today.toISOString().split('T')[0])
+        setDateTo(today.toISOString().split('T')[0])
+        break
+      case 'last7days':
+        const last7Days = new Date(today)
+        last7Days.setDate(last7Days.getDate() - 7)
+        setDateFrom(last7Days.toISOString().split('T')[0])
+        setDateTo(today.toISOString().split('T')[0])
+        break
+      case 'last30days':
+        const last30Days = new Date(today)
+        last30Days.setDate(last30Days.getDate() - 30)
+        setDateFrom(last30Days.toISOString().split('T')[0])
+        setDateTo(today.toISOString().split('T')[0])
+        break
+      case 'clear':
+        setDateFrom('')
+        setDateTo('')
+        break
+    }
+  }
 
   // Prepare API parameters
   const apiParams = {
@@ -173,7 +203,7 @@ export default function SupervisorPage() {
       {/* Filters */}
       <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
         <Grid container spacing={2}>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid item xs={12} sm={6} md={2}>
             <TextField
               fullWidth
               label="Domain"
@@ -183,7 +213,7 @@ export default function SupervisorPage() {
               size="small"
             />
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid item xs={12} sm={6} md={2}>
             <TextField
               fullWidth
               type="date"
@@ -194,7 +224,7 @@ export default function SupervisorPage() {
               size="small"
             />
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid item xs={12} sm={6} md={2}>
             <TextField
               fullWidth
               type="date"
@@ -205,7 +235,41 @@ export default function SupervisorPage() {
               size="small"
             />
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid item xs={12} sm={6} md={4}>
+            <Stack direction="row" spacing={1} sx={{ height: '100%', alignItems: 'center', flexWrap: 'wrap' }}>
+              <Button
+                variant={dateFrom && dateTo && dateFrom === dateTo && dateFrom === new Date().toISOString().split('T')[0] ? 'contained' : 'outlined'}
+                size="small"
+                onClick={() => handleDatePreset('today')}
+              >
+                Today
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => handleDatePreset('last7days')}
+              >
+                Last 7 days
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => handleDatePreset('last30days')}
+              >
+                Last 30 days
+              </Button>
+              {(dateFrom || dateTo) && (
+                <Button
+                  variant="text"
+                  size="small"
+                  onClick={() => handleDatePreset('clear')}
+                >
+                  Clear
+                </Button>
+              )}
+            </Stack>
+          </Grid>
+          <Grid item xs={12} sm={6} md={2}>
             <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
               <Typography variant="body2" color="text.secondary">
                 Tenant: {tenantId || 'Not selected'}

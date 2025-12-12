@@ -20,6 +20,7 @@ export default function ExceptionsPage() {
   // Initialize state from URL query params
   const [filters, setFilters] = useState<ExceptionFilters>(() => {
     return {
+      domain: searchParams.get('domain') || undefined,
       severity: searchParams.get('severity') || undefined,
       status: searchParams.get('status') || undefined,
       dateFrom: searchParams.get('dateFrom') || undefined,
@@ -52,6 +53,7 @@ export default function ExceptionsPage() {
     const params = new URLSearchParams()
 
     // Add filters
+    if (filters.domain) params.set('domain', filters.domain)
     if (filters.severity) params.set('severity', filters.severity)
     if (filters.status) params.set('status', filters.status)
     if (filters.dateFrom) params.set('dateFrom', filters.dateFrom)
@@ -70,34 +72,45 @@ export default function ExceptionsPage() {
   }, [filters, page, pageSize, sortField, sortDirection, setSearchParams])
 
   // Prepare API params
+  // P6-26: Updated to use DB-backed /exceptions/{tenant_id} endpoint
   const apiParams = useMemo(() => {
     const params: {
       page?: number
       page_size?: number
+      domain?: string
       severity?: string
       status?: string
-      from_ts?: string
-      to_ts?: string
-      sourceSystem?: string
+      created_from?: string
+      created_to?: string
     } = {
       page: page + 1, // Convert 0-based to 1-based for API
       page_size: pageSize,
     }
 
-    if (filters.severity) params.severity = filters.severity
-    if (filters.status) params.status = filters.status
+    if (filters.domain) params.domain = filters.domain
+    // Backend expects lowercase severity values
+    if (filters.severity) params.severity = filters.severity.toLowerCase()
+    // Backend expects lowercase status values (open, analyzing, resolved, escalated)
+    if (filters.status) {
+      const statusMap: Record<string, string> = {
+        'OPEN': 'open',
+        'IN_PROGRESS': 'analyzing',
+        'RESOLVED': 'resolved',
+        'ESCALATED': 'escalated',
+      }
+      params.status = statusMap[filters.status] || filters.status.toLowerCase()
+    }
     if (filters.dateFrom) {
-      // Convert date to ISO timestamp
+      // Convert date to ISO datetime
       const date = new Date(filters.dateFrom)
-      params.from_ts = date.toISOString()
+      params.created_from = date.toISOString()
     }
     if (filters.dateTo) {
-      // Convert date to ISO timestamp (end of day)
+      // Convert date to ISO datetime (end of day)
       const date = new Date(filters.dateTo)
       date.setHours(23, 59, 59, 999)
-      params.to_ts = date.toISOString()
+      params.created_to = date.toISOString()
     }
-    if (filters.sourceSystem) params.sourceSystem = filters.sourceSystem
 
     return params
   }, [filters, page, pageSize])
@@ -174,7 +187,7 @@ export default function ExceptionsPage() {
 
   // Check if any filters are active
   const hasActiveFilters = Boolean(
-    filters.severity || filters.status || filters.dateFrom || filters.dateTo || filters.sourceSystem
+    filters.domain || filters.severity || filters.status || filters.dateFrom || filters.dateTo || filters.sourceSystem
   )
 
   // Define table columns

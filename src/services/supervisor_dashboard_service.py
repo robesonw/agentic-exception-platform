@@ -47,7 +47,7 @@ class SupervisorDashboardService:
         self.exception_store = exception_store or get_exception_store()
         self.optimization_engine = optimization_engine
 
-    def get_overview(
+    async def get_overview(
         self,
         tenant_id: str,
         domain: Optional[str] = None,
@@ -56,6 +56,8 @@ class SupervisorDashboardService:
     ) -> dict[str, Any]:
         """
         Get supervisor overview dashboard data.
+        
+        Phase 6: Now reads from PostgreSQL instead of in-memory store.
         
         Args:
             tenant_id: Tenant identifier
@@ -76,85 +78,164 @@ class SupervisorDashboardService:
                 "optimization_suggestions_summary": dict,
             }
         """
-        # Get all exceptions for tenant
-        tenant_exceptions = self.exception_store.get_tenant_exceptions(tenant_id)
-        
-        # Filter by domain if provided
-        if domain:
-            tenant_exceptions = [
-                (exc, result)
-                for exc, result in tenant_exceptions
-                if exc.normalized_context and exc.normalized_context.get("domain") == domain
-            ]
-        
-        # Filter by timestamp if provided
-        if from_ts or to_ts:
-            filtered = []
-            for exc, result in tenant_exceptions:
-                exc_ts = exc.timestamp
-                if from_ts and exc_ts < from_ts:
-                    continue
-                if to_ts and exc_ts > to_ts:
-                    continue
-                filtered.append((exc, result))
-            tenant_exceptions = filtered
-        
-        # Aggregate counts by severity
-        counts_by_severity: dict[str, int] = {
-            "LOW": 0,
-            "MEDIUM": 0,
-            "HIGH": 0,
-            "CRITICAL": 0,
-        }
-        
-        # Aggregate counts by status
-        counts_by_status: dict[str, int] = {
-            "OPEN": 0,
-            "IN_PROGRESS": 0,
-            "RESOLVED": 0,
-            "ESCALATED": 0,
-            "PENDING_APPROVAL": 0,
-        }
-        
-        escalations_count = 0
-        pending_approvals_count = 0
-        
-        for exception, _ in tenant_exceptions:
-            # Count by severity
-            if exception.severity:
-                severity_str = exception.severity.value if hasattr(exception.severity, "value") else str(exception.severity)
-                counts_by_severity[severity_str] = counts_by_severity.get(severity_str, 0) + 1
+        # Phase 6: Read from PostgreSQL
+        try:
+            from src.infrastructure.db.session import get_db_session_context
+            from src.repository.exceptions_repository import ExceptionRepository
+            from src.repository.dto import ExceptionFilter
+            from src.infrastructure.db.models import ExceptionStatus, ExceptionSeverity
             
-            # Count by status
-            status_str = exception.resolution_status.value if hasattr(exception.resolution_status, "value") else str(exception.resolution_status)
-            counts_by_status[status_str] = counts_by_status.get(status_str, 0) + 1
+            async with get_db_session_context() as session:
+                repo = ExceptionRepository(session)
+                
+                # Build filter
+                filters = ExceptionFilter()
+                if domain:
+                    filters.domain = domain
+                if from_ts:
+                    filters.created_from = from_ts
+                if to_ts:
+                    filters.created_to = to_ts
+                
+                # Get all exceptions (no pagination for overview)
+                result = await repo.list_exceptions(
+                    tenant_id=tenant_id,
+                    filters=filters,
+                    page=1,
+                    page_size=10000,  # Large page size to get all
+                )
+                
+                tenant_exceptions = result.items
+                
+                # Aggregate counts by severity and status (nested format for frontend)
+                # Frontend expects: counts[severity][status] = count
+                counts: dict[str, dict[str, int]] = {
+                    "LOW": {"OPEN": 0, "IN_PROGRESS": 0, "RESOLVED": 0, "ESCALATED": 0, "PENDING_APPROVAL": 0},
+                    "MEDIUM": {"OPEN": 0, "IN_PROGRESS": 0, "RESOLVED": 0, "ESCALATED": 0, "PENDING_APPROVAL": 0},
+                    "HIGH": {"OPEN": 0, "IN_PROGRESS": 0, "RESOLVED": 0, "ESCALATED": 0, "PENDING_APPROVAL": 0},
+                    "CRITICAL": {"OPEN": 0, "IN_PROGRESS": 0, "RESOLVED": 0, "ESCALATED": 0, "PENDING_APPROVAL": 0},
+                }
+                
+                escalations_count = 0
+                pending_approvals_count = 0
+                
+                for db_exc in tenant_exceptions:
+                    # Map severity (DB uses lowercase, API uses uppercase)
+                    severity_value = db_exc.severity.value if hasattr(db_exc.severity, 'value') else str(db_exc.severity)
+                    severity_str = severity_value.upper()
+                    
+                    # Map status (DB uses lowercase, API uses uppercase)
+                    status_value = db_exc.status.value if hasattr(db_exc.status, 'value') else str(db_exc.status)
+                    if status_value == "analyzing":
+                        status_str = "IN_PROGRESS"
+                    elif status_value == "open":
+                        status_str = "OPEN"
+                    elif status_value == "resolved":
+                        status_str = "RESOLVED"
+                    elif status_value == "escalated":
+                        status_str = "ESCALATED"
+                    else:
+                        status_str = status_value.upper()
+                    
+                    # Increment nested count
+                    if severity_str in counts and status_str in counts[severity_str]:
+                        counts[severity_str][status_str] = counts[severity_str].get(status_str, 0) + 1
+                    
+                    # Count escalations
+                    if status_value == "escalated":
+                        escalations_count += 1
+                    
+                    # Pending approvals would be in "analyzing" status with specific flags
+                    # For now, we don't have a separate pending_approval status in DB
+                    # This could be determined from events or additional fields
+                
+                # Get top policy violations
+                top_policy_violations = await self._get_top_policy_violations_async(tenant_id, domain, limit=10)
+                
+                # Get optimization suggestions summary
+                optimization_summary = self._get_optimization_suggestions_summary(tenant_id, domain)
+                
+                return {
+                    "counts": counts,
+                    "escalations_count": escalations_count,
+                    "pending_approvals_count": pending_approvals_count,
+                    "top_policy_violations": top_policy_violations,
+                    "optimization_suggestions_summary": optimization_summary,
+                }
+        except Exception as e:
+            logger.warning(f"Error reading from PostgreSQL, falling back to in-memory store: {e}")
+            # Fallback to in-memory store
+            tenant_exceptions_list = self.exception_store.get_tenant_exceptions(tenant_id)
             
-            # Count escalations
-            if exception.resolution_status == ResolutionStatus.ESCALATED:
-                escalations_count += 1
+            # Filter by domain if provided
+            if domain:
+                tenant_exceptions_list = [
+                    (exc, result)
+                    for exc, result in tenant_exceptions_list
+                    if exc.normalized_context and exc.normalized_context.get("domain") == domain
+                ]
             
-            # Count pending approvals
-            if exception.resolution_status == ResolutionStatus.PENDING_APPROVAL:
-                pending_approvals_count += 1
+            # Filter by timestamp if provided
+            if from_ts or to_ts:
+                filtered = []
+                for exc, result in tenant_exceptions_list:
+                    exc_ts = exc.timestamp
+                    if from_ts and exc_ts < from_ts:
+                        continue
+                    if to_ts and exc_ts > to_ts:
+                        continue
+                    filtered.append((exc, result))
+                tenant_exceptions_list = filtered
+            
+            # Aggregate counts by severity and status (nested format for frontend)
+            # Frontend expects: counts[severity][status] = count
+            counts: dict[str, dict[str, int]] = {
+                "LOW": {"OPEN": 0, "IN_PROGRESS": 0, "RESOLVED": 0, "ESCALATED": 0, "PENDING_APPROVAL": 0},
+                "MEDIUM": {"OPEN": 0, "IN_PROGRESS": 0, "RESOLVED": 0, "ESCALATED": 0, "PENDING_APPROVAL": 0},
+                "HIGH": {"OPEN": 0, "IN_PROGRESS": 0, "RESOLVED": 0, "ESCALATED": 0, "PENDING_APPROVAL": 0},
+                "CRITICAL": {"OPEN": 0, "IN_PROGRESS": 0, "RESOLVED": 0, "ESCALATED": 0, "PENDING_APPROVAL": 0},
+            }
+            
+            escalations_count = 0
+            pending_approvals_count = 0
+            
+            for exception, _ in tenant_exceptions_list:
+                # Count by severity
+                if exception.severity:
+                    severity_str = exception.severity.value if hasattr(exception.severity, "value") else str(exception.severity)
+                else:
+                    severity_str = "MEDIUM"  # Default if no severity
+                
+                # Count by status
+                status_str = exception.resolution_status.value if hasattr(exception.resolution_status, "value") else str(exception.resolution_status)
+                
+                # Increment nested count
+                if severity_str in counts and status_str in counts[severity_str]:
+                    counts[severity_str][status_str] = counts[severity_str].get(status_str, 0) + 1
+                
+                # Count escalations
+                if exception.resolution_status == ResolutionStatus.ESCALATED:
+                    escalations_count += 1
+                
+                # Count pending approvals
+                if exception.resolution_status == ResolutionStatus.PENDING_APPROVAL:
+                    pending_approvals_count += 1
         
-        # Get top policy violations from audit logs
-        top_policy_violations = self._get_top_policy_violations(tenant_id, domain, limit=10)
-        
-        # Get optimization suggestions summary
-        optimization_summary = self._get_optimization_suggestions_summary(tenant_id, domain)
-        
-        return {
-            "counts": {
-                "by_severity": counts_by_severity,
-                "by_status": counts_by_status,
-            },
-            "escalations_count": escalations_count,
-            "pending_approvals_count": pending_approvals_count,
-            "top_policy_violations": top_policy_violations,
-            "optimization_suggestions_summary": optimization_summary,
-        }
+            # Get top policy violations from audit logs
+            top_policy_violations = self._get_top_policy_violations(tenant_id, domain, limit=10)
+            
+            # Get optimization suggestions summary
+            optimization_summary = self._get_optimization_suggestions_summary(tenant_id, domain)
+            
+            return {
+                "counts": counts,
+                "escalations_count": escalations_count,
+                "pending_approvals_count": pending_approvals_count,
+                "top_policy_violations": top_policy_violations,
+                "optimization_suggestions_summary": optimization_summary,
+            }
 
-    def get_escalations(
+    async def get_escalations(
         self,
         tenant_id: str,
         domain: Optional[str] = None,
@@ -162,6 +243,8 @@ class SupervisorDashboardService:
     ) -> list[dict[str, Any]]:
         """
         Get list of escalated exceptions with key metadata.
+        
+        Phase 6: Now reads from PostgreSQL instead of in-memory store.
         
         Args:
             tenant_id: Tenant identifier
@@ -180,49 +263,110 @@ class SupervisorDashboardService:
                 "escalation_reason": str,
             }
         """
-        tenant_exceptions = self.exception_store.get_tenant_exceptions(tenant_id)
-        
-        escalations = []
-        for exception, pipeline_result in tenant_exceptions:
-            # Filter by domain if provided
-            if domain:
-                exc_domain = exception.normalized_context.get("domain") if exception.normalized_context else None
-                if exc_domain != domain:
+        # Phase 6: Read from PostgreSQL
+        try:
+            from src.infrastructure.db.session import get_db_session_context
+            from src.repository.exceptions_repository import ExceptionRepository
+            from src.repository.dto import ExceptionFilter
+            from src.repository.exception_events_repository import ExceptionEventRepository
+            from src.infrastructure.db.models import ExceptionStatus
+            
+            async with get_db_session_context() as session:
+                repo = ExceptionRepository(session)
+                
+                # Build filter for escalated exceptions
+                filters = ExceptionFilter()
+                filters.status = ExceptionStatus.ESCALATED
+                if domain:
+                    filters.domain = domain
+                
+                # Get escalated exceptions
+                result = await repo.list_exceptions(
+                    tenant_id=tenant_id,
+                    filters=filters,
+                    page=1,
+                    page_size=limit,
+                )
+                
+                escalations = []
+                event_repo = ExceptionEventRepository(session)
+                
+                for db_exc in result.items:
+                    # Get escalation reason from events
+                    events = await event_repo.get_events_for_exception(tenant_id, db_exc.exception_id)
+                    escalation_reason = "Unknown"
+                    
+                    # Look for escalation event
+                    for event in events:
+                        if event.event_type == "ExceptionEscalated" or "escalat" in event.event_type.lower():
+                            if isinstance(event.payload, dict):
+                                escalation_reason = event.payload.get("reason", event.payload.get("escalation_reason", "Unknown"))
+                            break
+                    
+                    # Map severity
+                    severity_value = db_exc.severity.value if hasattr(db_exc.severity, 'value') else str(db_exc.severity)
+                    severity_str = severity_value.upper()
+                    
+                    escalations.append({
+                        "exception_id": db_exc.exception_id,
+                        "tenant_id": db_exc.tenant_id,
+                        "domain": db_exc.domain,
+                        "exception_type": db_exc.type,
+                        "severity": severity_str,
+                        "timestamp": db_exc.created_at.isoformat() if db_exc.created_at else None,
+                        "escalation_reason": escalation_reason,
+                    })
+                
+                # Sort by timestamp (most recent first)
+                escalations.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+                
+                return escalations[:limit]
+        except Exception as e:
+            logger.warning(f"Error reading from PostgreSQL, falling back to in-memory store: {e}")
+            # Fallback to in-memory store
+            tenant_exceptions = self.exception_store.get_tenant_exceptions(tenant_id)
+            
+            escalations = []
+            for exception, pipeline_result in tenant_exceptions:
+                # Filter by domain if provided
+                if domain:
+                    exc_domain = exception.normalized_context.get("domain") if exception.normalized_context else None
+                    if exc_domain != domain:
+                        continue
+                
+                # Only include escalated exceptions
+                if exception.resolution_status != ResolutionStatus.ESCALATED:
                     continue
+                
+                # Extract escalation reason from pipeline result or evidence
+                escalation_reason = "Unknown"
+                if pipeline_result:
+                    stages = pipeline_result.get("stages", {})
+                    # Check supervisor or policy stages for escalation reason
+                    if "supervisor" in stages:
+                        supervisor_decision = stages["supervisor"]
+                        if isinstance(supervisor_decision, dict):
+                            escalation_reason = supervisor_decision.get("escalation_reason", "Unknown")
+                    elif "policy" in stages:
+                        policy_decision = stages["policy"]
+                        if isinstance(policy_decision, dict):
+                            escalation_reason = policy_decision.get("decision", "Policy violation")
+                
+                escalations.append({
+                    "exception_id": exception.exception_id,
+                    "tenant_id": exception.tenant_id,
+                    "domain": exception.normalized_context.get("domain") if exception.normalized_context else None,
+                    "exception_type": exception.exception_type,
+                    "severity": exception.severity.value if exception.severity else None,
+                    "timestamp": exception.timestamp.isoformat() if exception.timestamp else None,
+                    "escalation_reason": escalation_reason,
+                })
             
-            # Only include escalated exceptions
-            if exception.resolution_status != ResolutionStatus.ESCALATED:
-                continue
+            # Sort by timestamp (most recent first)
+            escalations.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
             
-            # Extract escalation reason from pipeline result or evidence
-            escalation_reason = "Unknown"
-            if pipeline_result:
-                stages = pipeline_result.get("stages", {})
-                # Check supervisor or policy stages for escalation reason
-                if "supervisor" in stages:
-                    supervisor_decision = stages["supervisor"]
-                    if isinstance(supervisor_decision, dict):
-                        escalation_reason = supervisor_decision.get("escalation_reason", "Unknown")
-                elif "policy" in stages:
-                    policy_decision = stages["policy"]
-                    if isinstance(policy_decision, dict):
-                        escalation_reason = policy_decision.get("decision", "Policy violation")
-            
-            escalations.append({
-                "exception_id": exception.exception_id,
-                "tenant_id": exception.tenant_id,
-                "domain": exception.normalized_context.get("domain") if exception.normalized_context else None,
-                "exception_type": exception.exception_type,
-                "severity": exception.severity.value if exception.severity else None,
-                "timestamp": exception.timestamp.isoformat() if exception.timestamp else None,
-                "escalation_reason": escalation_reason,
-            })
-        
-        # Sort by timestamp (most recent first)
-        escalations.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-        
-        # Limit results
-        return escalations[:limit]
+            # Limit results
+            return escalations[:limit]
 
     def get_policy_violations(
         self,
@@ -335,6 +479,63 @@ class SupervisorDashboardService:
         # Limit results
         return violations[:limit]
 
+    async def _get_top_policy_violations_async(
+        self,
+        tenant_id: str,
+        domain: Optional[str] = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """
+        Get top policy violations (async version for PostgreSQL).
+        
+        Args:
+            tenant_id: Tenant identifier
+            domain: Optional domain filter
+            limit: Maximum number of violations to return
+            
+        Returns:
+            List of top policy violations
+        """
+        # Try to get from PostgreSQL events, fallback to original method
+        try:
+            from src.infrastructure.db.session import get_db_session_context
+            from src.repository.exception_events_repository import ExceptionEventRepository
+            
+            async with get_db_session_context() as session:
+                event_repo = ExceptionEventRepository(session)
+                
+                # Get events for tenant
+                events = await event_repo.get_events_for_tenant(tenant_id)
+                
+                violations = []
+                for event in events:
+                    # Look for policy violation events
+                    if "Policy" in event.event_type and "Violation" in event.event_type:
+                        payload = event.payload if isinstance(event.payload, dict) else {}
+                        
+                        # Get exception to check domain
+                        if domain:
+                            # Would need to join with exception table, for now skip domain filter
+                            pass
+                        
+                        violations.append({
+                            "exception_id": event.exception_id,
+                            "tenant_id": event.tenant_id,
+                            "domain": domain,  # Would need to join to get actual domain
+                            "timestamp": event.created_at.isoformat() if event.created_at else None,
+                            "violation_type": payload.get("violation_type", "Unknown"),
+                            "violated_rule": payload.get("violated_rule", "Unknown"),
+                            "decision": payload.get("decision", "Unknown"),
+                        })
+                
+                # Sort by timestamp (most recent first)
+                violations.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+                return violations[:limit]
+        except Exception as e:
+            logger.warning(f"Error reading policy violations from PostgreSQL: {e}")
+            # Fallback to original method (reads from JSONL files)
+            return self.get_policy_violations(tenant_id, domain, limit=limit)
+    
     def _get_top_policy_violations(
         self,
         tenant_id: str,

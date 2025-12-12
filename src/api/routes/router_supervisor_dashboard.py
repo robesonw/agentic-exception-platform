@@ -122,7 +122,7 @@ async def get_supervisor_overview(
             raise HTTPException(status_code=400, detail=f"Invalid to_ts format: {to_ts}")
     
     try:
-        overview_data = dashboard_service.get_overview(
+        overview_data = await dashboard_service.get_overview(
             tenant_id=tenant_id,
             domain=domain,
             from_ts=from_datetime,
@@ -158,7 +158,7 @@ async def get_escalations(
         HTTPException: If data retrieval fails
     """
     try:
-        escalations = dashboard_service.get_escalations(
+        escalations = await dashboard_service.get_escalations(
             tenant_id=tenant_id,
             domain=domain,
             limit=limit,

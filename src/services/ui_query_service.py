@@ -46,7 +46,7 @@ class UIQueryService:
         self.exception_store = exception_store or get_exception_store()
         self.audit_dir = Path("./runtime/audit")
 
-    def search_exceptions(
+    async def search_exceptions(
         self,
         tenant_id: str,
         domain: Optional[str] = None,
@@ -60,6 +60,8 @@ class UIQueryService:
     ) -> dict[str, Any]:
         """
         Search and filter exceptions with pagination.
+        
+        Phase 6: Now reads from PostgreSQL instead of in-memory store.
         
         Args:
             tenant_id: Tenant identifier
@@ -82,8 +84,135 @@ class UIQueryService:
                 "total_pages": int,  # Total pages
             }
         """
-        # Get all exceptions for tenant
-        all_exceptions = self.exception_store.get_tenant_exceptions(tenant_id)
+        # Phase 6: Read from PostgreSQL
+        try:
+            from src.infrastructure.db.session import get_db_session_context
+            from src.repository.exceptions_repository import ExceptionRepository
+            from src.repository.dto import ExceptionFilter
+            from src.infrastructure.db.models import ExceptionStatus, ExceptionSeverity
+            
+            async with get_db_session_context() as session:
+                repo = ExceptionRepository(session)
+                
+                # Build filter
+                filters = ExceptionFilter()
+                if domain:
+                    filters.domain = domain
+                if status:
+                    # Map ResolutionStatus to ExceptionStatus
+                    status_map = {
+                        ResolutionStatus.OPEN: ExceptionStatus.OPEN,
+                        ResolutionStatus.IN_PROGRESS: ExceptionStatus.ANALYZING,
+                        ResolutionStatus.RESOLVED: ExceptionStatus.RESOLVED,
+                        ResolutionStatus.ESCALATED: ExceptionStatus.ESCALATED,
+                    }
+                    filters.status = status_map.get(status)
+                if severity:
+                    # Map Severity to ExceptionSeverity
+                    severity_map = {
+                        Severity.LOW: ExceptionSeverity.LOW,
+                        Severity.MEDIUM: ExceptionSeverity.MEDIUM,
+                        Severity.HIGH: ExceptionSeverity.HIGH,
+                        Severity.CRITICAL: ExceptionSeverity.CRITICAL,
+                    }
+                    filters.severity = severity_map.get(severity)
+                if from_ts:
+                    filters.created_from = from_ts
+                if to_ts:
+                    filters.created_to = to_ts
+                
+                # List exceptions from PostgreSQL
+                result = await repo.list_exceptions(
+                    tenant_id=tenant_id,
+                    filters=filters,
+                    page=page,
+                    page_size=page_size,
+                )
+                
+                # Convert database exceptions to ExceptionRecord format
+                items = []
+                for db_exc in result.items:
+                    # Map to ExceptionRecord (similar to ui_status.py)
+                    severity_map = {
+                        "low": Severity.LOW,
+                        "medium": Severity.MEDIUM,
+                        "high": Severity.HIGH,
+                        "critical": Severity.CRITICAL,
+                    }
+                    severity_enum = severity_map.get(
+                        db_exc.severity.value if hasattr(db_exc.severity, 'value') else str(db_exc.severity).lower(),
+                        Severity.MEDIUM
+                    )
+                    
+                    status_map = {
+                        "open": ResolutionStatus.OPEN,
+                        "analyzing": ResolutionStatus.IN_PROGRESS,
+                        "resolved": ResolutionStatus.RESOLVED,
+                        "escalated": ResolutionStatus.ESCALATED,
+                    }
+                    resolution_status = status_map.get(
+                        db_exc.status.value if hasattr(db_exc.status, 'value') else str(db_exc.status).lower(),
+                        ResolutionStatus.OPEN
+                    )
+                    
+                    # Build normalized context
+                    normalized_context = {"domain": db_exc.domain}
+                    if db_exc.entity:
+                        normalized_context["entity"] = db_exc.entity
+                    
+                    # Create ExceptionRecord
+                    exception = ExceptionRecord(
+                        exception_id=db_exc.exception_id,
+                        tenant_id=db_exc.tenant_id,
+                        source_system=db_exc.source_system,
+                        exception_type=db_exc.type,
+                        severity=severity_enum,
+                        timestamp=db_exc.created_at or datetime.now(timezone.utc),
+                        raw_payload={},
+                        normalized_context=normalized_context,
+                        resolution_status=resolution_status,
+                    )
+                    
+                    # Apply text search filter if provided
+                    if search:
+                        search_lower = search.lower()
+                        matches = (
+                            search_lower in (exception.exception_type or "").lower()
+                            or search_lower in (exception.source_system or "").lower()
+                        )
+                        if not matches:
+                            continue
+                    
+                    # Create minimal pipeline result
+                    pipeline_result = {
+                        "status": "COMPLETED" if resolution_status == ResolutionStatus.RESOLVED else "IN_PROGRESS",
+                        "stages": {},
+                    }
+                    
+                    items.append({
+                        "exception": exception.model_dump(),
+                        "pipeline_result": pipeline_result,
+                    })
+                
+                # Recalculate total if search filter was applied
+                if search:
+                    total = len(items)
+                    total_pages = (total + page_size - 1) // page_size if total > 0 else 0
+                else:
+                    total = result.total
+                    total_pages = result.total_pages
+                
+                return {
+                    "items": items,
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "total_pages": total_pages,
+                }
+        except Exception as e:
+            logger.warning(f"Error reading from PostgreSQL, falling back to in-memory store: {e}")
+            # Fallback to in-memory store
+            all_exceptions = self.exception_store.get_tenant_exceptions(tenant_id)
         
         # Apply filters
         filtered = []
@@ -153,11 +282,13 @@ class UIQueryService:
             "total_pages": total_pages,
         }
 
-    def get_exception_detail(
+    async def get_exception_detail(
         self, tenant_id: str, exception_id: str
     ) -> Optional[dict[str, Any]]:
         """
         Get full exception detail with agent decisions.
+        
+        Phase 6: Now reads from PostgreSQL instead of in-memory store.
         
         Args:
             tenant_id: Tenant identifier
@@ -166,7 +297,89 @@ class UIQueryService:
         Returns:
             Dictionary with exception record and agent decisions, or None if not found
         """
-        result = self.exception_store.get_exception(tenant_id, exception_id)
+        # Phase 6: Read from PostgreSQL
+        try:
+            from src.infrastructure.db.session import get_db_session_context
+            from src.repository.exceptions_repository import ExceptionRepository
+            from src.repository.exception_events_repository import ExceptionEventRepository
+            from src.models.exception_record import Severity, ResolutionStatus
+            
+            async with get_db_session_context() as session:
+                repo = ExceptionRepository(session)
+                db_exception = await repo.get_exception(tenant_id, exception_id)
+                
+                if db_exception is None:
+                    return None
+                
+                # Map to ExceptionRecord (same as in exceptions.py)
+                severity_map = {
+                    "low": Severity.LOW,
+                    "medium": Severity.MEDIUM,
+                    "high": Severity.HIGH,
+                    "critical": Severity.CRITICAL,
+                }
+                severity_enum = severity_map.get(
+                    db_exception.severity.value if hasattr(db_exception.severity, 'value') else str(db_exception.severity).lower(),
+                    Severity.MEDIUM
+                )
+                
+                status_map = {
+                    "open": ResolutionStatus.OPEN,
+                    "analyzing": ResolutionStatus.IN_PROGRESS,
+                    "resolved": ResolutionStatus.RESOLVED,
+                    "escalated": ResolutionStatus.ESCALATED,
+                }
+                resolution_status = status_map.get(
+                    db_exception.status.value if hasattr(db_exception.status, 'value') else str(db_exception.status).lower(),
+                    ResolutionStatus.OPEN
+                )
+                
+                normalized_context = {"domain": db_exception.domain}
+                if db_exception.entity:
+                    normalized_context["entity"] = db_exception.entity
+                
+                exception = ExceptionRecord(
+                    exception_id=db_exception.exception_id,
+                    tenant_id=db_exception.tenant_id,
+                    source_system=db_exception.source_system,
+                    exception_type=db_exception.type,
+                    severity=severity_enum,
+                    timestamp=db_exception.created_at or datetime.now(timezone.utc),
+                    raw_payload={},
+                    normalized_context=normalized_context,
+                    resolution_status=resolution_status,
+                )
+                
+                # Get events for pipeline result
+                event_repo = ExceptionEventRepository(session)
+                events = await event_repo.get_events_for_exception(tenant_id, exception_id)
+                
+                # Build pipeline result from events
+                pipeline_result = {
+                    "status": "COMPLETED" if resolution_status == ResolutionStatus.RESOLVED else "IN_PROGRESS",
+                    "stages": {},
+                    "evidence": [],
+                }
+                
+                agent_decisions = {}
+                for event in events:
+                    if event.event_type.endswith("Completed"):
+                        stage_name = event.event_type.replace("Completed", "").lower()
+                        pipeline_result["stages"][stage_name] = {
+                            "status": "completed",
+                            "timestamp": event.created_at.isoformat(),
+                        }
+                        agent_decisions[stage_name] = event.payload
+                
+                return {
+                    "exception": exception.model_dump(),
+                    "agent_decisions": agent_decisions,
+                    "pipeline_result": pipeline_result,
+                }
+        except Exception as e:
+            logger.warning(f"Error reading from PostgreSQL, falling back to in-memory store: {e}")
+            # Fallback to in-memory store
+            result = self.exception_store.get_exception(tenant_id, exception_id)
         if not result:
             return None
         
@@ -190,11 +403,13 @@ class UIQueryService:
             "pipeline_result": pipeline_result,
         }
 
-    def get_exception_evidence(
+    async def get_exception_evidence(
         self, tenant_id: str, exception_id: str
     ) -> Optional[dict[str, Any]]:
         """
         Get evidence chains for an exception (RAG results, tool outputs).
+        
+        Phase 6: Now reads from PostgreSQL instead of in-memory store.
         
         Args:
             tenant_id: Tenant identifier
@@ -203,11 +418,60 @@ class UIQueryService:
         Returns:
             Dictionary with evidence chains, or None if not found
         """
-        result = self.exception_store.get_exception(tenant_id, exception_id)
-        if not result:
-            return None
-        
-        exception, pipeline_result = result
+        # Phase 6: Read from PostgreSQL
+        try:
+            from src.infrastructure.db.session import get_db_session_context
+            from src.repository.exceptions_repository import ExceptionRepository
+            from src.repository.exception_events_repository import ExceptionEventRepository
+            
+            async with get_db_session_context() as session:
+                repo = ExceptionRepository(session)
+                db_exception = await repo.get_exception(tenant_id, exception_id)
+                
+                if db_exception is None:
+                    return None
+                
+                # Get events for evidence
+                event_repo = ExceptionEventRepository(session)
+                events = await event_repo.get_events_for_exception(tenant_id, exception_id)
+                
+                # Build evidence from events
+                evidence = {
+                    "rag_results": [],
+                    "tool_outputs": [],
+                    "agent_evidence": [],
+                }
+                
+                for event in events:
+                    payload = event.payload if isinstance(event.payload, dict) else {}
+                    
+                    # Extract agent evidence from events
+                    if "evidence" in payload:
+                        evidence["agent_evidence"].append({
+                            "stage": event.event_type,
+                            "evidence": payload["evidence"],
+                        })
+                    
+                    # Extract tool outputs
+                    if "tool_output" in payload or "tool_result" in payload:
+                        tool_output = payload.get("tool_output") or payload.get("tool_result")
+                        evidence["tool_outputs"].append(tool_output)
+                    
+                    # Extract RAG results
+                    if "rag_results" in payload or "similar_exceptions" in payload:
+                        rag_results = payload.get("rag_results") or payload.get("similar_exceptions")
+                        if isinstance(rag_results, list):
+                            evidence["rag_results"].extend(rag_results)
+                
+                return evidence
+        except Exception as e:
+            logger.warning(f"Error reading from PostgreSQL, falling back to in-memory store: {e}")
+            # Fallback to in-memory store
+            result = self.exception_store.get_exception(tenant_id, exception_id)
+            if not result:
+                return None
+            
+            exception, pipeline_result = result
         
         # Extract evidence from pipeline result and agent decisions
         evidence = {
@@ -241,13 +505,13 @@ class UIQueryService:
         
         return evidence
 
-    def get_exception_audit(
+    async def get_exception_audit(
         self, tenant_id: str, exception_id: str
     ) -> list[dict[str, Any]]:
         """
         Get audit events related to an exception.
         
-        Reads from audit JSONL files and filters by exception_id.
+        Phase 6: Now reads from PostgreSQL exception_event table instead of JSONL files.
         
         Args:
             tenant_id: Tenant identifier
@@ -256,11 +520,44 @@ class UIQueryService:
         Returns:
             List of audit event dictionaries
         """
-        audit_events = []
-        
-        # Scan all audit log files
-        if not self.audit_dir.exists():
-            return audit_events
+        # Phase 6: Read from PostgreSQL exception_event table
+        try:
+            from src.infrastructure.db.session import get_db_session_context
+            from src.repository.exception_events_repository import ExceptionEventRepository
+            
+            async with get_db_session_context() as session:
+                event_repo = ExceptionEventRepository(session)
+                events = await event_repo.get_events_for_exception(tenant_id, exception_id)
+                
+                # Convert events to audit event format
+                audit_events = []
+                for event in events:
+                    actor_type = event.actor_type.value if hasattr(event.actor_type, 'value') else str(event.actor_type)
+                    audit_events.append({
+                        "timestamp": event.created_at.isoformat() if event.created_at else None,
+                        "tenant_id": event.tenant_id,
+                        "exception_id": event.exception_id,
+                        "event_type": event.event_type,
+                        "actor_type": actor_type,
+                        "actor_id": event.actor_id,
+                        "data": {
+                            "event_type": event.event_type,
+                            "payload": event.payload,
+                        },
+                    })
+                
+                # Sort by timestamp (oldest first)
+                audit_events.sort(key=lambda x: x.get("timestamp", ""))
+                
+                return audit_events
+        except Exception as e:
+            logger.warning(f"Error reading from PostgreSQL, falling back to JSONL files: {e}")
+            # Fallback to JSONL files
+            audit_events = []
+            
+            # Scan all audit log files
+            if not self.audit_dir.exists():
+                return audit_events
         
         for audit_file in self.audit_dir.glob("*.jsonl"):
             try:

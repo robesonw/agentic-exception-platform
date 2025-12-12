@@ -2,10 +2,16 @@
 FastAPI application entry point.
 """
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.middleware import TenantRouterMiddleware
+from src.infrastructure.db.session import close_engine, initialize_database
+
+logger = logging.getLogger(__name__)
 from src.api.routes import (
     admin,
     admin_domainpacks,
@@ -16,6 +22,7 @@ from src.api.routes import (
     dashboards,
     exceptions,
     metrics,
+    playbooks,
     run,
     router_config_view,
     router_copilot,
@@ -29,10 +36,34 @@ from src.api.routes import (
     ui_status,
 )
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan manager.
+    
+    Handles startup and shutdown events.
+    """
+    # Startup: Initialize database connection
+    logger.info("Starting application...")
+    db_initialized = await initialize_database()
+    if not db_initialized:
+        logger.warning(
+            "Database initialization failed. Application will continue but database operations may fail."
+        )
+    
+    yield
+    
+    # Shutdown: Close database connections
+    logger.info("Shutting down application...")
+    await close_engine()
+    logger.info("Application shutdown complete")
+
+
 app = FastAPI(
     title="Agentic Exception Processing Platform",
     description="Domain-Abstracted Agentic AI Platform for Multi-Tenant Exception Processing",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Add CORS middleware (must be added before other middleware)
@@ -71,12 +102,41 @@ app.include_router(router_config_view.router)  # Phase 3: Configuration Viewing 
 app.include_router(router_explanations.router)  # Phase 3: Explanation API Endpoints
 app.include_router(router_guardrail_recommendations.router)  # Phase 3: Guardrail Recommendation API (P3-10)
 app.include_router(router_copilot.router)  # Phase 5: Copilot Chat API (P5-9)
+app.include_router(playbooks.router)  # Phase 6: Playbook API (P6-24)
 
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+@app.get("/health/db")
+async def health_check_db():
+    """
+    Database health check endpoint.
+    
+    Returns:
+        - 200 OK if database is reachable
+        - 503 Service Unavailable if database is not reachable
+    """
+    from fastapi import status
+    from fastapi.responses import JSONResponse
+    
+    from src.infrastructure.db.session import check_database_connection
+    
+    is_healthy = await check_database_connection(retries=1, initial_delay=0.5)
+    
+    if is_healthy:
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"status": "healthy", "database": "connected"},
+        )
+    else:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "unhealthy", "database": "disconnected"},
+        )
 
 
 # TODO (LR-11): Expose Prometheus metrics endpoint

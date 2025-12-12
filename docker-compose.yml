@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sentinai-postgres
+    environment:
+      POSTGRES_USER: sentinai
+      POSTGRES_PASSWORD: sentinai
+      POSTGRES_DB: sentinai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinai"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sentinai-backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sentinai:sentinai@postgres:5432/sentinai
+      DB_POOL_SIZE: 5
+      DB_MAX_OVERFLOW: 5
+      DB_POOL_TIMEOUT: 30
+      DB_ECHO: "false"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      # Mount source code for development (optional - remove in production)
+      # Note: Remove :ro for write access if needed for development
+      - ./src:/app/src
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    container_name: sentinai-ui
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    volumes:
+      # Mount source code for development hot-reload (optional - remove in production)
+      - ./ui/src:/app/src
+      - ./ui/public:/app/public
+      - ./ui/index.html:/app/index.html
+      - ./ui/vite.config.ts:/app/vite.config.ts
+      - ./ui/tsconfig.json:/app/tsconfig.json
+      - ./ui/tsconfig.node.json:/app/tsconfig.node.json
+
+volumes:
+  postgres_data:
+    driver: local
+

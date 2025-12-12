@@ -11,6 +11,7 @@ import {
 } from '@mui/material'
 
 export interface ExceptionFilters {
+  domain?: string
   severity?: string
   status?: string
   dateFrom?: string
@@ -106,6 +107,16 @@ export default function FilterBar({ value, onChange }: FilterBarProps) {
           InputLabelProps={{
             shrink: true,
           }}
+          sx={{ minWidth: { xs: '100%', sm: 150 } }}
+        />
+
+        {/* Domain Filter */}
+        <TextField
+          size="small"
+          label="Domain"
+          value={value.domain || ''}
+          onChange={(e) => handleFilterChange('domain', e.target.value)}
+          placeholder="Filter by domain"
           sx={{ minWidth: { xs: '100%', sm: 150 } }}
         />
 

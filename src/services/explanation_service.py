@@ -337,21 +337,54 @@ class ExplanationService:
         agent_decisions: dict[str, Any],
     ) -> dict[str, Any]:
         """Format explanation as JSON."""
+        # Use mode='json' to ensure datetime objects are serialized as ISO strings
         return {
             "exception_id": exception.exception_id,
             "tenant_id": exception.tenant_id,
             "exception_type": exception.exception_type,
             "severity": exception.severity.value if exception.severity else None,
             "resolution_status": exception.resolution_status.value if exception.resolution_status else None,
-            "timeline": timeline.model_dump(by_alias=True),
-            "evidence_items": [item.model_dump(by_alias=True) for item in evidence_items],
-            "evidence_links": [link.model_dump(by_alias=True) for link in evidence_links],
-            "agent_decisions": agent_decisions,
+            "timeline": timeline.model_dump(by_alias=True, mode='json'),
+            "evidence_items": [item.model_dump(by_alias=True, mode='json') for item in evidence_items],
+            "evidence_links": [link.model_dump(by_alias=True, mode='json') for link in evidence_links],
+            "agent_decisions": self._serialize_agent_decisions(agent_decisions),
             "version": {
                 "version": exception.exception_id,  # MVP: use exception_id as version
                 "timestamp": exception.timestamp.isoformat(),
             },
         }
+    
+    def _serialize_agent_decisions(self, agent_decisions: dict[str, Any]) -> dict[str, Any]:
+        """
+        Recursively serialize agent decisions, converting datetime objects to ISO strings.
+        
+        Args:
+            agent_decisions: Dictionary of agent decisions (may contain datetime objects)
+            
+        Returns:
+            Dictionary with datetime objects converted to ISO strings
+        """
+        from datetime import datetime
+        
+        result = {}
+        for key, value in agent_decisions.items():
+            if isinstance(value, datetime):
+                result[key] = value.isoformat()
+            elif isinstance(value, dict):
+                result[key] = self._serialize_agent_decisions(value)
+            elif isinstance(value, list):
+                result[key] = [
+                    item.isoformat() if isinstance(item, datetime)
+                    else self._serialize_agent_decisions(item) if isinstance(item, dict)
+                    else item
+                    for item in value
+                ]
+            elif hasattr(value, 'model_dump'):
+                # Handle Pydantic models
+                result[key] = value.model_dump(by_alias=True, mode='json')
+            else:
+                result[key] = value
+        return result
 
     def _format_text_explanation(
         self,

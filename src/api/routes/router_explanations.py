@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.services.explanation_service import (
@@ -25,6 +26,28 @@ from src.services.explanation_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/explanations", tags=["explanations"])
+
+
+def _make_json_serializable(obj: Any) -> Any:
+    """
+    Recursively convert datetime objects to ISO strings for JSON serialization.
+    
+    Args:
+        obj: Object to make JSON serializable
+        
+    Returns:
+        Object with datetime objects converted to ISO strings
+    """
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {key: _make_json_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [_make_json_serializable(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(_make_json_serializable(item) for item in obj)
+    else:
+        return obj
 
 
 class ExplanationResponse(BaseModel):
@@ -92,11 +115,113 @@ async def get_explanation(
                 detail=f"Invalid format: {format}. Must be one of: json, text, structured",
             )
         
-        # Get explanation service (with audit logger from request state if available)
-        # For MVP, we'll create a basic audit logger if needed
-        from src.audit.logger import AuditLogger
-        audit_logger = AuditLogger(run_id=f"explanation_{exception_id}", tenant_id=tenant_id)
-        service = get_explanation_service(audit_logger=audit_logger)
+        # Phase 6: Retrieve exception from database first
+        from src.infrastructure.db.session import get_db_session_context
+        from src.repository.exceptions_repository import ExceptionRepository
+        from src.repository.exception_events_repository import ExceptionEventRepository
+        from src.models.exception_record import ExceptionRecord, Severity, ResolutionStatus
+        from datetime import datetime, timezone
+        
+        async with get_db_session_context() as session:
+            exception_repo = ExceptionRepository(session)
+            db_exception = await exception_repo.get_exception(tenant_id, exception_id)
+            
+            if db_exception is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Exception {exception_id} not found for tenant {tenant_id}",
+                )
+            
+            # Map database Exception to ExceptionRecord
+            severity_map = {
+                "low": Severity.LOW,
+                "medium": Severity.MEDIUM,
+                "high": Severity.HIGH,
+                "critical": Severity.CRITICAL,
+            }
+            severity = severity_map.get(
+                db_exception.severity.value if hasattr(db_exception.severity, 'value') else str(db_exception.severity).lower(),
+                Severity.MEDIUM
+            )
+            
+            status_map = {
+                "open": ResolutionStatus.OPEN,
+                "analyzing": ResolutionStatus.IN_PROGRESS,
+                "resolved": ResolutionStatus.RESOLVED,
+                "escalated": ResolutionStatus.ESCALATED,
+            }
+            resolution_status = status_map.get(
+                db_exception.status.value if hasattr(db_exception.status, 'value') else str(db_exception.status).lower(),
+                ResolutionStatus.OPEN
+            )
+            
+            # Build normalized context from database fields
+            normalized_context = {
+                "domain": db_exception.domain,
+            }
+            if db_exception.entity:
+                normalized_context["entity"] = db_exception.entity
+            if db_exception.amount:
+                normalized_context["amount"] = float(db_exception.amount)
+            if db_exception.sla_deadline:
+                normalized_context["sla_deadline"] = db_exception.sla_deadline
+            
+            # Create ExceptionRecord from database model
+            exception = ExceptionRecord(
+                exception_id=db_exception.exception_id,
+                tenant_id=db_exception.tenant_id,
+                source_system=db_exception.source_system,
+                exception_type=db_exception.type,
+                severity=severity,
+                timestamp=db_exception.created_at or datetime.now(timezone.utc),
+                raw_payload={},  # Not stored in DB
+                normalized_context=normalized_context,
+                resolution_status=resolution_status,
+                audit_trail=[],  # Will be populated from events
+            )
+            
+            # Get events for audit trail
+            event_repo = ExceptionEventRepository(session)
+            events = await event_repo.get_events_for_exception(tenant_id, exception_id)
+            
+            # Build audit trail from events
+            from src.models.exception_record import AuditEntry
+            audit_trail = []
+            for event in events:
+                actor_type = event.actor_type.value if hasattr(event.actor_type, 'value') else str(event.actor_type)
+                audit_trail.append(
+                    AuditEntry(
+                        action=event.event_type,
+                        timestamp=event.created_at,
+                        actor=f"{actor_type}:{event.actor_id or 'system'}",
+                    )
+                )
+            exception.audit_trail = audit_trail
+            
+            # Build pipeline result from events
+            pipeline_result = {
+                "status": "COMPLETED" if resolution_status == ResolutionStatus.RESOLVED else "IN_PROGRESS",
+                "stages": {},
+                "evidence": [],
+            }
+            
+            # Extract stage information from events
+            for event in events:
+                if event.event_type.endswith("Completed"):
+                    stage_name = event.event_type.replace("Completed", "").lower()
+                    pipeline_result["stages"][stage_name] = {
+                        "status": "completed",
+                        "timestamp": event.created_at.isoformat(),
+                    }
+            
+            # Store exception in in-memory store temporarily for explanation service
+            # (Explanation service still uses in-memory store for now)
+            from src.orchestrator.store import get_exception_store
+            exception_store = get_exception_store()
+            exception_store.store_exception(exception, pipeline_result)
+        
+        # Get explanation service
+        service = get_explanation_service()
         
         # Get explanation
         explanation = service.get_explanation(exception_id, tenant_id, explanation_format)
@@ -117,6 +242,12 @@ async def get_explanation(
             else:
                 from datetime import timezone
                 version_info = {"version": exception_id, "timestamp": datetime.now(timezone.utc).isoformat()}
+        
+        # Ensure explanation and version_info are JSON-serializable (convert datetime objects to ISO strings)
+        # Use FastAPI's jsonable_encoder which handles datetime serialization properly
+        if isinstance(explanation, dict):
+            explanation = jsonable_encoder(explanation)
+        version_info = jsonable_encoder(version_info)
         
         return ExplanationResponse(
             exception_id=exception_id,

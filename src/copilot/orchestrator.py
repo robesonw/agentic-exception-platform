@@ -17,8 +17,11 @@ from src.copilot.retrieval import (
     get_domain_pack_summary,
     get_exception_by_id,
     get_exception_timeline,
+    get_exceptions_by_entity,
+    get_imminent_sla_breaches,
     get_policy_pack_summary,
     get_recent_exceptions,
+    get_similar_exceptions,
 )
 from src.llm.base import LLMClient, LLMResponse
 
@@ -127,20 +130,24 @@ class CopilotOrchestrator:
     4. Call LLM to generate response
     5. Wrap response with citations
     
+    Phase 6 P6-21: Integrated with PostgreSQL repositories.
+    
     Reference: docs/phase5-copilot-mvp.md Section 5.3 (Copilot Orchestrator)
     """
     
-    def __init__(self, llm: LLMClient):
+    def __init__(self, llm: LLMClient, session=None):
         """
         Initialize Copilot Orchestrator.
         
         Args:
             llm: LLMClient instance for generating responses
+            session: Optional AsyncSession for database access (required for repository calls)
         """
         self.llm = llm
+        self.session = session
         logger.debug("CopilotOrchestrator initialized")
     
-    async def process(self, request: CopilotRequest) -> CopilotResponse:
+    async def process(self, request: CopilotRequest, session=None) -> CopilotResponse:
         """
         Process a Copilot request and generate a response.
         
@@ -169,10 +176,13 @@ class CopilotOrchestrator:
         )
         
         # Step 2: Retrieve required grounding data based on intent
+        # Use provided session or instance session
+        db_session = session or self.session
         context_data = await self._gather_context(
             request=request,
             intent_type=intent_type,
             extracted_exception_ids=extracted_exception_ids,
+            session=db_session,
         )
         
         # Step 3: Build rich context dict for LLM
@@ -242,6 +252,7 @@ class CopilotOrchestrator:
         request: CopilotRequest,
         intent_type: IntentType,
         extracted_exception_ids: list[str],
+        session=None,
     ) -> dict:
         """
         Gather relevant context data based on intent.
@@ -259,10 +270,11 @@ class CopilotOrchestrator:
         try:
             if intent_type == "EXPLANATION":
                 # For EXPLANATION, retrieve exception details and timeline
-                if extracted_exception_ids:
+                if extracted_exception_ids and session:
                     # Get first exception (for now, support single exception)
                     exception_id = extracted_exception_ids[0]
-                    exception_data = get_exception_by_id(
+                    exception_data = await get_exception_by_id(
+                        session=session,
                         tenant_id=request.tenant_id,
                         domain=request.domain,
                         exception_id=exception_id,
@@ -271,16 +283,29 @@ class CopilotOrchestrator:
                         context_data["exception"] = exception_data
                     
                     # Get exception timeline
-                    timeline = get_exception_timeline(
+                    timeline = await get_exception_timeline(
+                        session=session,
                         tenant_id=request.tenant_id,
                         domain=request.domain,
                         exception_id=exception_id,
                     )
                     if timeline:
                         context_data["exceptionTimeline"] = timeline
-                else:
+                    
+                    # Get similar exceptions for context
+                    similar = await get_similar_exceptions(
+                        session=session,
+                        tenant_id=request.tenant_id,
+                        domain=request.domain,
+                        exception_type=exception_data.get("exceptionType") if exception_data else None,
+                        limit=5,
+                    )
+                    if similar:
+                        context_data["similarExceptions"] = similar
+                elif session:
                     # No exception ID found, try to get recent exceptions
-                    recent = get_recent_exceptions(
+                    recent = await get_recent_exceptions(
+                        session=session,
                         tenant_id=request.tenant_id,
                         domain=request.domain,
                         limit=5,
@@ -290,13 +315,25 @@ class CopilotOrchestrator:
             
             elif intent_type == "SUMMARY":
                 # For SUMMARY, retrieve recent exceptions
-                recent = get_recent_exceptions(
-                    tenant_id=request.tenant_id,
-                    domain=request.domain,
-                    limit=10,
-                )
-                if recent:
-                    context_data["recentExceptions"] = recent
+                if session:
+                    recent = await get_recent_exceptions(
+                        session=session,
+                        tenant_id=request.tenant_id,
+                        domain=request.domain,
+                        limit=10,
+                    )
+                    if recent:
+                        context_data["recentExceptions"] = recent
+                    
+                    # Also get imminent SLA breaches for summary
+                    sla_breaches = await get_imminent_sla_breaches(
+                        session=session,
+                        tenant_id=request.tenant_id,
+                        within_minutes=60,
+                        limit=10,
+                    )
+                    if sla_breaches:
+                        context_data["imminentSlaBreaches"] = sla_breaches
             
             elif intent_type == "POLICY_HINT":
                 # For POLICY_HINT, retrieve domain pack and policy pack summaries

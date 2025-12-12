@@ -2,12 +2,14 @@
  * API client for exception-related endpoints
  * 
  * Mirrors backend routes from:
- * - src/api/routes/router_operator.py
+ * - src/api/routes/exceptions.py (P6-22: DB-backed API)
+ * - src/api/routes/router_operator.py (UI detail endpoints)
  * 
  * All functions automatically include tenantId via httpClient interceptors.
  */
 
 import { httpClient } from '../utils/httpClient'
+import { getTenantIdForHttpClient } from '../utils/httpClient'
 import type {
   ExceptionSummary,
   ExceptionDetailResponse,
@@ -18,21 +20,19 @@ import type {
 
 /**
  * Parameters for listing exceptions
- * Mirrors query parameters from GET /ui/exceptions in router_operator.py
+ * Mirrors query parameters from GET /exceptions/{tenant_id} in exceptions.py
  */
 export interface ListExceptionsParams {
   /** Domain filter (optional) */
   domain?: string
-  /** Resolution status filter (optional) */
+  /** Resolution status filter (optional) - lowercase: open, analyzing, resolved, escalated */
   status?: string
-  /** Severity filter (optional) */
+  /** Severity filter (optional) - lowercase: low, medium, high, critical */
   severity?: string
-  /** Start timestamp filter (optional, ISO format) */
-  from_ts?: string
-  /** End timestamp filter (optional, ISO format) */
-  to_ts?: string
-  /** Text search query (optional) */
-  search?: string
+  /** Start timestamp filter (optional, ISO datetime) */
+  created_from?: string
+  /** End timestamp filter (optional, ISO datetime) */
+  created_to?: string
   /** Page number (1-indexed, default: 1) */
   page?: number
   /** Page size (default: 50, max: 100) */
@@ -40,32 +40,65 @@ export interface ListExceptionsParams {
 }
 
 /**
- * List exceptions with filtering, search, and pagination
- * GET /ui/exceptions
+ * List exceptions with filtering and pagination
+ * GET /exceptions/{tenant_id}
  * 
+ * P6-22: Updated to use DB-backed endpoint instead of /ui/exceptions
+ * 
+ * @param tenantId Tenant identifier (required)
  * @param params Query parameters for filtering and pagination
  * @returns Paginated list of exception summaries
  */
 export async function listExceptions(
+  tenantId: string,
   params?: ListExceptionsParams
 ): Promise<PaginatedResponse<ExceptionSummary>> {
-  const response = await httpClient.get<PaginatedResponse<ExceptionSummary> & { total_pages?: number }>('/ui/exceptions', {
-    params,
+  if (!tenantId) {
+    throw new Error('tenantId is required for listExceptions')
+  }
+
+  const response = await httpClient.get<{
+    items: any[]
+    total: number
+    page: number
+    page_size: number
+    total_pages: number
+  }>(`/exceptions/${tenantId}`, {
+    params: {
+      domain: params?.domain,
+      status: params?.status,
+      severity: params?.severity,
+      created_from: params?.created_from,
+      created_to: params?.created_to,
+      page: params?.page || 1,
+      page_size: params?.page_size || 50,
+    },
   })
   
-  // Transform snake_case to camelCase if needed
-  if (response && typeof response === 'object' && response !== null && 'total_pages' in response && typeof (response as { total_pages?: number }).total_pages === 'number' && !('totalPages' in response)) {
-    const responseWithTotalPages = response as PaginatedResponse<ExceptionSummary> & { total_pages: number }
+  // Transform backend response to frontend format
+  // Backend returns ExceptionRecord.model_dump(by_alias=True), which uses camelCase
+  const items: ExceptionSummary[] = (response.items || []).map((item: any) => {
+    // Backend returns camelCase fields (exceptionId, tenantId, etc.) from ExceptionRecord
+    // Map to frontend ExceptionSummary (snake_case for consistency with existing types)
     return {
-      items: responseWithTotalPages.items,
-      total: responseWithTotalPages.total,
-      page: responseWithTotalPages.page,
-      pageSize: responseWithTotalPages.pageSize,
-      totalPages: responseWithTotalPages.total_pages,
-    }
-  }
+      exception_id: item.exceptionId || item.exception_id || '',
+      tenant_id: item.tenantId || item.tenant_id || tenantId,
+      domain: item.normalizedContext?.domain || item.domain || null,
+      exception_type: item.exceptionType || item.exception_type || null,
+      severity: item.severity ? (typeof item.severity === 'string' ? item.severity.toUpperCase() : item.severity) : null,
+      resolution_status: item.resolutionStatus || item.resolution_status || item.status || 'OPEN',
+      source_system: item.sourceSystem || item.source_system || null,
+      timestamp: item.timestamp || item.createdAt || item.created_at || new Date().toISOString(),
+    } as ExceptionSummary
+  })
   
-  return response as PaginatedResponse<ExceptionSummary>
+  return {
+    items,
+    total: response.total || 0,
+    page: response.page || 1,
+    pageSize: response.page_size || response.pageSize || 50,
+    totalPages: response.total_pages || response.totalPages || 1,
+  }
 }
 
 /**
@@ -78,7 +111,17 @@ export async function listExceptions(
 export async function getExceptionDetail(
   exceptionId: string
 ): Promise<ExceptionDetailResponse> {
-  return httpClient.get<ExceptionDetailResponse>(`/ui/exceptions/${exceptionId}`)
+  // tenant_id will be added automatically by httpClient interceptor
+  // but we ensure it's explicitly passed in case interceptor hasn't run yet
+  const tenantId = getTenantIdForHttpClient()
+  if (!tenantId) {
+    throw new Error('tenantId is required for getExceptionDetail')
+  }
+  return httpClient.get<ExceptionDetailResponse>(`/ui/exceptions/${exceptionId}`, {
+    params: {
+      tenant_id: tenantId,
+    },
+  })
 }
 
 /**
@@ -91,7 +134,17 @@ export async function getExceptionDetail(
 export async function getExceptionEvidence(
   exceptionId: string
 ): Promise<EvidenceResponse> {
-  return httpClient.get<EvidenceResponse>(`/ui/exceptions/${exceptionId}/evidence`)
+  // tenant_id will be added automatically by httpClient interceptor
+  // but we ensure it's explicitly passed in case interceptor hasn't run yet
+  const tenantId = getTenantIdForHttpClient()
+  if (!tenantId) {
+    throw new Error('tenantId is required for getExceptionEvidence')
+  }
+  return httpClient.get<EvidenceResponse>(`/ui/exceptions/${exceptionId}/evidence`, {
+    params: {
+      tenant_id: tenantId,
+    },
+  })
 }
 
 /**
@@ -104,6 +157,133 @@ export async function getExceptionEvidence(
 export async function getExceptionAudit(
   exceptionId: string
 ): Promise<AuditResponse> {
-  return httpClient.get<AuditResponse>(`/ui/exceptions/${exceptionId}/audit`)
+  // tenant_id will be added automatically by httpClient interceptor
+  // but we ensure it's explicitly passed in case interceptor hasn't run yet
+  const tenantId = getTenantIdForHttpClient()
+  if (!tenantId) {
+    throw new Error('tenantId is required for getExceptionAudit')
+  }
+  return httpClient.get<AuditResponse>(`/ui/exceptions/${exceptionId}/audit`, {
+    params: {
+      tenant_id: tenantId,
+    },
+  })
+}
+
+/**
+ * Parameters for fetching exception events
+ * Mirrors query parameters from GET /exceptions/{exception_id}/events
+ */
+export interface ListExceptionEventsParams {
+  /** Tenant identifier (required) */
+  tenantId: string
+  /** Event type filter (comma-separated list, optional) */
+  eventType?: string
+  /** Actor type filter (agent, user, system, optional) */
+  actorType?: string
+  /** Start date filter (ISO datetime, optional) */
+  dateFrom?: string
+  /** End date filter (ISO datetime, optional) */
+  dateTo?: string
+  /** Page number (1-indexed, default: 1) */
+  page?: number
+  /** Page size (default: 50, max: 100) */
+  pageSize?: number
+}
+
+/**
+ * Exception event structure
+ * Mirrors response from GET /exceptions/{exception_id}/events
+ */
+export interface ExceptionEvent {
+  /** Event identifier */
+  eventId: string
+  /** Exception identifier */
+  exceptionId: string
+  /** Tenant identifier */
+  tenantId: string
+  /** Event type (e.g., "ExceptionCreated", "TriageCompleted") */
+  eventType: string
+  /** Actor type (agent, user, system) */
+  actorType: string
+  /** Actor identifier (optional) */
+  actorId?: string | null
+  /** Event payload (JSON object) */
+  payload: Record<string, unknown>
+  /** Event timestamp (ISO datetime) */
+  createdAt: string
+}
+
+/**
+ * Exception events list response
+ */
+export interface ExceptionEventsListResponse {
+  /** List of events */
+  items: ExceptionEvent[]
+  /** Total number of events */
+  total: number
+  /** Current page number (1-indexed) */
+  page: number
+  /** Page size */
+  pageSize: number
+  /** Total number of pages */
+  totalPages: number
+}
+
+/**
+ * Get event timeline for a specific exception
+ * GET /exceptions/{exception_id}/events
+ * 
+ * P6-27: New endpoint for fetching exception events with filtering and pagination
+ * 
+ * @param exceptionId Exception identifier
+ * @param params Query parameters including tenantId (required) and optional filters
+ * @returns Paginated list of exception events in chronological order
+ */
+export async function fetchExceptionEvents(
+  exceptionId: string,
+  params: ListExceptionEventsParams
+): Promise<ExceptionEventsListResponse> {
+  if (!params.tenantId) {
+    throw new Error('tenantId is required for fetchExceptionEvents')
+  }
+
+  const response = await httpClient.get<{
+    items: any[]
+    total: number
+    page: number
+    page_size: number
+    total_pages: number
+  }>(`/exceptions/${exceptionId}/events`, {
+    params: {
+      tenant_id: params.tenantId,
+      event_type: params.eventType,
+      actor_type: params.actorType,
+      date_from: params.dateFrom,
+      date_to: params.dateTo,
+      page: params.page || 1,
+      page_size: params.pageSize || 50,
+    },
+  })
+
+  // Transform backend response to frontend format
+  const items: ExceptionEvent[] = (response.items || []).map((item: any) => ({
+    eventId: item.eventId || item.event_id || '',
+    exceptionId: item.exceptionId || item.exception_id || exceptionId,
+    tenantId: item.tenantId || item.tenant_id || params.tenantId,
+    eventType: item.eventType || item.event_type || '',
+    actorType: item.actorType || item.actor_type || '',
+    actorId: item.actorId || item.actor_id || null,
+    payload: item.payload || {},
+    createdAt: item.createdAt || item.created_at || new Date().toISOString(),
+  }))
+
+  return {
+    items,
+    total: response.total || 0,
+    page: response.page || 1,
+    pageSize: response.page_size || response.pageSize || 50,
+    totalPages: response.total_pages || response.totalPages || 1,
+  }
 }
 

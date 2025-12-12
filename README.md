@@ -11,6 +11,7 @@ Start here:
 - `docs/01-architecture.md` - System architecture
 - `docs/03-data-models-apis.md` - Data models and API specifications
 - `docs/06-mvp-plan.md` - MVP implementation plan
+- `docs/phase6-persistence-mvp.md` - Phase 6: Persistence & State Management (see [Phase 6 section](#phase-6-persistence--state-management) below)
 
 ## Project Structure
 
@@ -32,7 +33,12 @@ src/
 ├── optimization/     # Phase 3: Metrics-driven optimization engine
 ├── redteam/          # Phase 3: Red-team test harness and adversarial suites
 ├── operations/       # Phase 3: Operational runbooks
-└── observability/    # Phase 3: SLO/SLA monitoring
+├── observability/    # Phase 3: SLO/SLA monitoring
+├── infrastructure/   # Phase 6: Database models, repositories, session management
+│   ├── db/          # Database models and session management
+│   └── repositories/# DB-backed repository implementations
+├── repository/       # Phase 6: Repository layer (DTOs, base classes)
+└── copilot/          # Phase 5: Co-Pilot (uses Phase 6 repositories)
 
 tests/                # Test suite
 ```
@@ -43,6 +49,9 @@ tests/                # Test suite
 
 - Python 3.11 or higher
 - pip or poetry
+- **Phase 6 (Required):**
+  - PostgreSQL 12 or higher
+  - Database connection configured via `DATABASE_URL` environment variable
 - **Phase 3 (Optional):**
   - LLM provider API keys (OpenAI, Grok, etc.) for LLM-enhanced reasoning
   - Kafka/MQ broker for streaming ingestion (optional)
@@ -71,6 +80,71 @@ Or install with development dependencies:
 pip install -r requirements.txt
 pip install -e ".[dev]"
 ```
+
+4. **Phase 6: Database Setup:**
+   
+   **Option A: Using Docker (Recommended for Development)**
+   ```bash
+   # Start PostgreSQL in Docker
+   # Windows (PowerShell):
+   .\scripts\docker_db.ps1 start
+   
+   # Linux/Mac:
+   ./scripts/docker_db.sh start
+   
+   # Or use docker-compose directly:
+   docker-compose up -d postgres
+   
+   # Set database URL
+   # Windows (PowerShell):
+   $env:DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/sentinai"
+   
+   # Linux/Mac:
+   export DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/sentinai
+   
+   # Run initial migrations
+   alembic upgrade head
+   ```
+   
+   **Option B: Local PostgreSQL Installation**
+   ```bash
+   # Create database
+   createdb -U postgres sentinai
+   
+   # Set database URL (or add to .env file)
+   export DATABASE_URL=postgresql+asyncpg://postgres:yourpassword@localhost:5432/sentinai
+   
+   # Run initial migrations
+   alembic upgrade head
+   ```
+   
+   See `docs/docker-postgres-setup.md` for Docker setup details.
+   See `docs/database-migrations.md` for detailed migration instructions.
+
+   **Option C: Full Stack with Docker Compose (Recommended for Quick Start)**
+   ```bash
+   # Start all services (PostgreSQL, Backend API, UI)
+   docker compose up --build
+   
+   # Or run in detached mode
+   docker compose up -d --build
+   
+   # View logs
+   docker compose logs -f
+   
+   # Stop all services
+   docker compose down
+   
+   # Stop and remove volumes (clean slate)
+   docker compose down -v
+   ```
+   
+   Once running, access:
+   - **API**: http://localhost:8000
+   - **API Documentation**: http://localhost:8000/docs
+   - **UI**: http://localhost:3000
+   
+   See [`docs/phase6-persistence-mvp.md`](docs/phase6-persistence-mvp.md#docker-compose-setup) for more details.
 
 ## Running the Application
 
@@ -138,13 +212,14 @@ View coverage report:
 
 Coverage threshold: Tests will fail if coverage is below 85% (Phase 2 requirement).
 
-## Phase 1, Phase 2 & Phase 3 MVP Status
+## Phase 1, Phase 2, Phase 3 & Phase 6 MVP Status
 
 **Phase 1 MVP:** ✅ COMPLETE (21 issues)
 **Phase 2 MVP:** ✅ COMPLETE (25 issues)
 **Phase 3 MVP:** ✅ COMPLETE (31 issues)
+**Phase 6 MVP:** ✅ COMPLETE (Persistence & State Management)
 
-**Total Issues Implemented:** 77/77 (100% complete)
+**Total Issues Implemented:** 77+ Phase 6 issues (100% complete)
 
 ### Documentation
 
@@ -185,6 +260,101 @@ Coverage threshold: Tests will fail if coverage is below 85% (Phase 2 requiremen
 - ✅ Human-readable decision timelines
 - ✅ Evidence tracking and attribution system
 - ✅ Explanation API endpoints with quality scoring
+
+**Phase 6:**
+- ✅ PostgreSQL-backed persistence (system-of-record database)
+- ✅ DB-backed repositories for all core entities (exceptions, events, tenants, domain packs, policy packs, playbooks, tools)
+- ✅ Append-only exception event log with full audit trail
+- ✅ Tenant isolation enforced at database layer
+- ✅ Idempotent write operations (upsert, append_if_new)
+- ✅ Database migrations with Alembic
+- ✅ Health check endpoints (`/health/db`)
+- ✅ Comprehensive repository and API test coverage
+
+## Phase 6: Persistence & State Management
+
+**If you want to understand how persistence works, start here:**
+
+Phase 6 introduces **durable persistence** and **state management** for the platform. All exception data, events, and configurations are now stored in PostgreSQL, replacing the in-memory implementations from earlier phases.
+
+### What Phase 6 Adds
+
+- **PostgreSQL-backed persistence**: System-of-record database for all platform data
+- **System-of-record tables**: Exceptions, tenants, domain packs, tenant policy packs, playbooks, tools, and more
+- **Append-only event log**: Complete audit trail of all agent actions and state changes
+- **DB-backed repositories**: All data access goes through repository layer with tenant isolation
+- **Database migrations**: Alembic-based schema management
+- **Health monitoring**: Database connectivity checks and health endpoints
+
+### Quick Start
+
+**Configure Database Connection:**
+
+1. Copy `.env.example` to `.env`:
+   ```bash
+   cp .env.example .env  # Linux/Mac
+   copy .env.example .env  # Windows
+   ```
+
+2. Update `.env` with your database credentials (see [`docs/configuration.md`](docs/configuration.md) for details)
+
+3. Or set the `DATABASE_URL` environment variable directly:
+
+```bash
+# Windows (PowerShell)
+$env:DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/sentinai"
+
+# Linux/Mac
+export DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/sentinai
+```
+
+Or use individual components:
+```bash
+export DB_USER=postgres
+export DB_PASSWORD=yourpassword
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_NAME=sentinai
+```
+
+**Run Migrations:**
+
+```bash
+# Create initial schema
+alembic upgrade head
+
+# Create a new migration
+alembic revision --autogenerate -m "description"
+```
+
+**Run Tests:**
+
+```bash
+# Run all repository tests
+pytest tests/repository tests/infrastructure/repositories -v -m phase6
+
+# Run API tests with DB
+pytest tests/api/test_exceptions_api_phase6.py -v
+
+# Run health check tests
+pytest tests/api/test_health_db.py -v -m phase6
+```
+
+### Where to Read More
+
+- **Configuration Guide**: [`docs/configuration.md`](docs/configuration.md) - Complete environment variable reference and configuration options
+- **Full Phase 6 Documentation**: [`docs/phase6-persistence-mvp.md`](docs/phase6-persistence-mvp.md) - Complete specification, schema design, and implementation details
+- **Database Setup**: [`docs/docker-postgres-setup.md`](docs/docker-postgres-setup.md) - Docker-based PostgreSQL setup
+- **Migrations Guide**: [`docs/database-migrations.md`](docs/database-migrations.md) - Alembic migration workflow
+- **Repository Tests**: [`tests/repository/README.md`](tests/repository/README.md) - Repository test suite documentation
+- **Architecture**: [`docs/01-architecture.md`](docs/01-architecture.md) - System architecture (includes persistence layer)
+
+### Key Concepts
+
+- **Repository Pattern**: All database access goes through repositories (`src/infrastructure/repositories/` and `src/repository/`)
+- **Tenant Isolation**: Every query enforces `tenant_id` filtering to prevent cross-tenant data leakage
+- **Idempotent Operations**: Safe retry/replay with `upsert_exception` and `append_event_if_new`
+- **Event Log**: Immutable append-only log of all exception lifecycle events
 
 ## Architecture Principles
 

@@ -18,7 +18,10 @@ import {
   getExceptionDetail,
   getExceptionEvidence,
   getExceptionAudit,
+  fetchExceptionEvents,
   type ListExceptionsParams,
+  type ListExceptionEventsParams,
+  type ExceptionEventsListResponse,
 } from '../api/exceptions'
 import type {
   ExceptionSummary,
@@ -54,10 +57,17 @@ export const exceptionKeys = {
   /** Exception audit query */
   audit: (tenantId: string | null, id: string) =>
     [...exceptionKeys.audits(), tenantId, id] as const,
+  /** Exception events queries */
+  events: () => [...exceptionKeys.all, 'events'] as const,
+  /** Exception events query */
+  eventsList: (tenantId: string | null, exceptionId: string, params?: ListExceptionEventsParams) =>
+    [...exceptionKeys.events(), tenantId, exceptionId, params] as const,
 }
 
 /**
  * Hook to fetch paginated list of exceptions
+ * 
+ * P6-26: Updated to use DB-backed /exceptions/{tenant_id} endpoint
  * 
  * @param params Optional filter and pagination parameters
  * @returns Query result with exception list data
@@ -68,12 +78,19 @@ export function useExceptionsList(
   const { tenantId, apiKey } = useTenant()
   // Also check httpClient directly as fallback
   const apiKeyFromHttpClient = getApiKeyForHttpClient()
+  const tenantIdFromHttpClient = getTenantIdForHttpClient()
   const hasApiKey = !!(apiKey || apiKeyFromHttpClient)
+  const effectiveTenantId = tenantId || tenantIdFromHttpClient
 
   return useQuery({
-    queryKey: exceptionKeys.list(tenantId, params),
-    queryFn: () => listExceptions(params),
-    enabled: !!tenantId && hasApiKey, // Only fetch if tenantId AND API key are set
+    queryKey: exceptionKeys.list(effectiveTenantId, params),
+    queryFn: () => {
+      if (!effectiveTenantId) {
+        throw new Error('tenantId is required for listExceptions')
+      }
+      return listExceptions(effectiveTenantId, params)
+    },
+    enabled: !!effectiveTenantId && hasApiKey, // Only fetch if tenantId AND API key are set
     staleTime: 30_000, // 30 seconds
   })
 }
@@ -155,6 +172,41 @@ export function useExceptionAudit(
     queryFn: () => getExceptionAudit(id),
     enabled: !!tenantId && !!id && hasApiKey,
     staleTime: 30_000, // 30 seconds (audit trail may update)
+  })
+}
+
+/**
+ * Hook to fetch exception events timeline
+ * 
+ * P6-27: New hook for fetching exception events with filtering and pagination
+ * 
+ * @param exceptionId Exception identifier
+ * @param params Optional filter and pagination parameters (tenantId is required)
+ * @returns Query result with exception events list
+ */
+export function useExceptionEvents(
+  exceptionId: string,
+  params?: Omit<ListExceptionEventsParams, 'tenantId'>
+): UseQueryResult<ExceptionEventsListResponse, Error> {
+  const { tenantId, apiKey } = useTenant()
+  const tenantIdFromHttpClient = getTenantIdForHttpClient()
+  const apiKeyFromHttpClient = getApiKeyForHttpClient()
+  const hasApiKey = !!(apiKey || apiKeyFromHttpClient)
+  const effectiveTenantId = tenantId || tenantIdFromHttpClient
+
+  return useQuery({
+    queryKey: exceptionKeys.eventsList(effectiveTenantId, exceptionId, params ? { ...params, tenantId: effectiveTenantId || '' } : undefined),
+    queryFn: () => {
+      if (!effectiveTenantId) {
+        throw new Error('tenantId is required for fetchExceptionEvents')
+      }
+      return fetchExceptionEvents(exceptionId, {
+        ...params,
+        tenantId: effectiveTenantId,
+      })
+    },
+    enabled: !!effectiveTenantId && !!exceptionId && hasApiKey,
+    staleTime: 30_000, // 30 seconds (events may update)
   })
 }
 

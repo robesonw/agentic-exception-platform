@@ -23,6 +23,13 @@ python-dotenv>=1.0.0      # For environment variable management (not currently u
 watchdog>=3.0.0           # For file system monitoring and hot-reloading
 PyYAML>=6.0.1             # For YAML Domain Pack support
 
+# Phase 6 Dependencies - Database & Migrations
+sqlalchemy>=2.0.0         # SQLAlchemy ORM for database models
+alembic>=1.13.0          # Database migration tool
+asyncpg>=0.29.0          # Async PostgreSQL driver
+psycopg2-binary>=2.9.9   # PostgreSQL adapter (for Alembic sync operations)
+aiosqlite>=0.19.0        # Async SQLite driver (for testing)
+
 requests
 
 prometheus-client

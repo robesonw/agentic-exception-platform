@@ -76,4 +76,7 @@ addopts = [
     "--cov-report=html",
     "--strict-markers",
 ]
+markers = [
+    "phase6: marks tests as Phase 6 tests (deselect with '-m \"not phase6\"')",
+]
 

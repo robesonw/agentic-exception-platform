@@ -7,7 +7,7 @@
  * All functions automatically include tenantId via httpClient interceptors.
  */
 
-import { httpClient } from '../utils/httpClient'
+import { httpClient, getTenantIdForHttpClient } from '../utils/httpClient'
 import type {
   ExplanationResponse,
   ExplanationSearchResponse,
@@ -58,8 +58,14 @@ export async function getExplanation(
   exceptionId: string,
   params?: GetExplanationParams
 ): Promise<ExplanationResponse> {
+  // tenant_id is required by backend
+  const tenantId = getTenantIdForHttpClient()
+  if (!tenantId) {
+    throw new Error('tenantId is required for getExplanation')
+  }
   return httpClient.get<ExplanationResponse>(`/explanations/${exceptionId}`, {
     params: {
+      tenant_id: tenantId,
       format: params?.format ?? 'json',
     },
   })
@@ -75,7 +81,16 @@ export async function getExplanation(
 export async function getTimeline(
   exceptionId: string
 ): Promise<DecisionTimeline> {
-  return httpClient.get<DecisionTimeline>(`/explanations/${exceptionId}/timeline`)
+  // tenant_id is required by backend
+  const tenantId = getTenantIdForHttpClient()
+  if (!tenantId) {
+    throw new Error('tenantId is required for getTimeline')
+  }
+  return httpClient.get<DecisionTimeline>(`/explanations/${exceptionId}/timeline`, {
+    params: {
+      tenant_id: tenantId,
+    },
+  })
 }
 
 /**
@@ -88,7 +103,16 @@ export async function getTimeline(
 export async function getEvidenceGraph(
   exceptionId: string
 ): Promise<EvidenceGraph> {
-  return httpClient.get<EvidenceGraph>(`/explanations/${exceptionId}/evidence`)
+  // tenant_id is required by backend
+  const tenantId = getTenantIdForHttpClient()
+  if (!tenantId) {
+    throw new Error('tenantId is required for getEvidenceGraph')
+  }
+  return httpClient.get<EvidenceGraph>(`/explanations/${exceptionId}/evidence`, {
+    params: {
+      tenant_id: tenantId,
+    },
+  })
 }
 
 /**
