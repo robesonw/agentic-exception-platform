@@ -17,6 +17,7 @@ from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 from src.infrastructure.db.models import Playbook, PlaybookStep
 from src.infrastructure.repositories.playbook_step_repository import PlaybookStepRepository
+from src.repository.base import RepositoryError
 from src.repository.dto import PlaybookStepCreateDTO
 
 # Create test base
@@ -64,14 +65,12 @@ async def test_engine():
     )
 
     # Create tables manually for SQLite compatibility
+    # SQLite requires separate execute calls for each statement
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE TABLE IF NOT EXISTS tenant (tenant_id TEXT PRIMARY KEY, name TEXT NOT NULL);"))
         await conn.execute(
             text(
                 """
-            CREATE TABLE IF NOT EXISTS tenant (
-                tenant_id TEXT PRIMARY KEY,
-                name TEXT NOT NULL
-            );
             CREATE TABLE IF NOT EXISTS playbook (
                 playbook_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tenant_id TEXT NOT NULL,
@@ -81,7 +80,13 @@ async def test_engine():
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
                 FOREIGN KEY (tenant_id) REFERENCES tenant(tenant_id) ON DELETE CASCADE
             );
-            CREATE INDEX IF NOT EXISTS ix_playbook_tenant_id ON playbook(tenant_id);
+            """
+            )
+        )
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_playbook_tenant_id ON playbook(tenant_id);"))
+        await conn.execute(
+            text(
+                """
             CREATE TABLE IF NOT EXISTS playbook_step (
                 step_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 playbook_id INTEGER NOT NULL,
@@ -92,11 +97,11 @@ async def test_engine():
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
                 FOREIGN KEY (playbook_id) REFERENCES playbook(playbook_id) ON DELETE CASCADE
             );
-            CREATE INDEX IF NOT EXISTS ix_playbook_step_playbook_id ON playbook_step(playbook_id);
-            CREATE INDEX IF NOT EXISTS ix_playbook_step_step_order ON playbook_step(step_order);
             """
             )
         )
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_playbook_step_playbook_id ON playbook_step(playbook_id);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_playbook_step_step_order ON playbook_step(step_order);"))
     yield engine
     async with engine.begin() as conn:
         await conn.execute(text("DROP TABLE IF EXISTS playbook_step;"))
@@ -230,7 +235,7 @@ class TestPlaybookStepRepositoryCreate:
             params={},
         )
         
-        with pytest.raises(ValueError, match="Playbook not found"):
+        with pytest.raises(RepositoryError, match="Playbook not found"):
             await playbook_step_repo.create_step(99999, step_data, "tenant_001")
 
     @pytest.mark.asyncio
@@ -285,7 +290,7 @@ class TestPlaybookStepRepositoryGetSteps:
     @pytest.mark.asyncio
     async def test_get_steps_invalid_playbook(self, playbook_step_repo: PlaybookStepRepository, setup_tenants):
         """Test that getting steps for non-existent playbook raises error."""
-        with pytest.raises(ValueError, match="Playbook not found"):
+        with pytest.raises(RepositoryError, match="Playbook not found"):
             await playbook_step_repo.get_steps(99999, "tenant_001")
 
 
@@ -430,7 +435,7 @@ class TestPlaybookStepRepositoryTenantIsolation:
         assert tenant1_steps[0].playbook_id == playbook1.playbook_id
         
         # Tenant 001 should not be able to get tenant_002's playbook steps
-        with pytest.raises(ValueError, match="Playbook not found"):
+        with pytest.raises(RepositoryError, match="Playbook not found"):
             await playbook_step_repo.get_steps(playbook2.playbook_id, "tenant_001")
 
     @pytest.mark.asyncio
@@ -445,7 +450,7 @@ class TestPlaybookStepRepositoryTenantIsolation:
         )
         
         # Tenant 001 should not be able to create steps for tenant_002's playbook
-        with pytest.raises(ValueError, match="Playbook not found"):
+        with pytest.raises(RepositoryError, match="Playbook not found"):
             await playbook_step_repo.create_step(playbook2.playbook_id, step_data, "tenant_001")
 
     @pytest.mark.asyncio
@@ -460,7 +465,7 @@ class TestPlaybookStepRepositoryTenantIsolation:
         )
         
         # Tenant 001 should not be able to reorder tenant_002's steps
-        with pytest.raises(ValueError, match="Playbook not found"):
+        with pytest.raises(RepositoryError, match="Playbook not found"):
             await playbook_step_repo.update_step_order(
                 playbook2.playbook_id, [step.step_id], "tenant_001"
             )
@@ -490,5 +495,202 @@ class TestPlaybookStepRepositoryTenantIsolation:
         # Tenant 001 should not be able to get tenant_002's step
         retrieved = await playbook_step_repo.get_by_id(str(step2.step_id), "tenant_001")
         assert retrieved is None  # Should return None due to tenant isolation
+
+
+class TestPlaybookStepRepositoryP7_7:
+    """Test Phase 7 P7-7 enhancements: get_step_by_order and get_steps_ordered."""
+
+    @pytest.mark.asyncio
+    async def test_get_step_by_order_success(
+        self, playbook_step_repo: PlaybookStepRepository, setup_tenants, setup_playbooks
+    ):
+        """Test retrieving a step by order number."""
+        playbook = setup_playbooks["playbook1"]
+        
+        # Create steps
+        step1_data = PlaybookStepCreateDTO(name="Step1", action_type="notify", params={})
+        step2_data = PlaybookStepCreateDTO(name="Step2", action_type="call_tool", params={})
+        step3_data = PlaybookStepCreateDTO(name="Step3", action_type="escalate", params={})
+        
+        await playbook_step_repo.create_step(playbook.playbook_id, step1_data, "tenant_001")
+        await playbook_step_repo.create_step(playbook.playbook_id, step2_data, "tenant_001")
+        await playbook_step_repo.create_step(playbook.playbook_id, step3_data, "tenant_001")
+        
+        # Get step by order
+        step = await playbook_step_repo.get_step_by_order(playbook.playbook_id, 2, "tenant_001")
+        
+        assert step is not None
+        assert step.step_order == 2
+        assert step.name == "Step2"
+        assert step.action_type == "call_tool"
+        
+        # Get first step
+        step1 = await playbook_step_repo.get_step_by_order(playbook.playbook_id, 1, "tenant_001")
+        assert step1 is not None
+        assert step1.step_order == 1
+        assert step1.name == "Step1"
+        
+        # Get last step
+        step3 = await playbook_step_repo.get_step_by_order(playbook.playbook_id, 3, "tenant_001")
+        assert step3 is not None
+        assert step3.step_order == 3
+        assert step3.name == "Step3"
+
+    @pytest.mark.asyncio
+    async def test_get_step_by_order_not_found(
+        self, playbook_step_repo: PlaybookStepRepository, setup_tenants, setup_playbooks
+    ):
+        """Test retrieving a non-existent step order."""
+        playbook = setup_playbooks["playbook1"]
+        
+        # Create one step
+        step1_data = PlaybookStepCreateDTO(name="Step1", action_type="notify", params={})
+        await playbook_step_repo.create_step(playbook.playbook_id, step1_data, "tenant_001")
+        
+        # Try to get non-existent step
+        step = await playbook_step_repo.get_step_by_order(playbook.playbook_id, 999, "tenant_001")
+        assert step is None
+
+    @pytest.mark.asyncio
+    async def test_get_step_by_order_tenant_isolation(
+        self, playbook_step_repo: PlaybookStepRepository, setup_tenants, setup_playbooks
+    ):
+        """Test that get_step_by_order enforces tenant isolation."""
+        playbook1 = setup_playbooks["playbook1"]  # tenant_001
+        playbook2 = setup_playbooks["playbook2"]  # tenant_002
+        
+        # Create step for tenant_001
+        step1_data = PlaybookStepCreateDTO(name="Step1", action_type="notify", params={})
+        await playbook_step_repo.create_step(playbook1.playbook_id, step1_data, "tenant_001")
+        
+        # Create step for tenant_002
+        step2_data = PlaybookStepCreateDTO(name="Step2", action_type="notify", params={})
+        await playbook_step_repo.create_step(playbook2.playbook_id, step2_data, "tenant_002")
+        
+        # Tenant_001 should not be able to get tenant_002's step
+        with pytest.raises(RepositoryError, match="Playbook not found"):
+            await playbook_step_repo.get_step_by_order(playbook2.playbook_id, 1, "tenant_001")
+        
+        # Tenant_001 should be able to get their own step
+        step = await playbook_step_repo.get_step_by_order(playbook1.playbook_id, 1, "tenant_001")
+        assert step is not None
+        assert step.playbook_id == playbook1.playbook_id
+
+    @pytest.mark.asyncio
+    async def test_get_step_by_order_validation_errors(
+        self, playbook_step_repo: PlaybookStepRepository, setup_tenants, setup_playbooks
+    ):
+        """Test validation errors for get_step_by_order."""
+        playbook = setup_playbooks["playbook1"]
+        
+        # Empty tenant_id
+        with pytest.raises(ValueError, match="tenant_id is required"):
+            await playbook_step_repo.get_step_by_order(playbook.playbook_id, 1, "")
+        
+        # Invalid playbook_id
+        with pytest.raises(ValueError, match="playbook_id must be >= 1"):
+            await playbook_step_repo.get_step_by_order(0, 1, "tenant_001")
+        
+        # Invalid step_order
+        with pytest.raises(ValueError, match="step_order must be >= 1"):
+            await playbook_step_repo.get_step_by_order(playbook.playbook_id, 0, "tenant_001")
+
+    @pytest.mark.asyncio
+    async def test_get_steps_ordered_success(
+        self, playbook_step_repo: PlaybookStepRepository, setup_tenants, setup_playbooks
+    ):
+        """Test retrieving all steps ordered by step_order."""
+        playbook = setup_playbooks["playbook1"]
+        
+        # Create steps in non-sequential order (to verify ordering)
+        step3_data = PlaybookStepCreateDTO(name="Step3", action_type="escalate", params={})
+        step1_data = PlaybookStepCreateDTO(name="Step1", action_type="notify", params={})
+        step2_data = PlaybookStepCreateDTO(name="Step2", action_type="call_tool", params={})
+        
+        # Create in order 3, 1, 2 - but they should be auto-ordered as 1, 2, 3
+        await playbook_step_repo.create_step(playbook.playbook_id, step3_data, "tenant_001")
+        await playbook_step_repo.create_step(playbook.playbook_id, step1_data, "tenant_001")
+        await playbook_step_repo.create_step(playbook.playbook_id, step2_data, "tenant_001")
+        
+        # Get all steps ordered
+        steps = await playbook_step_repo.get_steps_ordered(playbook.playbook_id, "tenant_001")
+        
+        assert len(steps) == 3
+        # Should be ordered by step_order ascending
+        assert steps[0].step_order == 1
+        assert steps[1].step_order == 2
+        assert steps[2].step_order == 3
+        assert steps[0].name == "Step3"  # First created
+        assert steps[1].name == "Step1"  # Second created
+        assert steps[2].name == "Step2"  # Third created
+
+    @pytest.mark.asyncio
+    async def test_get_steps_ordered_empty(
+        self, playbook_step_repo: PlaybookStepRepository, setup_tenants, setup_playbooks
+    ):
+        """Test retrieving ordered steps for a playbook with no steps."""
+        playbook = setup_playbooks["playbook1"]
+        
+        steps = await playbook_step_repo.get_steps_ordered(playbook.playbook_id, "tenant_001")
+        assert len(steps) == 0
+
+    @pytest.mark.asyncio
+    async def test_get_steps_ordered_tenant_isolation(
+        self, playbook_step_repo: PlaybookStepRepository, setup_tenants, setup_playbooks
+    ):
+        """Test that get_steps_ordered enforces tenant isolation."""
+        playbook1 = setup_playbooks["playbook1"]  # tenant_001
+        playbook2 = setup_playbooks["playbook2"]  # tenant_002
+        
+        # Create steps for both playbooks
+        await playbook_step_repo.create_step(
+            playbook1.playbook_id,
+            PlaybookStepCreateDTO(name="Step1", action_type="notify", params={}),
+            "tenant_001",
+        )
+        await playbook_step_repo.create_step(
+            playbook2.playbook_id,
+            PlaybookStepCreateDTO(name="Step2", action_type="notify", params={}),
+            "tenant_002",
+        )
+        
+        # Tenant_001 should only see their own steps
+        tenant1_steps = await playbook_step_repo.get_steps_ordered(playbook1.playbook_id, "tenant_001")
+        assert len(tenant1_steps) == 1
+        assert tenant1_steps[0].playbook_id == playbook1.playbook_id
+        
+        # Tenant_001 should not be able to get tenant_002's steps
+        with pytest.raises(RepositoryError, match="Playbook not found"):
+            await playbook_step_repo.get_steps_ordered(playbook2.playbook_id, "tenant_001")
+
+    @pytest.mark.asyncio
+    async def test_get_steps_ordered_stability(
+        self, playbook_step_repo: PlaybookStepRepository, setup_tenants, setup_playbooks
+    ):
+        """Test that step ordering is stable across multiple calls."""
+        playbook = setup_playbooks["playbook1"]
+        
+        # Create multiple steps
+        for i in range(5):
+            step_data = PlaybookStepCreateDTO(
+                name=f"Step{i+1}",
+                action_type="notify",
+                params={},
+            )
+            await playbook_step_repo.create_step(playbook.playbook_id, step_data, "tenant_001")
+        
+        # Get steps multiple times and verify ordering is consistent
+        steps1 = await playbook_step_repo.get_steps_ordered(playbook.playbook_id, "tenant_001")
+        steps2 = await playbook_step_repo.get_steps_ordered(playbook.playbook_id, "tenant_001")
+        steps3 = await playbook_step_repo.get_steps_ordered(playbook.playbook_id, "tenant_001")
+        
+        assert len(steps1) == 5
+        assert len(steps2) == 5
+        assert len(steps3) == 5
+        
+        # Verify all calls return the same order
+        for i in range(5):
+            assert steps1[i].step_order == steps2[i].step_order == steps3[i].step_order
+            assert steps1[i].step_id == steps2[i].step_id == steps3[i].step_id
 
 

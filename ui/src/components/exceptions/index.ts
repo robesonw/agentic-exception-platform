@@ -13,5 +13,6 @@ export { default as SimulationDialog } from './SimulationDialog'
 export type { SimulationDialogProps } from './SimulationDialog'
 export { default as SimulationResult } from './SimulationResult'
 export type { SimulationResultProps } from './SimulationResult'
+export { default as RecommendedPlaybookPanel } from './RecommendedPlaybookPanel'
 
 

@@ -49,6 +49,8 @@ class PolicyAgent:
         audit_logger: Optional[AuditLogger] = None,
         llm_client: Optional[LLMClient] = None,
         violation_detector: Optional[ViolationDetector] = None,
+        playbook_matching_service: Optional[Any] = None,
+        exception_events_repository: Optional[Any] = None,
     ):
         """
         Initialize PolicyAgent.
@@ -59,12 +61,16 @@ class PolicyAgent:
             audit_logger: Optional AuditLogger for logging
             llm_client: Optional LLMClient for Phase 3 LLM-enhanced reasoning
             violation_detector: Optional ViolationDetector for Phase 3 violation detection
+            playbook_matching_service: Optional PlaybookMatchingService for playbook validation (P7-12)
+            exception_events_repository: Optional ExceptionEventRepository for logging PolicyEvaluated events (P7-12)
         """
         self.domain_pack = domain_pack
         self.tenant_policy = tenant_policy
         self.audit_logger = audit_logger
         self.llm_client = llm_client
         self.violation_detector = violation_detector
+        self.playbook_matching_service = playbook_matching_service
+        self.exception_events_repository = exception_events_repository
         
         # Build approved playbook IDs set for fast lookup
         # Note: Sample files use approvedBusinessProcesses, but model uses approved_tools
@@ -187,6 +193,120 @@ class PolicyAgent:
                         break
             except Exception as e:
                 logger.warning(f"Violation detection failed: {e}")
+        
+        # Phase 7: Playbook matching and assignment (P7-12)
+        assigned_playbook_id = None
+        playbook_reasoning = None
+        if decision.next_step != "Escalate" and "Blocked" not in decision.decision:
+            # Only assign playbook if not blocked/escalated
+            try:
+                # Get playbook suggestion from triage context or call matching service
+                suggested_playbook_id = None
+                if context and "suggested_playbook_id" in context:
+                    suggested_playbook_id = context.get("suggested_playbook_id")
+                    playbook_reasoning = context.get("playbook_reasoning", "Playbook suggested by TriageAgent")
+                
+                # If no suggestion from triage, call matching service
+                if not suggested_playbook_id and self.playbook_matching_service:
+                    try:
+                        matching_result = await self.playbook_matching_service.match_playbook(
+                            tenant_id=exception.tenant_id,
+                            exception=exception,
+                            tenant_policy=self.tenant_policy,
+                        )
+                        if matching_result.playbook:
+                            suggested_playbook_id = matching_result.playbook.playbook_id
+                            playbook_reasoning = matching_result.reasoning
+                    except Exception as e:
+                        logger.warning(f"Playbook matching failed during policy evaluation: {e}")
+                
+                # Validate playbook aligns with policy guardrails
+                if suggested_playbook_id:
+                    # Check if playbook is approved (aligns with policy)
+                    # For MVP, we check if the playbook matches an approved exception type
+                    # In production, this would check actual playbook IDs against approvedBusinessProcesses
+                    is_approved = False
+                    if exception.exception_type in self._approved_playbook_ids:
+                        # Check if there's an approved playbook for this exception type
+                        applicable_playbooks = self._find_applicable_playbooks(exception)
+                        if applicable_playbooks:
+                            # For MVP, if we have applicable playbooks and the exception type is approved,
+                            # we consider the suggested playbook approved
+                            is_approved = True
+                            assigned_playbook_id = suggested_playbook_id
+                            logger.info(
+                                f"PolicyAgent: Approved playbook {assigned_playbook_id} "
+                                f"for exception {exception.exception_id}: {playbook_reasoning}"
+                            )
+                    
+                    if not is_approved:
+                        logger.debug(
+                            f"PolicyAgent: Playbook {suggested_playbook_id} not approved "
+                            f"for exception {exception.exception_id}"
+                        )
+                        playbook_reasoning = f"Playbook {suggested_playbook_id} not in approved list"
+                
+                # Assign playbook to exception if approved
+                if assigned_playbook_id:
+                    exception.current_playbook_id = assigned_playbook_id
+                    exception.current_step = 1
+                    logger.info(
+                        f"PolicyAgent: Assigned playbook {assigned_playbook_id} "
+                        f"to exception {exception.exception_id}, current_step=1"
+                    )
+            except Exception as e:
+                logger.warning(f"Playbook assignment failed during policy evaluation: {e}")
+        
+        # Phase 7: Emit PolicyEvaluated event (P7-12)
+        if self.exception_events_repository:
+            try:
+                from src.domain.events.exception_events import (
+                    ActorType,
+                    EventType,
+                    PolicyEvaluatedPayload,
+                    validate_and_build_event,
+                )
+                from datetime import datetime, timezone
+                
+                # Build event payload
+                event_payload = PolicyEvaluatedPayload(
+                    decision=decision.decision,
+                    violated_rules=[e for e in decision.evidence if "violated" in e.lower() or "blocked" in e.lower()],
+                    approval_required="Human approval required" in " ".join(decision.evidence),
+                    guardrail_checks={"applied_guardrails": [e for e in decision.evidence if "guardrail" in e.lower()]},
+                    playbook_id=assigned_playbook_id,
+                    reasoning=playbook_reasoning,
+                )
+                
+                # Build event envelope
+                event_envelope = validate_and_build_event(
+                    event_type=EventType.POLICY_EVALUATED,
+                    payload_dict=event_payload.model_dump(),
+                    tenant_id=exception.tenant_id,
+                    exception_id=exception.exception_id,
+                    actor_type=ActorType.AGENT,
+                    actor_id="PolicyAgent",
+                )
+                
+                # Log event via repository
+                from src.repository.dto import ExceptionEventDTO
+                from src.infrastructure.db.models import ActorType as DBActorType
+                event_dto = ExceptionEventDTO(
+                    event_id=event_envelope.event_id,
+                    tenant_id=event_envelope.tenant_id,
+                    exception_id=event_envelope.exception_id,
+                    event_type=event_envelope.event_type,
+                    actor_type=DBActorType.AGENT,  # Use DB enum
+                    actor_id=event_envelope.actor_id,
+                    payload=event_envelope.payload,
+                )
+                
+                await self.exception_events_repository.append_event_if_new(event_dto)
+                logger.debug(
+                    f"PolicyAgent: Emitted PolicyEvaluated event for exception {exception.exception_id}"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to emit PolicyEvaluated event: {e}")
         
         # Log the event
         if self.audit_logger:

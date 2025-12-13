@@ -2,6 +2,7 @@
 Playbook step repository for playbook step management.
 
 Phase 6 P6-14: PlaybookStepRepository with CRUD operations and step ordering.
+Phase 7 P7-7: Enhanced with get_step_by_order, get_steps_ordered, and step ordering validation helpers.
 
 Note: Playbook steps are tenant-specific via their parent playbook, so this
 repository enforces strict tenant isolation by verifying the parent playbook
@@ -15,10 +16,124 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infrastructure.db.models import Playbook, PlaybookStep
-from src.repository.base import AbstractBaseRepository
+from src.repository.base import AbstractBaseRepository, RepositoryError
 from src.repository.dto import PlaybookStepCreateDTO
 
 logger = logging.getLogger(__name__)
+
+
+# Helper functions for step ordering validation (reusable by PlaybookExecutionService)
+def validate_step_order_exists(steps: list[PlaybookStep], step_order: int) -> Optional[PlaybookStep]:
+    """
+    Validate that a step with the given order exists in the steps list.
+    
+    Phase 7 P7-7: Helper function for step ordering validation.
+    Can be reused by PlaybookExecutionService and other services.
+    
+    Args:
+        steps: List of PlaybookStep instances (should be ordered by step_order)
+        step_order: Step order number to find
+        
+    Returns:
+        PlaybookStep instance if found, None otherwise
+    """
+    return next((s for s in steps if s.step_order == step_order), None)
+
+
+def validate_step_ordering_continuous(steps: list[PlaybookStep]) -> tuple[bool, Optional[str]]:
+    """
+    Validate that step ordering is continuous (1, 2, 3, ...) with no gaps.
+    
+    Phase 7 P7-7: Helper function for step ordering validation.
+    Can be reused by PlaybookExecutionService and other services.
+    
+    Args:
+        steps: List of PlaybookStep instances (should be ordered by step_order)
+        
+    Returns:
+        Tuple of (is_valid: bool, error_message: Optional[str])
+        - is_valid: True if ordering is continuous, False otherwise
+        - error_message: Description of the validation error if invalid
+    """
+    if not steps:
+        return True, None
+    
+    # Steps should already be ordered, but verify
+    sorted_steps = sorted(steps, key=lambda s: s.step_order)
+    
+    # Check for gaps or duplicates
+    expected_order = 1
+    for step in sorted_steps:
+        if step.step_order != expected_order:
+            if step.step_order < expected_order:
+                return False, f"Duplicate or out-of-order step found: step_order={step.step_order}, expected={expected_order}"
+            else:
+                return False, f"Gap in step ordering: expected step_order={expected_order}, found={step.step_order}"
+        expected_order += 1
+    
+    return True, None
+
+
+def get_next_step_order(steps: list[PlaybookStep], current_step_order: Optional[int]) -> Optional[int]:
+    """
+    Get the next step order number after the current step.
+    
+    Phase 7 P7-7: Helper function for step ordering validation.
+    Can be reused by PlaybookExecutionService and other services.
+    
+    Args:
+        steps: List of PlaybookStep instances (should be ordered by step_order)
+        current_step_order: Current step order number (or None if no current step)
+        
+    Returns:
+        Next step order number, or None if current_step_order is the last step
+    """
+    if not steps:
+        return None
+    
+    if current_step_order is None:
+        return 1  # First step
+    
+    # Find current step
+    current_step = validate_step_order_exists(steps, current_step_order)
+    if current_step is None:
+        return None  # Current step not found
+    
+    # Find next step
+    sorted_steps = sorted(steps, key=lambda s: s.step_order)
+    current_index = next((i for i, s in enumerate(sorted_steps) if s.step_order == current_step_order), None)
+    if current_index is None:
+        return None
+    
+    # Check if there's a next step
+    if current_index + 1 < len(sorted_steps):
+        return sorted_steps[current_index + 1].step_order
+    
+    return None  # Last step
+
+
+def is_last_step(steps: list[PlaybookStep], step_order: int) -> bool:
+    """
+    Check if a step is the last step in the playbook.
+    
+    Phase 7 P7-7: Helper function for step ordering validation.
+    Can be reused by PlaybookExecutionService and other services.
+    
+    Args:
+        steps: List of PlaybookStep instances (should be ordered by step_order)
+        step_order: Step order number to check
+        
+    Returns:
+        True if the step is the last step, False otherwise
+    """
+    if not steps:
+        return False
+    
+    sorted_steps = sorted(steps, key=lambda s: s.step_order)
+    if not sorted_steps:
+        return False
+    
+    return step_order == sorted_steps[-1].step_order
 
 
 class PlaybookStepRepository(AbstractBaseRepository[PlaybookStep]):
@@ -89,8 +204,10 @@ class PlaybookStepRepository(AbstractBaseRepository[PlaybookStep]):
         # Verify playbook belongs to tenant
         playbook = await self._verify_playbook_tenant(playbook_id, tenant_id)
         if playbook is None:
-            raise ValueError(
-                f"Playbook not found or does not belong to tenant: playbook_id={playbook_id}, tenant_id={tenant_id}"
+            raise RepositoryError(
+                f"Playbook not found or does not belong to tenant: playbook_id={playbook_id}, tenant_id={tenant_id}",
+                entity_type="Playbook",
+                entity_id=str(playbook_id),
             )
         
         query = (
@@ -100,6 +217,81 @@ class PlaybookStepRepository(AbstractBaseRepository[PlaybookStep]):
         )
         result = await self.session.execute(query)
         return list(result.scalars().all())
+
+    async def get_steps_ordered(
+        self,
+        playbook_id: int,
+        tenant_id: str,
+    ) -> list[PlaybookStep]:
+        """
+        Get all steps for a playbook ordered by step_order (ascending).
+        
+        Phase 7 P7-7: Alias method for get_steps() for API consistency.
+        This method provides a clear name for retrieving ordered steps.
+        
+        Args:
+            playbook_id: Playbook identifier
+            tenant_id: Tenant identifier (required for isolation)
+            
+        Returns:
+            List of PlaybookStep instances, ordered by step_order (ascending)
+            
+        Raises:
+            ValueError: If tenant_id is None/empty, or playbook_id < 1
+            RepositoryError: If playbook does not exist or does not belong to tenant
+        """
+        return await self.get_steps(playbook_id, tenant_id)
+
+    async def get_step_by_order(
+        self,
+        playbook_id: int,
+        step_order: int,
+        tenant_id: str,
+    ) -> Optional[PlaybookStep]:
+        """
+        Get a specific step by its order number for a playbook.
+        
+        Phase 7 P7-7: Retrieves a step by playbook_id, step_order, and tenant_id.
+        Enforces tenant isolation by verifying the parent playbook belongs to the tenant.
+        
+        Args:
+            playbook_id: Playbook identifier
+            step_order: Step order number (1-indexed)
+            tenant_id: Tenant identifier (required for isolation)
+            
+        Returns:
+            PlaybookStep instance if found, None if step doesn't exist (but playbook is valid)
+            
+        Raises:
+            ValueError: If tenant_id is None/empty, playbook_id < 1, or step_order < 1
+            RepositoryError: If playbook does not exist or does not belong to tenant
+        """
+        if not tenant_id or not tenant_id.strip():
+            raise ValueError("tenant_id is required for tenant isolation")
+        if playbook_id < 1:
+            raise ValueError("playbook_id must be >= 1")
+        if step_order < 1:
+            raise ValueError("step_order must be >= 1")
+        
+        # Verify playbook belongs to tenant
+        playbook = await self._verify_playbook_tenant(playbook_id, tenant_id)
+        if playbook is None:
+            raise RepositoryError(
+                f"Playbook not found or does not belong to tenant: playbook_id={playbook_id}, tenant_id={tenant_id}",
+                entity_type="Playbook",
+                entity_id=str(playbook_id),
+            )
+        
+        # Query for the specific step
+        query = (
+            select(PlaybookStep)
+            .where(
+                PlaybookStep.playbook_id == playbook_id,
+                PlaybookStep.step_order == step_order,
+            )
+        )
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
 
     async def create_step(
         self,
@@ -123,13 +315,15 @@ class PlaybookStepRepository(AbstractBaseRepository[PlaybookStep]):
             
         Raises:
             ValueError: If tenant_id is None/empty, playbook_id < 1, or step_data is invalid
-            ValueError: If playbook does not exist or does not belong to tenant
+            RepositoryError: If playbook does not exist or does not belong to tenant
         """
         # Verify playbook belongs to tenant
         playbook = await self._verify_playbook_tenant(playbook_id, tenant_id)
         if playbook is None:
-            raise ValueError(
-                f"Playbook not found or does not belong to tenant: playbook_id={playbook_id}, tenant_id={tenant_id}"
+            raise RepositoryError(
+                f"Playbook not found or does not belong to tenant: playbook_id={playbook_id}, tenant_id={tenant_id}",
+                entity_type="Playbook",
+                entity_id=str(playbook_id),
             )
         
         # Get existing steps to determine next step_order
@@ -177,7 +371,7 @@ class PlaybookStepRepository(AbstractBaseRepository[PlaybookStep]):
             
         Raises:
             ValueError: If tenant_id is None/empty, playbook_id < 1, or ordered_step_ids is empty
-            ValueError: If playbook does not exist or does not belong to tenant
+            RepositoryError: If playbook does not exist or does not belong to tenant
             ValueError: If any step_id in ordered_step_ids does not belong to the playbook
         """
         if not tenant_id or not tenant_id.strip():
@@ -190,8 +384,10 @@ class PlaybookStepRepository(AbstractBaseRepository[PlaybookStep]):
         # Verify playbook belongs to tenant
         playbook = await self._verify_playbook_tenant(playbook_id, tenant_id)
         if playbook is None:
-            raise ValueError(
-                f"Playbook not found or does not belong to tenant: playbook_id={playbook_id}, tenant_id={tenant_id}"
+            raise RepositoryError(
+                f"Playbook not found or does not belong to tenant: playbook_id={playbook_id}, tenant_id={tenant_id}",
+                entity_type="Playbook",
+                entity_id=str(playbook_id),
             )
         
         # Get all steps for the playbook

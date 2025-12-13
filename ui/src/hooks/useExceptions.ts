@@ -10,7 +10,7 @@
  * All hooks include tenantId in query keys and handle errors via snackbar.
  */
 
-import { useQuery, UseQueryResult } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, UseQueryResult } from '@tanstack/react-query'
 import { useTenant } from './useTenant'
 import { getApiKeyForHttpClient, getTenantIdForHttpClient } from '../utils/httpClient'
 import {
@@ -19,9 +19,15 @@ import {
   getExceptionEvidence,
   getExceptionAudit,
   fetchExceptionEvents,
+  getExceptionPlaybook,
+  recalculatePlaybook,
+  completePlaybookStep,
   type ListExceptionsParams,
   type ListExceptionEventsParams,
   type ExceptionEventsListResponse,
+  type PlaybookStatusResponse,
+  type PlaybookRecalculationResponse,
+  type StepCompletionRequest,
 } from '../api/exceptions'
 import type {
   ExceptionSummary,
@@ -62,6 +68,11 @@ export const exceptionKeys = {
   /** Exception events query */
   eventsList: (tenantId: string | null, exceptionId: string, params?: ListExceptionEventsParams) =>
     [...exceptionKeys.events(), tenantId, exceptionId, params] as const,
+  /** Exception playbook queries */
+  playbooks: () => [...exceptionKeys.all, 'playbook'] as const,
+  /** Exception playbook query */
+  playbook: (tenantId: string | null, exceptionId: string) =>
+    [...exceptionKeys.playbooks(), tenantId, exceptionId] as const,
 }
 
 /**
@@ -207,6 +218,110 @@ export function useExceptionEvents(
     },
     enabled: !!effectiveTenantId && !!exceptionId && hasApiKey,
     staleTime: 30_000, // 30 seconds (events may update)
+  })
+}
+
+/**
+ * Hook to fetch playbook status for an exception
+ * 
+ * Phase 7 P7-15: Returns playbook metadata and step statuses.
+ * 
+ * @param exceptionId Exception identifier
+ * @returns Query result with playbook status
+ */
+export function useExceptionPlaybook(
+  exceptionId: string
+): UseQueryResult<PlaybookStatusResponse, Error> {
+  const { tenantId, apiKey } = useTenant()
+  const apiKeyFromHttpClient = getApiKeyForHttpClient()
+  const tenantIdFromHttpClient = getTenantIdForHttpClient()
+  const hasApiKey = !!(apiKey || apiKeyFromHttpClient)
+  const effectiveTenantId = tenantId || tenantIdFromHttpClient
+
+  return useQuery({
+    queryKey: exceptionKeys.playbook(effectiveTenantId, exceptionId),
+    queryFn: () => getExceptionPlaybook(exceptionId),
+    enabled: !!effectiveTenantId && !!exceptionId && hasApiKey,
+    staleTime: 30_000, // 30 seconds (playbook status may update)
+  })
+}
+
+/**
+ * Hook to recalculate playbook assignment for an exception
+ * 
+ * Phase 7 P7-16: Re-runs playbook matching and updates exception playbook assignment.
+ * Automatically refetches playbook status after successful recalculation.
+ * 
+ * @param exceptionId Exception identifier
+ * @returns Mutation object with mutate function and status
+ */
+export function useRecalculatePlaybook(exceptionId: string) {
+  const queryClient = useQueryClient()
+  const { tenantId } = useTenant()
+  const apiKeyFromHttpClient = getApiKeyForHttpClient()
+  const hasApiKey = !!apiKeyFromHttpClient
+
+  return useMutation({
+    mutationFn: () => recalculatePlaybook(exceptionId),
+    onSuccess: () => {
+      // Invalidate and refetch playbook status after successful recalculation
+      queryClient.invalidateQueries({
+        queryKey: exceptionKeys.playbook(tenantId, exceptionId),
+      })
+      // Phase 7 P7-18: Invalidate timeline events to refresh the timeline
+      // (in case recalculation triggers events or user wants to see updated state)
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey
+          // Match event queries for this exception
+          return (
+            key[0] === 'exceptions' &&
+            key[1] === 'events' &&
+            key[2] === tenantId &&
+            key[3] === exceptionId
+          )
+        },
+      })
+    },
+  })
+}
+
+/**
+ * Hook to complete a playbook step for an exception
+ * 
+ * Phase 7 P7-17: Completes a playbook step and returns updated playbook status.
+ * Automatically refetches playbook status and timeline after successful completion.
+ * 
+ * @param exceptionId Exception identifier
+ * @returns Mutation object with mutate function and status
+ */
+export function useCompletePlaybookStep(exceptionId: string) {
+  const queryClient = useQueryClient()
+  const { tenantId } = useTenant()
+
+  return useMutation({
+    mutationFn: (params: { stepOrder: number; request: StepCompletionRequest }) =>
+      completePlaybookStep(exceptionId, params.stepOrder, params.request),
+    onSuccess: () => {
+      // Invalidate and refetch playbook status after successful step completion
+      queryClient.invalidateQueries({
+        queryKey: exceptionKeys.playbook(tenantId, exceptionId),
+      })
+      // Invalidate timeline events to refresh the timeline
+      // Invalidate all event queries for this exception (regardless of filter params)
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey
+          // Match event queries for this exception
+          return (
+            key[0] === 'exceptions' &&
+            key[1] === 'events' &&
+            key[2] === tenantId &&
+            key[3] === exceptionId
+          )
+        },
+      })
+    },
   })
 }
 

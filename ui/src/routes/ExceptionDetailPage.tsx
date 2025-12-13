@@ -18,6 +18,7 @@ import ExceptionExplanationTab from '../components/exceptions/ExceptionExplanati
 import ExceptionAuditTab from '../components/exceptions/ExceptionAuditTab.tsx'
 import SimulationDialog from '../components/exceptions/SimulationDialog.tsx'
 import SimulationResult from '../components/exceptions/SimulationResult.tsx'
+import RecommendedPlaybookPanel from '../components/exceptions/RecommendedPlaybookPanel.tsx'
 import { SeverityChip } from '../components/common'
 import { useExceptionDetail } from '../hooks/useExceptions.ts'
 import { useSnackbar } from '../components/common/SnackbarProvider.tsx'
@@ -389,14 +390,7 @@ export default function ExceptionDetailPage() {
         {/* RIGHT: Recommended playbook + collaborators */}
         <Grid item xs={12} md={3}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Recommended Playbook
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                No playbook available
-              </Typography>
-            </Paper>
+            <RecommendedPlaybookPanel exceptionId={id!} />
 
             <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
               <Typography variant="subtitle2" gutterBottom>

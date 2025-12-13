@@ -126,6 +126,8 @@ class PolicyEvaluatedPayload(BaseModel):
     violated_rules: list[str] = Field(default_factory=list, description="Violated policy rules")
     approval_required: bool = Field(False, description="Whether human approval is required")
     guardrail_checks: dict[str, Any] | None = Field(None, description="Guardrail check results")
+    playbook_id: int | None = Field(None, description="Assigned playbook ID if approved (P7-12)")
+    reasoning: str | None = Field(None, description="Reasoning for playbook assignment (P7-12)")
 
     model_config = {"extra": "forbid"}
 
@@ -138,7 +140,8 @@ class ResolutionSuggestedPayload(BaseModel):
     """
 
     suggested_action: str = Field(..., description="Suggested action or playbook name")
-    playbook_id: int | None = Field(None, description="Playbook ID if applicable")
+    playbook_id: int | None = Field(None, description="Playbook ID if applicable (P7-13)")
+    step_order: int | None = Field(None, description="Step order number if from assigned playbook (P7-13)")
     confidence: float | None = Field(None, ge=0.0, le=1.0, description="Confidence in suggestion")
     reasoning: str | None = Field(None, description="Reasoning for the suggestion")
     tool_calls: list[dict[str, Any]] | None = Field(None, description="Suggested tool calls")
@@ -172,6 +175,11 @@ class FeedbackCapturedPayload(BaseModel):
     feedback_text: str | None = Field(None, description="Free-form feedback text")
     rating: int | None = Field(None, ge=1, le=5, description="Numeric rating if applicable")
     resolution_effective: bool | None = Field(None, description="Whether resolution was effective")
+    playbook_id: int | None = Field(None, description="ID of the playbook used for resolution (P7-14)")
+    total_steps: int | None = Field(None, ge=0, description="Total number of steps in the playbook (P7-14)")
+    completed_steps: int | None = Field(None, ge=0, description="Number of completed steps (P7-14)")
+    duration: float | None = Field(None, ge=0.0, description="Duration in seconds from exception creation to resolution (P7-14)")
+    last_actor: str | None = Field(None, description="Last actor that performed an action (P7-14)")
 
     model_config = {"extra": "forbid"}
 

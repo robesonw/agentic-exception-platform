@@ -18,6 +18,29 @@ logger = logging.getLogger(__name__)
 ModelType = TypeVar("ModelType")
 
 
+class RepositoryError(Exception):
+    """
+    Base exception for repository operations.
+    
+    Phase 7 P7-7: Well-defined exception for repository errors.
+    Used to distinguish repository-level errors from other exceptions.
+    """
+    
+    def __init__(self, message: str, entity_type: Optional[str] = None, entity_id: Optional[str] = None):
+        """
+        Initialize repository error.
+        
+        Args:
+            message: Error message
+            entity_type: Optional entity type (e.g., "Playbook", "PlaybookStep")
+            entity_id: Optional entity identifier
+        """
+        super().__init__(message)
+        self.message = message
+        self.entity_type = entity_type
+        self.entity_id = entity_id
+
+
 class PaginatedResult(Generic[ModelType]):
     """
     Paginated query result.

@@ -18,7 +18,7 @@ def sample_audit_logger(tmp_path, monkeypatch):
     audit_dir = tmp_path / "runtime" / "audit"
     audit_dir.mkdir(parents=True, exist_ok=True)
     
-    def patched_get_log_file(self):
+    def patched_get_log_file(self, tenant_id=None):
         if self._log_file is None:
             self._log_file = audit_dir / f"{self.run_id}.jsonl"
         return self._log_file
@@ -564,3 +564,350 @@ class TestFeedbackAgentIntegration:
         assert "learningArtifacts" in exception.normalized_context
         assert exception.resolution_status == ResolutionStatus.IN_PROGRESS
 
+
+class TestFeedbackAgentPlaybookMetrics:
+    """Tests for playbook metrics computation and event emission (P7-14)."""
+
+    @pytest.mark.asyncio
+    async def test_computes_metrics_when_resolved(self, sample_audit_logger):
+        """Test that playbook metrics are computed when exception is resolved."""
+        from unittest.mock import AsyncMock, MagicMock
+        
+        # Create mock repositories
+        mock_playbook_repo = AsyncMock()
+        mock_events_repo = AsyncMock()
+        
+        # Mock playbook with steps
+        mock_playbook = MagicMock()
+        mock_playbook.playbook_id = 1
+        mock_playbook.tenant_id = "tenant_001"
+        
+        step1 = MagicMock()
+        step1.step_order = 1
+        step1.name = "Step 1"
+        step1.action_type = "call_tool"
+        step1.params = {}
+        
+        step2 = MagicMock()
+        step2.step_order = 2
+        step2.name = "Step 2"
+        step2.action_type = "call_tool"
+        step2.params = {}
+        
+        mock_playbook_repo.get_playbook_with_steps.return_value = (mock_playbook, [step1, step2])
+        
+        # Mock events
+        mock_event = MagicMock()
+        mock_event.actor_id = "ResolutionAgent"
+        mock_events_repo.get_events_for_exception.return_value = [mock_event]
+        mock_events_repo.append_event_if_new.return_value = True
+        
+        agent = FeedbackAgent(
+            audit_logger=sample_audit_logger,
+            playbook_repository=mock_playbook_repo,
+            exception_events_repository=mock_events_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_001",
+            tenantId="tenant_001",
+            sourceSystem="ERP",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.HIGH,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+            resolutionStatus=ResolutionStatus.RESOLVED,
+            currentPlaybookId=1,
+            currentStep=2,
+        )
+        
+        context = {}
+        decision = await agent.process(exception, context)
+        
+        # Verify metrics were computed
+        evidence_text = " ".join(decision.evidence)
+        assert "Playbook ID: 1" in evidence_text
+        assert "Total steps: 2" in evidence_text
+        assert "Completed steps: 2" in evidence_text
+        assert "Duration:" in evidence_text
+        assert "Last actor: ResolutionAgent" in evidence_text
+        
+        # Verify event was emitted
+        mock_events_repo.append_event_if_new.assert_called_once()
+        call_args = mock_events_repo.append_event_if_new.call_args[0][0]
+        assert call_args.event_type == "FeedbackCaptured"
+        assert call_args.payload["playbook_id"] == 1
+        assert call_args.payload["total_steps"] == 2
+        assert call_args.payload["completed_steps"] == 2
+        assert call_args.payload["last_actor"] == "ResolutionAgent"
+
+    @pytest.mark.asyncio
+    async def test_no_metrics_when_not_resolved(self, sample_audit_logger):
+        """Test that metrics are not computed when exception is not resolved."""
+        from unittest.mock import AsyncMock
+        
+        mock_playbook_repo = AsyncMock()
+        mock_events_repo = AsyncMock()
+        
+        agent = FeedbackAgent(
+            audit_logger=sample_audit_logger,
+            playbook_repository=mock_playbook_repo,
+            exception_events_repository=mock_events_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_001",
+            tenantId="tenant_001",
+            sourceSystem="ERP",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.HIGH,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+            resolutionStatus=ResolutionStatus.IN_PROGRESS,
+            currentPlaybookId=1,
+            currentStep=1,
+        )
+        
+        context = {}
+        decision = await agent.process(exception, context)
+        
+        # Verify metrics were not computed
+        evidence_text = " ".join(decision.evidence)
+        assert "Playbook ID:" not in evidence_text
+        
+        # Verify event was still emitted but without metrics
+        mock_events_repo.append_event_if_new.assert_called_once()
+        call_args = mock_events_repo.append_event_if_new.call_args[0][0]
+        assert call_args.payload["playbook_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_no_metrics_when_no_playbook(self, sample_audit_logger):
+        """Test that metrics are not computed when no playbook is assigned."""
+        from unittest.mock import AsyncMock
+        
+        mock_playbook_repo = AsyncMock()
+        mock_events_repo = AsyncMock()
+        
+        agent = FeedbackAgent(
+            audit_logger=sample_audit_logger,
+            playbook_repository=mock_playbook_repo,
+            exception_events_repository=mock_events_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_001",
+            tenantId="tenant_001",
+            sourceSystem="ERP",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.HIGH,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+            resolutionStatus=ResolutionStatus.RESOLVED,
+        )
+        
+        context = {}
+        decision = await agent.process(exception, context)
+        
+        # Verify metrics were not computed
+        evidence_text = " ".join(decision.evidence)
+        assert "Playbook ID:" not in evidence_text
+        
+        # Verify playbook repository was not called
+        mock_playbook_repo.get_playbook_with_steps.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_metrics_includes_duration(self, sample_audit_logger):
+        """Test that duration is computed correctly."""
+        from unittest.mock import AsyncMock, MagicMock
+        
+        mock_playbook_repo = AsyncMock()
+        mock_events_repo = AsyncMock()
+        
+        mock_playbook = MagicMock()
+        mock_playbook.playbook_id = 1
+        mock_playbook.tenant_id = "tenant_001"
+        
+        step = MagicMock()
+        step.step_order = 1
+        step.name = "Step 1"
+        step.action_type = "call_tool"
+        step.params = {}
+        
+        mock_playbook_repo.get_playbook_with_steps.return_value = (mock_playbook, [step])
+        mock_events_repo.get_events_for_exception.return_value = []
+        mock_events_repo.append_event_if_new.return_value = True
+        
+        agent = FeedbackAgent(
+            audit_logger=sample_audit_logger,
+            playbook_repository=mock_playbook_repo,
+            exception_events_repository=mock_events_repo,
+        )
+        
+        # Create exception with timestamp 100 seconds ago
+        from datetime import timedelta
+        exception_timestamp = datetime.now(timezone.utc) - timedelta(seconds=100)
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_001",
+            tenantId="tenant_001",
+            sourceSystem="ERP",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.HIGH,
+            timestamp=exception_timestamp,
+            rawPayload={},
+            resolutionStatus=ResolutionStatus.RESOLVED,
+            currentPlaybookId=1,
+            currentStep=1,
+        )
+        
+        context = {}
+        decision = await agent.process(exception, context)
+        
+        # Verify duration is approximately 100 seconds (allow some tolerance)
+        mock_events_repo.append_event_if_new.assert_called_once()
+        call_args = mock_events_repo.append_event_if_new.call_args[0][0]
+        duration = call_args.payload["duration"]
+        assert duration is not None
+        assert 95 <= duration <= 105  # Allow 5 second tolerance
+
+    @pytest.mark.asyncio
+    async def test_last_actor_from_audit_trail_fallback(self, sample_audit_logger):
+        """Test that last_actor falls back to audit trail if events are not available."""
+        from unittest.mock import AsyncMock, MagicMock
+        from src.models.exception_record import AuditEntry
+        
+        mock_playbook_repo = AsyncMock()
+        mock_events_repo = AsyncMock()
+        
+        mock_playbook = MagicMock()
+        mock_playbook.playbook_id = 1
+        mock_playbook.tenant_id = "tenant_001"
+        
+        step = MagicMock()
+        step.step_order = 1
+        step.name = "Step 1"
+        step.action_type = "call_tool"
+        step.params = {}
+        
+        mock_playbook_repo.get_playbook_with_steps.return_value = (mock_playbook, [step])
+        # Simulate events repository failure
+        mock_events_repo.get_events_for_exception.side_effect = Exception("Events unavailable")
+        mock_events_repo.append_event_if_new.return_value = True
+        
+        agent = FeedbackAgent(
+            audit_logger=sample_audit_logger,
+            playbook_repository=mock_playbook_repo,
+            exception_events_repository=mock_events_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_001",
+            tenantId="tenant_001",
+            sourceSystem="ERP",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.HIGH,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+            resolutionStatus=ResolutionStatus.RESOLVED,
+            currentPlaybookId=1,
+            currentStep=1,
+            auditTrail=[
+                AuditEntry(
+                    action="Processed by PolicyAgent",
+                    timestamp=datetime.now(timezone.utc),
+                    actor="PolicyAgent",
+                ),
+                AuditEntry(
+                    action="Processed by ResolutionAgent",
+                    timestamp=datetime.now(timezone.utc),
+                    actor="ResolutionAgent",
+                ),
+            ],
+        )
+        
+        context = {}
+        decision = await agent.process(exception, context)
+        
+        # Verify last_actor is from audit trail
+        mock_events_repo.append_event_if_new.assert_called_once()
+        call_args = mock_events_repo.append_event_if_new.call_args[0][0]
+        assert call_args.payload["last_actor"] == "ResolutionAgent"
+
+    @pytest.mark.asyncio
+    async def test_integration_metrics_capture(self, sample_audit_logger):
+        """Integration test for complete metrics capture workflow."""
+        from unittest.mock import AsyncMock, MagicMock
+        
+        # Create mock repositories
+        mock_playbook_repo = AsyncMock()
+        mock_events_repo = AsyncMock()
+        
+        # Mock playbook with 3 steps
+        mock_playbook = MagicMock()
+        mock_playbook.playbook_id = 42
+        mock_playbook.tenant_id = "tenant_001"
+        
+        steps = []
+        for i in range(1, 4):
+            step = MagicMock()
+            step.step_order = i
+            step.name = f"Step {i}"
+            step.action_type = "call_tool"
+            step.params = {"param": f"value{i}"}
+            steps.append(step)
+        
+        mock_playbook_repo.get_playbook_with_steps.return_value = (mock_playbook, steps)
+        
+        # Mock events with multiple actors
+        mock_event1 = MagicMock()
+        mock_event1.actor_id = "TriageAgent"
+        mock_event2 = MagicMock()
+        mock_event2.actor_id = "PolicyAgent"
+        mock_event3 = MagicMock()
+        mock_event3.actor_id = "ResolutionAgent"
+        mock_events_repo.get_events_for_exception.return_value = [mock_event1, mock_event2, mock_event3]
+        mock_events_repo.append_event_if_new.return_value = True
+        
+        agent = FeedbackAgent(
+            audit_logger=sample_audit_logger,
+            playbook_repository=mock_playbook_repo,
+            exception_events_repository=mock_events_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_integration_001",
+            tenantId="tenant_001",
+            sourceSystem="ERP",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.HIGH,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+            resolutionStatus=ResolutionStatus.RESOLVED,
+            currentPlaybookId=42,
+            currentStep=3,  # All 3 steps completed
+        )
+        
+        context = {"resolvedPlan": [{"step": 1}, {"step": 2}, {"step": 3}]}
+        decision = await agent.process(exception, context)
+        
+        # Verify all metrics are present in evidence
+        evidence_text = " ".join(decision.evidence)
+        assert "Playbook ID: 42" in evidence_text
+        assert "Total steps: 3" in evidence_text
+        assert "Completed steps: 3" in evidence_text
+        assert "Duration:" in evidence_text
+        assert "Last actor: ResolutionAgent" in evidence_text
+        
+        # Verify event payload contains all metrics
+        mock_events_repo.append_event_if_new.assert_called_once()
+        call_args = mock_events_repo.append_event_if_new.call_args[0][0]
+        payload = call_args.payload
+        
+        assert payload["playbook_id"] == 42
+        assert payload["total_steps"] == 3
+        assert payload["completed_steps"] == 3
+        assert payload["duration"] is not None
+        assert payload["duration"] >= 0
+        assert payload["last_actor"] == "ResolutionAgent"
+        assert payload["resolution_effective"] is True
+        assert payload["feedback_type"] == "positive"

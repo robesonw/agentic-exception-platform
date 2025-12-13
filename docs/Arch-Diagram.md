@@ -18,6 +18,7 @@ subgraph API["FastAPI Service Layer"]
     METRICS["/metrics"]
     ADMIN["/admin/* APIs"]
     DASH["/dashboards"]
+    PBAPI["/exceptions/{id}/playbook<br/>(Phase 7)"]
 end
 
 subgraph ORCH["Orchestrator"]
@@ -38,6 +39,8 @@ subgraph DOMAIN["Domain Knowledge"]
     DP["Domain Packs"]
     PBM["PlaybookManager"]
     TP["Tenant Policy Packs"]
+    PMS["Playbook Matching Service<br/>(Phase 7)"]
+    PES["Playbook Execution Service<br/>(Phase 7)"]
 end
 
 subgraph MEMORY["Memory & Search"]

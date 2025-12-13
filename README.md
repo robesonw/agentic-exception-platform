@@ -12,6 +12,9 @@ Start here:
 - `docs/03-data-models-apis.md` - Data models and API specifications
 - `docs/06-mvp-plan.md` - MVP implementation plan
 - `docs/phase6-persistence-mvp.md` - Phase 6: Persistence & State Management (see [Phase 6 section](#phase-6-persistence--state-management) below)
+- `docs/playbooks-configuration.md` - Playbooks configuration guide (schema, conditions, actions, examples)
+- `docs/playbooks-api.md` - Playbooks API reference (endpoints, schemas, examples)
+- `docs/phase7-completion-report.md` - Phase 7 completion report (implementation status, how to run, limitations)
 
 ## Project Structure
 
@@ -212,14 +215,15 @@ View coverage report:
 
 Coverage threshold: Tests will fail if coverage is below 85% (Phase 2 requirement).
 
-## Phase 1, Phase 2, Phase 3 & Phase 6 MVP Status
+## Phase 1, Phase 2, Phase 3, Phase 6 & Phase 7 MVP Status
 
 **Phase 1 MVP:** ✅ COMPLETE (21 issues)
 **Phase 2 MVP:** ✅ COMPLETE (25 issues)
 **Phase 3 MVP:** ✅ COMPLETE (31 issues)
 **Phase 6 MVP:** ✅ COMPLETE (Persistence & State Management)
+**Phase 7 MVP:** ✅ COMPLETE (Playbooks & Actions)
 
-**Total Issues Implemented:** 77+ Phase 6 issues (100% complete)
+**Total Issues Implemented:** 100+ issues across all phases (100% complete)
 
 ### Documentation
 
@@ -270,6 +274,15 @@ Coverage threshold: Tests will fail if coverage is below 85% (Phase 2 requiremen
 - ✅ Database migrations with Alembic
 - ✅ Health check endpoints (`/health/db`)
 - ✅ Comprehensive repository and API test coverage
+
+**Phase 7:**
+- ✅ Playbook matching service (condition-based selection from database)
+- ✅ Playbook execution service (step-by-step execution with action executors)
+- ✅ Agent integration (TriageAgent suggests, PolicyAgent assigns, ResolutionAgent aligns, FeedbackAgent computes metrics)
+- ✅ Playbook API endpoints (recalculate, status, step completion)
+- ✅ UI integration (playbook panel, step completion, timeline events)
+- ✅ Playbook events (PlaybookAssigned, PlaybookRecalculated, PlaybookStepCompleted, PlaybookCompleted)
+- ✅ Comprehensive playbook configuration and API documentation
 
 ## Phase 6: Persistence & State Management
 
@@ -347,7 +360,35 @@ pytest tests/api/test_health_db.py -v -m phase6
 - **Database Setup**: [`docs/docker-postgres-setup.md`](docs/docker-postgres-setup.md) - Docker-based PostgreSQL setup
 - **Migrations Guide**: [`docs/database-migrations.md`](docs/database-migrations.md) - Alembic migration workflow
 - **Repository Tests**: [`tests/repository/README.md`](tests/repository/README.md) - Repository test suite documentation
-- **Architecture**: [`docs/01-architecture.md`](docs/01-architecture.md) - System architecture (includes persistence layer)
+- **Architecture**: [`docs/01-architecture.md`](docs/01-architecture.md) - System architecture (includes persistence layer and playbook flows)
+- **Playbooks Configuration**: [`docs/playbooks-configuration.md`](docs/playbooks-configuration.md) - Playbook schema, conditions, actions, examples
+- **Playbooks API**: [`docs/playbooks-api.md`](docs/playbooks-api.md) - API endpoints for playbook operations
+
+## Phase 7: Playbooks & Actions
+
+**If you want to understand how playbooks work, start here:**
+
+Phase 7 introduces **playbook matching and execution** capabilities. Playbooks define sequences of steps that are automatically matched to exceptions and executed to resolve them.
+
+### What Phase 7 Adds
+
+- **Playbook Matching Service**: Condition-based playbook selection (domain, exception type, severity, SLA, policy tags)
+- **Playbook Execution Service**: Step-by-step execution with action executors (notify, assign_owner, set_status, add_comment, call_tool)
+- **Agent Integration**: 
+  - TriageAgent suggests playbooks during classification
+  - PolicyAgent approves and assigns playbooks to exceptions
+  - ResolutionAgent aligns resolution plans with playbook steps
+  - FeedbackAgent computes playbook execution metrics
+- **Playbook API Endpoints**: Recalculate, get status, complete steps
+- **UI Integration**: Playbook panel, step completion, timeline events
+- **Playbook Events**: Complete event log for playbook lifecycle (assigned, recalculated, step completed, completed)
+
+### Where to Read More
+
+- **Configuration Guide**: [`docs/playbooks-configuration.md`](docs/playbooks-configuration.md) - Complete playbook configuration guide
+- **API Reference**: [`docs/playbooks-api.md`](docs/playbooks-api.md) - Playbook API endpoints and examples
+- **Full Phase 7 Documentation**: [`docs/phase7-playbooks-mvp.md`](docs/phase7-playbooks-mvp.md) - Complete specification and implementation details
+- **Architecture**: [`docs/01-architecture.md`](docs/01-architecture.md) - System architecture (includes playbook flows)
 
 ### Key Concepts
 

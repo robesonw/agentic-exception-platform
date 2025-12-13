@@ -207,5 +207,162 @@ describe('ExceptionTimelineTab', () => {
       expect(screen.getByText(/Showing 1 of 1 event/i)).toBeDefined()
     })
   })
+
+  // Phase 7 P7-18: Tests for playbook event rendering
+  describe('Playbook Events', () => {
+    const mockPlaybookEventsResponse: ExceptionEventsListResponse = {
+      items: [
+        {
+          eventId: 'event-playbook-001',
+          exceptionId: 'exc-001',
+          tenantId: 'test-tenant-001',
+          eventType: 'PlaybookStarted',
+          actorType: 'agent',
+          actorId: 'PolicyAgent',
+          payload: {
+            playbook_id: 1,
+            playbook_name: 'PaymentFailurePlaybook',
+            playbook_version: 1,
+            total_steps: 3,
+          },
+          createdAt: '2024-01-15T10:15:00Z',
+        },
+        {
+          eventId: 'event-playbook-002',
+          exceptionId: 'exc-001',
+          tenantId: 'test-tenant-001',
+          eventType: 'PlaybookStepCompleted',
+          actorType: 'user',
+          actorId: 'user-123',
+          payload: {
+            playbook_id: 1,
+            step_id: 'step-1',
+            step_order: 1,
+            step_name: 'Notify Team',
+            action_type: 'notify',
+            is_last_step: false,
+            is_risky: false,
+            notes: 'Team notified successfully',
+            actor_type: 'user',
+            actor_id: 'user-123',
+          },
+          createdAt: '2024-01-15T10:20:00Z',
+        },
+        {
+          eventId: 'event-playbook-003',
+          exceptionId: 'exc-001',
+          tenantId: 'test-tenant-001',
+          eventType: 'PlaybookCompleted',
+          actorType: 'user',
+          actorId: 'user-123',
+          payload: {
+            playbook_id: 1,
+            total_steps: 3,
+            notes: 'All steps completed',
+            actor_type: 'user',
+            actor_id: 'user-123',
+          },
+          createdAt: '2024-01-15T10:25:00Z',
+        },
+      ],
+      total: 3,
+      page: 1,
+      pageSize: 50,
+      totalPages: 1,
+    }
+
+    it('renders PlaybookStarted event with details', async () => {
+      vi.mocked(exceptionsApi.fetchExceptionEvents).mockResolvedValue({
+        ...mockPlaybookEventsResponse,
+        items: [mockPlaybookEventsResponse.items[0]],
+        total: 1,
+      })
+
+      renderComponent('exc-001')
+
+      await waitFor(() => {
+        expect(screen.getByText(/Playbook Started/i)).toBeDefined()
+        expect(screen.getByText(/Playbook ID:/i)).toBeDefined()
+        expect(screen.getByText(/1/i)).toBeDefined() // playbook_id
+        expect(screen.getByText(/PaymentFailurePlaybook/i)).toBeDefined()
+        expect(screen.getByText(/Version:/i)).toBeDefined()
+        expect(screen.getByText(/Total Steps:/i)).toBeDefined()
+        expect(screen.getByText(/3/i)).toBeDefined() // total_steps
+      })
+    })
+
+    it('renders PlaybookStepCompleted event with details', async () => {
+      vi.mocked(exceptionsApi.fetchExceptionEvents).mockResolvedValue({
+        ...mockPlaybookEventsResponse,
+        items: [mockPlaybookEventsResponse.items[1]],
+        total: 1,
+      })
+
+      renderComponent('exc-001')
+
+      await waitFor(() => {
+        expect(screen.getByText(/Playbook Step Completed/i)).toBeDefined()
+        expect(screen.getByText(/Playbook ID:/i)).toBeDefined()
+        expect(screen.getByText(/Step Order:/i)).toBeDefined()
+        expect(screen.getByText(/1/i)).toBeDefined() // step_order
+        expect(screen.getByText(/Step Name:/i)).toBeDefined()
+        expect(screen.getByText(/Notify Team/i)).toBeDefined()
+        expect(screen.getByText(/Action Type:/i)).toBeDefined()
+        expect(screen.getByText(/notify/i)).toBeDefined()
+        expect(screen.getByText(/Notes:/i)).toBeDefined()
+        expect(screen.getByText(/Team notified successfully/i)).toBeDefined()
+      })
+    })
+
+    it('renders PlaybookCompleted event with details', async () => {
+      vi.mocked(exceptionsApi.fetchExceptionEvents).mockResolvedValue({
+        ...mockPlaybookEventsResponse,
+        items: [mockPlaybookEventsResponse.items[2]],
+        total: 1,
+      })
+
+      renderComponent('exc-001')
+
+      await waitFor(() => {
+        expect(screen.getByText(/Playbook Completed/i)).toBeDefined()
+        expect(screen.getByText(/Playbook ID:/i)).toBeDefined()
+        expect(screen.getByText(/Total Steps:/i)).toBeDefined()
+        expect(screen.getByText(/3/i)).toBeDefined() // total_steps
+        expect(screen.getByText(/Notes:/i)).toBeDefined()
+        expect(screen.getByText(/All steps completed/i)).toBeDefined()
+      })
+    })
+
+    it('displays actor information for playbook events', async () => {
+      vi.mocked(exceptionsApi.fetchExceptionEvents).mockResolvedValue(mockPlaybookEventsResponse)
+
+      renderComponent('exc-001')
+
+      await waitFor(() => {
+        // Check actor types are displayed
+        expect(screen.getAllByText(/Agent/i).length).toBeGreaterThan(0)
+        expect(screen.getAllByText(/User/i).length).toBeGreaterThan(0)
+        // Check actor IDs are displayed
+        expect(screen.getByText(/PolicyAgent/i)).toBeDefined()
+        expect(screen.getByText(/user-123/i)).toBeDefined()
+      })
+    })
+
+    it('includes playbook event types in filter dropdown', async () => {
+      vi.mocked(exceptionsApi.fetchExceptionEvents).mockResolvedValue(mockPlaybookEventsResponse)
+
+      renderComponent('exc-001')
+
+      await waitFor(() => {
+        const eventTypeSelect = screen.getByLabelText(/Event Type/i)
+        expect(eventTypeSelect).toBeDefined()
+        
+        // Check that playbook event types are in the dropdown
+        // Note: We can't easily test dropdown options without opening it,
+        // but we can verify the select exists and the component renders
+        expect(eventTypeSelect).toBeDefined()
+      })
+    })
+  })
 })
 

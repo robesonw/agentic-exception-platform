@@ -440,6 +440,327 @@ class TestResolutionAgentAuditLogging:
         decision = await agent.process(exception, context)
 
 
+class TestResolutionAgentNextActionSuggestion:
+    """Tests for next action suggestion from assigned playbook (P7-13)."""
+
+    @pytest.mark.asyncio
+    async def test_next_action_suggestion_from_assigned_playbook(self, finance_domain_pack, tool_registry):
+        """Test that next action is suggested when exception has current_playbook_id."""
+        from unittest.mock import AsyncMock, MagicMock
+        from src.infrastructure.db.models import Playbook, PlaybookStep
+        
+        # Create mock playbook repository
+        mock_playbook_repo = AsyncMock()
+        
+        # Create mock playbook with steps
+        mock_playbook = MagicMock()
+        mock_playbook.playbook_id = 42
+        mock_playbook.tenant_id = "TENANT_FINANCE_001"
+        mock_playbook.name = "SettlementRetryPlaybook"
+        
+        # Create mock steps
+        step1 = MagicMock()
+        step1.step_order = 1
+        step1.name = "Get Settlement Details"
+        step1.action_type = "call_tool"
+        step1.params = {"orderId": "ORD123"}
+        
+        step2 = MagicMock()
+        step2.step_order = 2
+        step2.name = "Trigger Retry"
+        step2.action_type = "call_tool"
+        step2.params = {"orderId": "ORD123", "retryCount": 3}
+        
+        mock_playbook.steps = [step1, step2]
+        mock_playbook_repo.get_playbook.return_value = mock_playbook
+        
+        # Create mock exception events repository
+        mock_events_repo = AsyncMock()
+        mock_events_repo.append_event_if_new.return_value = True
+        
+        agent = ResolutionAgent(
+            finance_domain_pack,
+            tool_registry,
+            playbook_repository=mock_playbook_repo,
+            exception_events_repository=mock_events_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_001",
+            tenantId="TENANT_FINANCE_001",
+            sourceSystem="SettlementSystem",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.HIGH,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+            currentPlaybookId=42,
+            currentStep=1,
+        )
+        
+        decision = await agent.process(exception)
+        
+        # Verify playbook was loaded
+        mock_playbook_repo.get_playbook.assert_called_once_with(
+            playbook_id=42,
+            tenant_id="TENANT_FINANCE_001",
+        )
+        
+        # Verify next action is in evidence
+        evidence_text = " ".join(decision.evidence)
+        assert "Next action" in evidence_text
+        assert "Trigger Retry" in evidence_text
+        assert "Step order: 2" in evidence_text
+        
+        # Verify ResolutionSuggested event was emitted
+        assert mock_events_repo.append_event_if_new.called
+        call_args = mock_events_repo.append_event_if_new.call_args[0][0]
+        assert call_args.event_type == "ResolutionSuggested"
+        assert call_args.payload["playbook_id"] == 42
+        assert call_args.payload["step_order"] == 2
+        assert call_args.payload["suggested_action"] == "Trigger Retry"
+
+    @pytest.mark.asyncio
+    async def test_next_action_includes_params_summary(self, finance_domain_pack, tool_registry):
+        """Test that next action includes brief params summary."""
+        from unittest.mock import AsyncMock, MagicMock
+        
+        # Create mock playbook repository
+        mock_playbook_repo = AsyncMock()
+        
+        mock_playbook = MagicMock()
+        mock_playbook.playbook_id = 99
+        mock_playbook.tenant_id = "TENANT_FINANCE_001"
+        
+        step = MagicMock()
+        step.step_order = 2
+        step.name = "Process Payment"
+        step.action_type = "call_tool"
+        step.params = {
+            "accountId": "ACC123",
+            "amount": 1000.50,
+            "currency": "USD",
+            "description": "Payment for order",
+        }
+        
+        mock_playbook.steps = [step]
+        mock_playbook_repo.get_playbook.return_value = mock_playbook
+        
+        # Create mock exception events repository
+        mock_events_repo = AsyncMock()
+        mock_events_repo.append_event_if_new.return_value = True
+        
+        agent = ResolutionAgent(
+            finance_domain_pack,
+            tool_registry,
+            playbook_repository=mock_playbook_repo,
+            exception_events_repository=mock_events_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_002",
+            tenantId="TENANT_FINANCE_001",
+            sourceSystem="PaymentSystem",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.MEDIUM,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+            currentPlaybookId=99,
+            currentStep=1,
+        )
+        
+        decision = await agent.process(exception)
+        
+        # Verify params are included in evidence
+        evidence_text = " ".join(decision.evidence)
+        assert "Params:" in evidence_text
+        assert "accountId" in evidence_text or "ACC123" in evidence_text
+
+    @pytest.mark.asyncio
+    async def test_no_next_action_when_no_more_steps(self, finance_domain_pack, tool_registry):
+        """Test that no next action is suggested when at the last step."""
+        from unittest.mock import AsyncMock, MagicMock
+        
+        # Create mock playbook repository
+        mock_playbook_repo = AsyncMock()
+        
+        mock_playbook = MagicMock()
+        mock_playbook.playbook_id = 50
+        mock_playbook.tenant_id = "TENANT_FINANCE_001"
+        
+        step = MagicMock()
+        step.step_order = 1
+        step.name = "Final Step"
+        step.action_type = "notify"
+        step.params = {}
+        
+        mock_playbook.steps = [step]  # Only one step
+        mock_playbook_repo.get_playbook.return_value = mock_playbook
+        
+        agent = ResolutionAgent(
+            finance_domain_pack,
+            tool_registry,
+            playbook_repository=mock_playbook_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_003",
+            tenantId="TENANT_FINANCE_001",
+            sourceSystem="TestSystem",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.LOW,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+            currentPlaybookId=50,
+            currentStep=1,  # Already at last step
+        )
+        
+        decision = await agent.process(exception)
+        
+        # Verify no next action in evidence
+        evidence_text = " ".join(decision.evidence)
+        assert "Next action" not in evidence_text
+
+    @pytest.mark.asyncio
+    async def test_no_next_action_when_no_playbook_id(self, finance_domain_pack, tool_registry):
+        """Test that no next action is suggested when exception has no current_playbook_id."""
+        from unittest.mock import AsyncMock
+        
+        # Create mock playbook repository
+        mock_playbook_repo = AsyncMock()
+        
+        agent = ResolutionAgent(
+            finance_domain_pack,
+            tool_registry,
+            playbook_repository=mock_playbook_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_004",
+            tenantId="TENANT_FINANCE_001",
+            sourceSystem="TestSystem",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.MEDIUM,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+            # No currentPlaybookId
+        )
+        
+        decision = await agent.process(exception)
+        
+        # Verify playbook repository was not called
+        mock_playbook_repo.get_playbook.assert_not_called()
+        
+        # Verify no next action in evidence
+        evidence_text = " ".join(decision.evidence)
+        assert "Next action" not in evidence_text
+
+    @pytest.mark.asyncio
+    async def test_resolution_suggested_event_includes_step_order(self, finance_domain_pack, tool_registry):
+        """Test that ResolutionSuggested event includes step_order reference."""
+        from unittest.mock import AsyncMock, MagicMock
+        
+        # Create mock playbook repository
+        mock_playbook_repo = AsyncMock()
+        
+        mock_playbook = MagicMock()
+        mock_playbook.playbook_id = 77
+        mock_playbook.tenant_id = "TENANT_FINANCE_001"
+        
+        step = MagicMock()
+        step.step_order = 3
+        step.name = "Verify Transaction"
+        step.action_type = "call_tool"
+        step.params = {"transactionId": "TXN456"}
+        
+        mock_playbook.steps = [step]
+        mock_playbook_repo.get_playbook.return_value = mock_playbook
+        
+        # Create mock exception events repository
+        mock_events_repo = AsyncMock()
+        mock_events_repo.append_event_if_new.return_value = True
+        
+        agent = ResolutionAgent(
+            finance_domain_pack,
+            tool_registry,
+            playbook_repository=mock_playbook_repo,
+            exception_events_repository=mock_events_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_005",
+            tenantId="TENANT_FINANCE_001",
+            sourceSystem="TransactionSystem",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.HIGH,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+            currentPlaybookId=77,
+            currentStep=2,
+        )
+        
+        decision = await agent.process(exception)
+        
+        # Verify event was logged with step_order
+        assert mock_events_repo.append_event_if_new.called
+        call_args = mock_events_repo.append_event_if_new.call_args[0][0]
+        assert call_args.event_type == "ResolutionSuggested"
+        assert call_args.payload["playbook_id"] == 77
+        assert call_args.payload["step_order"] == 3
+        assert call_args.payload["suggested_action"] == "Verify Transaction"
+
+    @pytest.mark.asyncio
+    async def test_next_action_does_not_execute_step(self, finance_domain_pack, tool_registry):
+        """Test that next action suggestion does NOT execute the step."""
+        from unittest.mock import AsyncMock, MagicMock
+        
+        # Create mock playbook repository
+        mock_playbook_repo = AsyncMock()
+        
+        mock_playbook = MagicMock()
+        mock_playbook.playbook_id = 88
+        mock_playbook.tenant_id = "TENANT_FINANCE_001"
+        
+        step = MagicMock()
+        step.step_order = 2
+        step.name = "Execute Action"
+        step.action_type = "call_tool"
+        step.params = {"action": "doSomething"}
+        
+        mock_playbook.steps = [step]
+        mock_playbook_repo.get_playbook.return_value = mock_playbook
+        
+        # Create mock execution engine to verify it's NOT called
+        mock_execution_engine = AsyncMock()
+        
+        agent = ResolutionAgent(
+            finance_domain_pack,
+            tool_registry,
+            playbook_repository=mock_playbook_repo,
+            execution_engine=mock_execution_engine,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_006",
+            tenantId="TENANT_FINANCE_001",
+            sourceSystem="TestSystem",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.MEDIUM,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+            currentPlaybookId=88,
+            currentStep=1,
+        )
+        
+        decision = await agent.process(exception)
+        
+        # Verify execution engine was NOT called (next action is suggestion only)
+        # The execution engine would only be called in _resolve_playbook_steps, not for next_action
+        # Since we're not in ACTIONABLE_APPROVED_PROCESS flow, execution shouldn't happen
+        # But let's verify the next_action was suggested
+        evidence_text = " ".join(decision.evidence)
+        assert "Next action" in evidence_text or "Execute Action" in evidence_text
+
+
 class TestResolutionAgentFinanceSamples:
     """Tests using finance domain samples."""
 

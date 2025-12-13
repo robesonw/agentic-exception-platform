@@ -1,6 +1,6 @@
 // Custom React hooks
 // See: useTenant.ts, useExceptions.ts, useQuery.ts
 
-export {}
+export { useUser } from './useUser'
 
 

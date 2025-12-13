@@ -76,6 +76,52 @@ class ExceptionEventListResponse(BaseModel):
     total_pages: int = Field(..., description="Total number of pages")
 
 
+class PlaybookRecalculationResponse(BaseModel):
+    """Response model for playbook recalculation."""
+
+    exception_id: str = Field(..., alias="exceptionId", description="Exception identifier")
+    current_playbook_id: Optional[int] = Field(None, alias="currentPlaybookId", description="Current playbook identifier")
+    current_step: Optional[int] = Field(None, alias="currentStep", description="Current step number in playbook")
+    playbook_name: Optional[str] = Field(None, alias="playbookName", description="Name of the selected playbook")
+    playbook_version: Optional[int] = Field(None, alias="playbookVersion", description="Version of the selected playbook")
+    reasoning: Optional[str] = Field(None, description="Reasoning for playbook selection")
+
+    model_config = {"json_schema_extra": {"example": {"exceptionId": "exc_001", "currentPlaybookId": 1, "currentStep": 1, "playbookName": "PaymentFailurePlaybook", "playbookVersion": 1}}}
+
+
+class PlaybookStepStatus(BaseModel):
+    """Status information for a playbook step."""
+
+    step_order: int = Field(..., alias="stepOrder", description="Step order number (1-indexed)")
+    name: str = Field(..., description="Step name")
+    action_type: str = Field(..., alias="actionType", description="Action type (e.g., notify, call_tool)")
+    status: str = Field(..., description="Step status: pending, completed, or skipped")
+
+
+class PlaybookStatusResponse(BaseModel):
+    """Response model for playbook status."""
+
+    exception_id: str = Field(..., alias="exceptionId", description="Exception identifier")
+    playbook_id: Optional[int] = Field(None, alias="playbookId", description="Playbook identifier")
+    playbook_name: Optional[str] = Field(None, alias="playbookName", description="Playbook name")
+    playbook_version: Optional[int] = Field(None, alias="playbookVersion", description="Playbook version")
+    conditions: Optional[dict[str, Any]] = Field(None, description="Playbook matching conditions")
+    steps: list[PlaybookStepStatus] = Field(default_factory=list, description="List of playbook steps with status")
+    current_step: Optional[int] = Field(None, alias="currentStep", description="Current step number (1-indexed)")
+
+    model_config = {"json_schema_extra": {"example": {"exceptionId": "exc_001", "playbookId": 1, "playbookName": "PaymentFailurePlaybook", "playbookVersion": 1, "steps": [{"stepOrder": 1, "name": "Notify Team", "actionType": "notify", "status": "completed"}], "currentStep": 2}}}
+
+
+class StepCompletionRequest(BaseModel):
+    """Request model for completing a playbook step."""
+
+    actor_type: str = Field(..., alias="actorType", description="Actor type: human, agent, or system")
+    actor_id: str = Field(..., alias="actorId", description="Actor identifier (user ID or agent name)")
+    notes: Optional[str] = Field(None, description="Optional notes about step completion")
+
+    model_config = {"json_schema_extra": {"example": {"actorType": "human", "actorId": "user_123", "notes": "Step completed successfully"}}}
+
+
 @router.post("/{tenant_id}", response_model=ExceptionIngestionResponse)
 async def ingest_exception(
     tenant_id: str = Path(..., description="Tenant identifier"),
@@ -1002,4 +1048,746 @@ async def update_exception(
             status_code=500,
             detail=f"Internal server error: Failed to update exception: {str(e)}",
         )
+
+
+@router.post("/{tenant_id}/{exception_id}/playbook/recalculate", response_model=PlaybookRecalculationResponse)
+async def recalculate_playbook(
+    tenant_id: str = Path(..., description="Tenant identifier"),
+    exception_id: str = Path(..., description="Exception identifier"),
+    request: Request = None,
+) -> PlaybookRecalculationResponse:
+    """
+    Recalculate and update the playbook assignment for an exception.
+    
+    POST /exceptions/{exception_id}/playbook/recalculate
+    
+    Phase 7 P7-8: Re-runs playbook matching and updates exception playbook assignment.
+    
+    This endpoint:
+    - Loads the exception from the database
+    - Re-runs playbook matching using the Playbook Matching Service
+    - Updates exception.current_playbook_id and exception.current_step
+    - Emits a PlaybookRecalculated event (idempotent - only if assignment changed)
+    
+    Query Parameters:
+    - tenant_id: Tenant identifier (required for isolation)
+    
+    Returns:
+    - Exception ID
+    - Current playbook ID (or None if no playbook matched)
+    - Current step (or None if no playbook matched)
+    - Playbook metadata (name, version) if available
+    - Reasoning for playbook selection
+    
+    Raises:
+    - HTTPException 400 if tenant_id is missing or invalid
+    - HTTPException 403 if tenant ID mismatch
+    - HTTPException 404 if exception not found or doesn't belong to tenant
+    - HTTPException 500 if database or matching service error occurs
+    """
+    # Verify tenant ID matches authenticated tenant if available
+    if request and hasattr(request.state, "tenant_id"):
+        authenticated_tenant_id = request.state.tenant_id
+        if authenticated_tenant_id != tenant_id:
+            logger.warning(
+                f"Tenant mismatch: authenticated={authenticated_tenant_id}, "
+                f"query={tenant_id} for {request.url.path}"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=f"Tenant ID mismatch: authenticated tenant '{authenticated_tenant_id}' "
+                f"does not match query tenant '{tenant_id}'",
+            )
+        tenant_id = authenticated_tenant_id
+    
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="tenant_id is required")
+    
+    logger.info(f"Recalculating playbook for exception {exception_id}, tenant {tenant_id}")
+    
+    try:
+        from src.infrastructure.db.session import get_db_session_context
+        from src.repository.exceptions_repository import ExceptionRepository
+        from src.repository.exception_events_repository import ExceptionEventRepository
+        from src.repository.dto import ExceptionUpdateDTO, ExceptionEventDTO
+        from src.infrastructure.repositories.playbook_repository import PlaybookRepository
+        from src.playbooks.matching_service import PlaybookMatchingService
+        from src.models.exception_record import ExceptionRecord, Severity, ResolutionStatus
+        from src.infrastructure.db.models import ActorType
+        from datetime import datetime, timezone
+        import uuid
+        import hashlib
+        
+        async with get_db_session_context() as session:
+            # Load exception from database
+            exception_repo = ExceptionRepository(session)
+            db_exception = await exception_repo.get_exception(tenant_id, exception_id)
+            
+            if db_exception is None:
+                logger.warning(
+                    f"Exception {exception_id} not found for tenant {tenant_id} "
+                    "or doesn't belong to tenant"
+                )
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Exception {exception_id} not found for tenant {tenant_id}",
+                )
+            
+            # Store previous playbook assignment for idempotency check
+            previous_playbook_id = db_exception.current_playbook_id
+            previous_step = db_exception.current_step
+            
+            # Convert DB Exception to ExceptionRecord for matching service
+            severity_map = {
+                "low": Severity.LOW,
+                "medium": Severity.MEDIUM,
+                "high": Severity.HIGH,
+                "critical": Severity.CRITICAL,
+            }
+            severity = severity_map.get(
+                db_exception.severity.value if hasattr(db_exception.severity, 'value') else str(db_exception.severity).lower(),
+                Severity.MEDIUM
+            )
+            
+            status_map = {
+                "open": ResolutionStatus.OPEN,
+                "analyzing": ResolutionStatus.IN_PROGRESS,
+                "resolved": ResolutionStatus.RESOLVED,
+                "escalated": ResolutionStatus.ESCALATED,
+            }
+            resolution_status = status_map.get(
+                db_exception.status.value if hasattr(db_exception.status, 'value') else str(db_exception.status).lower(),
+                ResolutionStatus.OPEN
+            )
+            
+            # Build normalized context from database fields
+            normalized_context = {
+                "domain": db_exception.domain,
+            }
+            if db_exception.entity:
+                normalized_context["entity"] = db_exception.entity
+            if db_exception.amount:
+                normalized_context["amount"] = float(db_exception.amount)
+            if db_exception.sla_deadline:
+                normalized_context["sla_deadline"] = db_exception.sla_deadline
+            
+            # Create ExceptionRecord from database model
+            exception_record = ExceptionRecord(
+                exception_id=db_exception.exception_id,
+                tenant_id=db_exception.tenant_id,
+                source_system=db_exception.source_system,
+                exception_type=db_exception.type,
+                severity=severity,
+                timestamp=db_exception.created_at or datetime.now(timezone.utc),
+                raw_payload={},
+                normalized_context=normalized_context,
+                resolution_status=resolution_status,
+                audit_trail=[],
+            )
+            
+            # Load TenantPolicyPack if available (optional for matching)
+            tenant_policy = None
+            try:
+                from src.tenantpack.loader import load_tenant_policy
+                from src.domainpack.registry import DomainPackRegistry
+                registry = DomainPackRegistry()
+                domain_pack = registry.get_latest(tenant_id)
+                if domain_pack:
+                    # Try to load tenant policy from the same directory structure
+                    # This is a simplified approach - in production, this would come from a config
+                    tenant_policy = None  # Optional, matching service can work without it
+            except Exception as e:
+                logger.debug(f"Could not load tenant policy for tenant {tenant_id}: {e}")
+                tenant_policy = None
+            
+            # Initialize Playbook Matching Service
+            playbook_repo = PlaybookRepository(session)
+            matching_service = PlaybookMatchingService(playbook_repo)
+            
+            # Run playbook matching
+            matching_result = await matching_service.match_playbook(
+                tenant_id=tenant_id,
+                exception=exception_record,
+                tenant_policy=tenant_policy,
+            )
+            
+            # Determine new playbook assignment
+            new_playbook_id = matching_result.playbook.playbook_id if matching_result.playbook is not None else None
+            new_step = 1 if matching_result.playbook is not None else None  # Reset to first step if playbook assigned
+            
+            # Check if playbook assignment changed (for idempotency)
+            playbook_changed = (
+                previous_playbook_id != new_playbook_id or
+                (new_playbook_id is not None and previous_step != new_step)
+            )
+            
+            # Update exception with new playbook assignment
+            await exception_repo.update_exception(
+                tenant_id=tenant_id,
+                exception_id=exception_id,
+                updates=ExceptionUpdateDTO(
+                    current_playbook_id=new_playbook_id,
+                    current_step=new_step,
+                ),
+            )
+            
+            # Emit PlaybookRecalculated event (only if playbook assignment changed)
+            event_repo = ExceptionEventRepository(session)
+            if playbook_changed:
+                # Generate deterministic event ID based on exception_id and new assignment for idempotency
+                # This ensures re-running recalculation with same result doesn't create duplicate events
+                event_id_str = f"{exception_id}:{new_playbook_id}:{new_step}:recalculated"
+                event_id_bytes = hashlib.md5(event_id_str.encode()).digest()
+                event_id = uuid.UUID(bytes=event_id_bytes[:16])
+                
+                event = ExceptionEventDTO(
+                    event_id=event_id,
+                    exception_id=exception_id,
+                    tenant_id=tenant_id,
+                    event_type="PlaybookRecalculated",
+                    actor_type=ActorType.SYSTEM,
+                    actor_id="PlaybookRecalculationAPI",
+                    payload={
+                        "previous_playbook_id": previous_playbook_id,
+                        "previous_step": previous_step,
+                        "new_playbook_id": new_playbook_id,
+                        "new_step": new_step,
+                        "playbook_name": matching_result.playbook.name if matching_result.playbook is not None else None,
+                        "playbook_version": matching_result.playbook.version if matching_result.playbook is not None else None,
+                        "reasoning": matching_result.reasoning,
+                    },
+                )
+                
+                # Use idempotent event insertion
+                event_created = await event_repo.append_event_if_new(event)
+                if event_created:
+                    logger.info(
+                        f"Recalculated playbook for exception {exception_id}: "
+                        f"playbook_id={previous_playbook_id} -> {new_playbook_id}, "
+                        f"step={previous_step} -> {new_step}"
+                    )
+                else:
+                    logger.info(
+                        f"PlaybookRecalculated event already exists for exception {exception_id} "
+                        f"with playbook_id={new_playbook_id}, step={new_step}. Skipping duplicate event."
+                    )
+            else:
+                logger.info(
+                    f"Playbook recalculation for exception {exception_id} resulted in same assignment "
+                    f"(playbook_id={new_playbook_id}, step={new_step}). No event emitted."
+                )
+            
+            # Build response (use aliases for JSON serialization)
+            response = PlaybookRecalculationResponse(
+                exceptionId=exception_id,  # Use alias
+                currentPlaybookId=new_playbook_id,  # Use alias
+                currentStep=new_step,  # Use alias
+                playbookName=matching_result.playbook.name if matching_result.playbook is not None else None,  # Use alias
+                playbookVersion=matching_result.playbook.version if matching_result.playbook is not None else None,  # Use alias
+                reasoning=matching_result.reasoning,
+            )
+            
+            return response
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error recalculating playbook: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to recalculate playbook: {str(e)}")
+
+
+def _derive_step_status_from_events(
+    steps: list[Any],
+    events: list[Any],
+    current_step: Optional[int],
+) -> dict[int, str]:
+    """
+    Derive step status from playbook events.
+    
+    Phase 7 P7-9: Helper function to determine step status from events.
+    
+    Status logic:
+    - If PlaybookCompleted event exists: all steps are "completed"
+    - If PlaybookStepCompleted event exists for a step: that step is "completed"
+    - Steps before current_step are "completed" (if current_step is set)
+    - Steps after current_step are "pending" (if current_step is set)
+    - Steps with no events and before current_step are "pending"
+    - Steps can be "skipped" if explicitly marked (not implemented in MVP)
+    
+    Args:
+        steps: List of PlaybookStep instances (ordered by step_order)
+        events: List of ExceptionEvent instances for the exception
+        current_step: Current step number from exception (1-indexed, or None)
+        
+    Returns:
+        Dictionary mapping step_order -> status ("pending", "completed", or "skipped")
+    """
+    step_status: dict[int, str] = {}
+    
+    # Initialize all steps as "pending"
+    for step in steps:
+        step_status[step.step_order] = "pending"
+    
+    # Check for PlaybookCompleted event (all steps completed)
+    playbook_completed = any(
+        e.event_type == "PlaybookCompleted" for e in events
+    )
+    
+    if playbook_completed:
+        # All steps are completed
+        for step in steps:
+            step_status[step.step_order] = "completed"
+        return step_status
+    
+    # Check for PlaybookStepCompleted events
+    completed_step_orders = set()
+    for event in events:
+        if event.event_type == "PlaybookStepCompleted":
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            step_order = payload.get("step_order")
+            if step_order is not None:
+                completed_step_orders.add(int(step_order))
+    
+    # Mark completed steps
+    for step_order in completed_step_orders:
+        if step_order in step_status:
+            step_status[step_order] = "completed"
+    
+    # If current_step is set, mark steps before it as completed (if not already marked)
+    if current_step is not None:
+        for step in steps:
+            if step.step_order < current_step and step_status.get(step.step_order) == "pending":
+                step_status[step.step_order] = "completed"
+    
+    return step_status
+
+
+@router.get("/{tenant_id}/{exception_id}/playbook", response_model=PlaybookStatusResponse)
+async def get_playbook_status(
+    tenant_id: str = Path(..., description="Tenant identifier"),
+    exception_id: str = Path(..., description="Exception identifier"),
+    request: Request = None,
+) -> PlaybookStatusResponse:
+    """
+    Get playbook status for an exception.
+    
+    GET /exceptions/{tenant_id}/{exception_id}/playbook
+    
+    Phase 7 P7-9: Returns playbook metadata and step statuses derived from events.
+    
+    This endpoint:
+    - Loads the exception and verifies tenant ownership
+    - Loads the current playbook (if any) and its ordered steps
+    - Derives per-step status from events (PlaybookStarted, PlaybookStepCompleted, PlaybookCompleted)
+    - Returns playbook metadata and step statuses
+    
+    Returns:
+    - Exception ID
+    - Playbook metadata (id, name, version, conditions)
+    - Steps list with status (pending/completed/skipped)
+    - Current step indicator
+    
+    Raises:
+    - HTTPException 400 if tenant_id is missing or invalid
+    - HTTPException 403 if tenant ID mismatch
+    - HTTPException 404 if exception not found or doesn't belong to tenant
+    - HTTPException 500 if database error occurs
+    """
+    # Verify tenant ID matches authenticated tenant if available
+    if request and hasattr(request.state, "tenant_id"):
+        authenticated_tenant_id = request.state.tenant_id
+        if authenticated_tenant_id != tenant_id:
+            logger.warning(
+                f"Tenant mismatch: authenticated={authenticated_tenant_id}, "
+                f"path={tenant_id} for {request.url.path}"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=f"Tenant ID mismatch: authenticated tenant '{authenticated_tenant_id}' "
+                f"does not match path tenant '{tenant_id}'",
+            )
+        # Use authenticated tenant ID
+        tenant_id = authenticated_tenant_id
+    
+    logger.info(f"Getting playbook status for exception {exception_id}, tenant {tenant_id}")
+    
+    try:
+        from src.infrastructure.db.session import get_db_session_context
+        from src.repository.exceptions_repository import ExceptionRepository
+        from src.repository.exception_events_repository import ExceptionEventRepository
+        from src.repository.dto import EventFilter
+        from src.infrastructure.repositories.playbook_repository import PlaybookRepository
+        from src.infrastructure.repositories.playbook_step_repository import PlaybookStepRepository
+        import json
+        
+        async with get_db_session_context() as session:
+            # Load exception and verify tenant ownership
+            exception_repo = ExceptionRepository(session)
+            db_exception = await exception_repo.get_exception(tenant_id, exception_id)
+            
+            if db_exception is None:
+                logger.warning(
+                    f"Exception {exception_id} not found for tenant {tenant_id} "
+                    "or doesn't belong to tenant"
+                )
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Exception {exception_id} not found for tenant {tenant_id}",
+                )
+            
+            # If no playbook assigned, return empty response
+            if db_exception.current_playbook_id is None:
+                return PlaybookStatusResponse(
+                    exceptionId=exception_id,  # Use alias for JSON serialization
+                    playbookId=None,
+                    playbookName=None,
+                    playbookVersion=None,
+                    conditions=None,
+                    steps=[],
+                    currentStep=None,
+                )
+            
+            # Load playbook with tenant isolation
+            playbook_repo = PlaybookRepository(session)
+            playbook = await playbook_repo.get_playbook(
+                db_exception.current_playbook_id,
+                tenant_id,
+            )
+            
+            if playbook is None:
+                logger.warning(
+                    f"Playbook {db_exception.current_playbook_id} not found for tenant {tenant_id}"
+                )
+                # Playbook was deleted or doesn't belong to tenant
+                return PlaybookStatusResponse(
+                    exceptionId=exception_id,  # Use alias for JSON serialization
+                    playbookId=db_exception.current_playbook_id,
+                    playbookName=None,
+                    playbookVersion=None,
+                    conditions=None,
+                    steps=[],
+                    currentStep=db_exception.current_step,
+                )
+            
+            # Load ordered steps
+            step_repo = PlaybookStepRepository(session)
+            steps = await step_repo.get_steps_ordered(
+                db_exception.current_playbook_id,
+                tenant_id,
+            )
+            
+            # Load playbook-related events
+            event_repo = ExceptionEventRepository(session)
+            event_filter = EventFilter(
+                event_types=["PlaybookStarted", "PlaybookStepCompleted", "PlaybookCompleted"],
+            )
+            events = await event_repo.get_events_for_exception(
+                tenant_id=tenant_id,
+                exception_id=exception_id,
+                filters=event_filter,
+            )
+            
+            # Derive step status from events
+            step_status_map = _derive_step_status_from_events(
+                steps=steps,
+                events=events,
+                current_step=db_exception.current_step,
+            )
+            
+            # Build step status list
+            step_statuses = []
+            for step in steps:
+                status = step_status_map.get(step.step_order, "pending")
+                step_statuses.append(
+                    PlaybookStepStatus(
+                        stepOrder=step.step_order,  # Use alias for JSON serialization
+                        name=step.name,
+                        actionType=step.action_type,  # Use alias for JSON serialization
+                        status=status,
+                    )
+                )
+            
+            # Parse conditions from JSON if stored as string
+            conditions = None
+            if playbook.conditions:
+                if isinstance(playbook.conditions, str):
+                    try:
+                        conditions = json.loads(playbook.conditions)
+                    except (json.JSONDecodeError, TypeError):
+                        conditions = {}
+                elif isinstance(playbook.conditions, dict):
+                    conditions = playbook.conditions
+            
+            # Build response
+            response = PlaybookStatusResponse(
+                exceptionId=exception_id,  # Use alias for JSON serialization
+                playbookId=playbook.playbook_id,
+                playbookName=playbook.name,
+                playbookVersion=playbook.version,
+                conditions=conditions,
+                steps=step_statuses,
+                currentStep=db_exception.current_step,
+            )
+            
+            logger.info(
+                f"Retrieved playbook status for exception {exception_id}: "
+                f"playbook_id={playbook.playbook_id}, steps={len(steps)}, "
+                f"current_step={db_exception.current_step}"
+            )
+            
+            return response
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving playbook status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve playbook status: {str(e)}")
+
+
+@router.post("/{tenant_id}/{exception_id}/playbook/steps/{step_order}/complete", response_model=PlaybookStatusResponse)
+async def complete_playbook_step(
+    tenant_id: str = Path(..., description="Tenant identifier"),
+    exception_id: str = Path(..., description="Exception identifier"),
+    step_order: int = Path(..., description="Step order number to complete (1-indexed)"),
+    request_body: StepCompletionRequest = ...,
+    request: Request = None,
+) -> PlaybookStatusResponse:
+    """
+    Complete a playbook step for an exception.
+    
+    POST /exceptions/{tenant_id}/{exception_id}/playbook/steps/{step_order}/complete
+    
+    Phase 7 P7-10: Completes a playbook step and returns updated playbook status.
+    
+    This endpoint:
+    - Validates tenant ownership of the exception
+    - Validates the step is the next expected step
+    - Calls PlaybookExecutionService to complete the step
+    - Executes safe actions for the step (if applicable)
+    - Emits PlaybookStepCompleted event
+    - Updates exception.current_step
+    - Returns updated playbook status
+    
+    Request Body:
+    - actorType: "human", "agent", or "system"
+    - actorId: User ID or agent name
+    - notes: Optional notes about completion
+    
+    Returns:
+    - Updated playbook status (same structure as GET /playbook endpoint)
+    
+    Raises:
+    - HTTPException 400 if request body is invalid or actor_type is invalid
+    - HTTPException 403 if tenant ID mismatch
+    - HTTPException 404 if exception not found or doesn't belong to tenant
+    - HTTPException 400 if no playbook is assigned
+    - HTTPException 400 if step_order is invalid or not the next expected step
+    - HTTPException 500 if execution service error occurs
+    """
+    # Verify tenant ID matches authenticated tenant if available
+    if request and hasattr(request.state, "tenant_id"):
+        authenticated_tenant_id = request.state.tenant_id
+        if authenticated_tenant_id != tenant_id:
+            logger.warning(
+                f"Tenant mismatch: authenticated={authenticated_tenant_id}, "
+                f"path={tenant_id} for {request.url.path}"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=f"Tenant ID mismatch: authenticated tenant '{authenticated_tenant_id}' "
+                f"does not match path tenant '{tenant_id}'",
+            )
+        # Use authenticated tenant ID
+        tenant_id = authenticated_tenant_id
+    
+    if step_order < 1:
+        raise HTTPException(status_code=400, detail="step_order must be >= 1")
+    
+    logger.info(
+        f"Completing step {step_order} for exception {exception_id}, tenant {tenant_id} "
+        f"(actor: {request_body.actor_type}/{request_body.actor_id})"
+    )
+    
+    try:
+        from src.infrastructure.db.session import get_db_session_context
+        from src.repository.exceptions_repository import ExceptionRepository
+        from src.infrastructure.repositories.playbook_repository import PlaybookRepository
+        from src.infrastructure.repositories.playbook_step_repository import PlaybookStepRepository
+        from src.repository.exception_events_repository import ExceptionEventRepository
+        from src.playbooks.execution_service import PlaybookExecutionService, PlaybookExecutionError
+        from src.infrastructure.db.models import ActorType
+        import json
+        
+        async with get_db_session_context() as session:
+            # Load exception and verify tenant ownership
+            exception_repo = ExceptionRepository(session)
+            db_exception = await exception_repo.get_exception(tenant_id, exception_id)
+            
+            if db_exception is None:
+                logger.warning(
+                    f"Exception {exception_id} not found for tenant {tenant_id} "
+                    "or doesn't belong to tenant"
+                )
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Exception {exception_id} not found for tenant {tenant_id}",
+                )
+            
+            # Validate playbook is assigned
+            if db_exception.current_playbook_id is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Exception {exception_id} has no playbook assigned",
+                )
+            
+            # Map actor_type string to ActorType enum
+            actor_type_map = {
+                "human": ActorType.USER,
+                "agent": ActorType.AGENT,
+                "system": ActorType.SYSTEM,
+            }
+            actor_type_str = request_body.actor_type.lower()
+            if actor_type_str not in actor_type_map:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid actor_type: {request_body.actor_type}. Must be one of: human, agent, system",
+                )
+            actor_type = actor_type_map[actor_type_str]
+            
+            # Initialize Playbook Execution Service
+            event_repo = ExceptionEventRepository(session)
+            playbook_repo = PlaybookRepository(session)
+            step_repo = PlaybookStepRepository(session)
+            
+            execution_service = PlaybookExecutionService(
+                exception_repository=exception_repo,
+                event_repository=event_repo,
+                playbook_repository=playbook_repo,
+                step_repository=step_repo,
+            )
+            
+            # Complete the step
+            try:
+                await execution_service.complete_step(
+                    tenant_id=tenant_id,
+                    exception_id=exception_id,
+                    playbook_id=db_exception.current_playbook_id,
+                    step_order=step_order,
+                    actor_type=actor_type,
+                    actor_id=request_body.actor_id,
+                    notes=request_body.notes,
+                )
+            except PlaybookExecutionError as e:
+                # Convert PlaybookExecutionError to appropriate HTTP status
+                error_msg = str(e)
+                if "not found" in error_msg.lower():
+                    raise HTTPException(status_code=404, detail=error_msg)
+                elif "not the next expected step" in error_msg.lower() or "not active" in error_msg.lower():
+                    raise HTTPException(status_code=400, detail=error_msg)
+                elif "requires human approval" in error_msg.lower():
+                    raise HTTPException(status_code=403, detail=error_msg)
+                else:
+                    raise HTTPException(status_code=400, detail=error_msg)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            
+            # Commit the transaction to ensure updates are persisted
+            await session.commit()
+            
+            # Refresh the exception object to get the latest state from the database
+            await session.refresh(db_exception)
+            
+            # After completion, fetch updated playbook status (reuse logic from GET endpoint)
+            # Use the refreshed exception object
+            
+            # Load playbook (use the refreshed exception's playbook_id)
+            playbook_id = db_exception.current_playbook_id
+            playbook = await playbook_repo.get_playbook(
+                playbook_id,
+                tenant_id,
+            )
+            
+            if playbook is None:
+                # Playbook was deleted (shouldn't happen, but handle gracefully)
+                return PlaybookStatusResponse(
+                    exceptionId=exception_id,
+                    playbookId=db_exception.current_playbook_id,
+                    playbookName=None,
+                    playbookVersion=None,
+                    conditions=None,
+                    steps=[],
+                    currentStep=db_exception.current_step,
+                )
+            
+            # Load ordered steps
+            steps = await step_repo.get_steps_ordered(
+                db_exception.current_playbook_id,
+                tenant_id,
+            )
+            
+            # Load playbook-related events
+            from src.repository.dto import EventFilter
+            event_filter = EventFilter(
+                event_types=["PlaybookStarted", "PlaybookStepCompleted", "PlaybookCompleted"],
+            )
+            events = await event_repo.get_events_for_exception(
+                tenant_id=tenant_id,
+                exception_id=exception_id,
+                filters=event_filter,
+            )
+            
+            # Derive step status from events
+            step_status_map = _derive_step_status_from_events(
+                steps=steps,
+                events=events,
+                current_step=db_exception.current_step,
+            )
+            
+            # Build step status list
+            step_statuses = []
+            for step in steps:
+                status = step_status_map.get(step.step_order, "pending")
+                step_statuses.append(
+                    PlaybookStepStatus(
+                        stepOrder=step.step_order,
+                        name=step.name,
+                        actionType=step.action_type,
+                        status=status,
+                    )
+                )
+            
+            # Parse conditions from JSON if stored as string
+            conditions = None
+            if playbook.conditions:
+                if isinstance(playbook.conditions, str):
+                    try:
+                        conditions = json.loads(playbook.conditions)
+                    except (json.JSONDecodeError, TypeError):
+                        conditions = {}
+                elif isinstance(playbook.conditions, dict):
+                    conditions = playbook.conditions
+            
+            # Build response
+            response = PlaybookStatusResponse(
+                exceptionId=exception_id,
+                playbookId=playbook.playbook_id,
+                playbookName=playbook.name,
+                playbookVersion=playbook.version,
+                conditions=conditions,
+                steps=step_statuses,
+                currentStep=db_exception.current_step,
+            )
+            
+            logger.info(
+                f"Completed step {step_order} for exception {exception_id}: "
+                f"playbook_id={playbook.playbook_id}, new current_step={db_exception.current_step}"
+            )
+            
+            return response
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error completing playbook step: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to complete playbook step: {str(e)}")
 

@@ -77,6 +77,8 @@ class ResolutionAgent:
         execution_engine: Optional[ToolExecutionEngine] = None,
         approval_queue_registry: Optional[ApprovalQueueRegistry] = None,
         llm_client: Optional[LLMClient] = None,
+        playbook_repository: Optional[Any] = None,
+        exception_events_repository: Optional[Any] = None,
     ):
         """
         Initialize ResolutionAgent.
@@ -91,6 +93,8 @@ class ResolutionAgent:
             execution_engine: Optional ToolExecutionEngine for automated execution (Phase 2)
             approval_queue_registry: Optional ApprovalQueueRegistry for approval workflow
             llm_client: Optional LLMClient for Phase 3 LLM-enhanced explanation
+            playbook_repository: Optional PlaybookRepository for loading playbooks from database (P7-13)
+            exception_events_repository: Optional ExceptionEventRepository for logging ResolutionSuggested events (P7-13)
         """
         self.domain_pack = domain_pack
         self.tool_registry = tool_registry
@@ -104,6 +108,8 @@ class ResolutionAgent:
         self.approval_queue_registry = approval_queue_registry
         self.playbook_generator: Optional[PlaybookGenerator] = None  # Phase 2: LLM-based generation
         self.llm_client = llm_client  # Phase 3: LLM-enhanced explanation
+        self.playbook_repository = playbook_repository  # Phase 7: Database playbook loading (P7-13)
+        self.exception_events_repository = exception_events_repository  # Phase 7: Event logging (P7-13)
         
         # Load playbooks into manager if domain pack and tenant policy are available
         if tenant_policy:
@@ -139,6 +145,124 @@ class ResolutionAgent:
             ResolutionAgentError: If planning fails
         """
         context = context or {}
+        
+        # Phase 7: Check if exception has current_playbook_id (P7-13)
+        next_action = None
+        if exception.current_playbook_id and self.playbook_repository:
+            try:
+                # Load playbook from database
+                playbook = await self.playbook_repository.get_playbook(
+                    playbook_id=exception.current_playbook_id,
+                    tenant_id=exception.tenant_id,
+                )
+                
+                if playbook and playbook.steps:
+                    # Identify next step based on current_step
+                    # current_step is 1-indexed, so if current_step=1, next step is step_order=2
+                    current_step_order = exception.current_step or 1
+                    next_step_order = current_step_order + 1
+                    
+                    # Find the next step
+                    next_step = None
+                    for step in sorted(playbook.steps, key=lambda s: s.step_order):
+                        if step.step_order == next_step_order:
+                            next_step = step
+                            break
+                    
+                    if next_step:
+                        # Produce next_action suggestion
+                        # Extract brief params summary (limit to key fields)
+                        params_summary = {}
+                        if next_step.params:
+                            # Include only top-level keys, limit values to short strings
+                            for key, value in list(next_step.params.items())[:5]:  # Limit to 5 params
+                                if isinstance(value, (str, int, float, bool)):
+                                    str_value = str(value)
+                                    if len(str_value) > 50:
+                                        str_value = str_value[:47] + "..."
+                                    params_summary[key] = str_value
+                                elif isinstance(value, (list, dict)):
+                                    params_summary[key] = f"{type(value).__name__}({len(value)} items)"
+                                else:
+                                    params_summary[key] = str(type(value).__name__)
+                        
+                        next_action = {
+                            "name": next_step.name,
+                            "action_type": next_step.action_type,
+                            "step_order": next_step.step_order,
+                            "params_summary": params_summary,
+                        }
+                        
+                        logger.info(
+                            f"ResolutionAgent: Identified next action for exception {exception.exception_id}: "
+                            f"step_order={next_step.step_order}, action_type={next_step.action_type}"
+                        )
+                        
+                        # Emit ResolutionSuggested event (P7-13)
+                        if self.exception_events_repository:
+                            try:
+                                from src.domain.events.exception_events import (
+                                    ActorType,
+                                    EventType,
+                                    ResolutionSuggestedPayload,
+                                    validate_and_build_event,
+                                )
+                                from src.repository.dto import ExceptionEventDTO
+                                from src.infrastructure.db.models import ActorType as DBActorType
+                                
+                                # Build event payload
+                                event_payload = ResolutionSuggestedPayload(
+                                    suggested_action=next_step.name,
+                                    playbook_id=exception.current_playbook_id,
+                                    step_order=next_step.step_order,  # P7-13: Include step_order reference
+                                    confidence=0.9,  # High confidence since it's the next step in assigned playbook
+                                    reasoning=f"Next step in assigned playbook (step_order={next_step.step_order})",
+                                    tool_calls=[{
+                                        "action_type": next_step.action_type,
+                                        "params": params_summary,
+                                    }] if params_summary else None,
+                                )
+                                
+                                # Build event envelope
+                                event_envelope = validate_and_build_event(
+                                    event_type=EventType.RESOLUTION_SUGGESTED,
+                                    payload_dict=event_payload.model_dump(),
+                                    tenant_id=exception.tenant_id,
+                                    exception_id=exception.exception_id,
+                                    actor_type=ActorType.AGENT,
+                                    actor_id="ResolutionAgent",
+                                )
+                                
+                                # Log event via repository
+                                event_dto = ExceptionEventDTO(
+                                    event_id=event_envelope.event_id,
+                                    tenant_id=event_envelope.tenant_id,
+                                    exception_id=event_envelope.exception_id,
+                                    event_type=event_envelope.event_type,
+                                    actor_type=DBActorType.AGENT,
+                                    actor_id=event_envelope.actor_id,
+                                    payload=event_envelope.payload,
+                                )
+                                
+                                await self.exception_events_repository.append_event_if_new(event_dto)
+                                logger.debug(
+                                    f"ResolutionAgent: Emitted ResolutionSuggested event for exception {exception.exception_id}, "
+                                    f"playbook_id={exception.current_playbook_id}, step_order={next_step.step_order}"
+                                )
+                            except Exception as e:
+                                logger.warning(f"Failed to emit ResolutionSuggested event: {e}")
+                    else:
+                        logger.debug(
+                            f"ResolutionAgent: No next step found for exception {exception.exception_id}, "
+                            f"current_step={current_step_order}, playbook has {len(playbook.steps)} steps"
+                        )
+                else:
+                    logger.debug(
+                        f"ResolutionAgent: Playbook {exception.current_playbook_id} not found or has no steps "
+                        f"for exception {exception.exception_id}"
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to load playbook or identify next step: {e}")
         
         # Extract actionability from context (from PolicyAgent decision evidence)
         actionability = self._extract_actionability(exception, context)
@@ -273,6 +397,7 @@ class ResolutionAgent:
             resolved_plan,
             suggested_draft_playbook,
             llm_reasoning,
+            next_action=next_action,  # Phase 7: Include next_action if available (P7-13)
         )
         
         # Log the event
@@ -1297,6 +1422,7 @@ class ResolutionAgent:
         resolved_plan: list[dict[str, Any]],
         suggested_draft_playbook: Optional[dict[str, Any]],
         llm_reasoning: Optional[dict[str, Any]],
+        next_action: Optional[dict[str, Any]] = None,
     ) -> AgentDecision:
         """
         Create agent decision with structured reasoning from LLM.
@@ -1307,6 +1433,7 @@ class ResolutionAgent:
             resolved_plan: Resolved action plan
             suggested_draft_playbook: Suggested draft playbook if applicable
             llm_reasoning: Optional LLM reasoning dictionary
+            next_action: Optional next action suggestion from assigned playbook (P7-13)
             
         Returns:
             AgentDecision with enhanced evidence including reasoning
@@ -1315,6 +1442,17 @@ class ResolutionAgent:
         evidence = []
         evidence.append(f"Exception type: {exception.exception_type}")
         evidence.append(f"Actionability: {actionability}")
+        
+        # Phase 7: Add next_action to evidence if available (P7-13)
+        if next_action:
+            evidence.append(f"Next action: {next_action.get('name', 'N/A')}")
+            evidence.append(f"Action type: {next_action.get('action_type', 'N/A')}")
+            evidence.append(f"Step order: {next_action.get('step_order', 'N/A')}")
+            if next_action.get('params_summary'):
+                params_str = ", ".join(f"{k}={v}" for k, v in list(next_action['params_summary'].items())[:3])
+                if len(next_action['params_summary']) > 3:
+                    params_str += "..."
+                evidence.append(f"Params: {params_str}")
         
         # Add LLM reasoning if available
         if llm_reasoning:

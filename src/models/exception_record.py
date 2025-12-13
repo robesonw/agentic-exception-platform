@@ -104,6 +104,12 @@ class ExceptionRecord(BaseModel):
     audit_trail: list[AuditEntry] = Field(
         default_factory=list, alias="auditTrail", description="Array of audit entries"
     )
+    current_playbook_id: int | None = Field(
+        None, alias="currentPlaybookId", description="Current playbook identifier (P7-12)"
+    )
+    current_step: int | None = Field(
+        None, alias="currentStep", description="Current step number in playbook (P7-12)"
+    )
 
     @classmethod
     def model_validate_json(cls, json_data: str | bytes, *, strict: bool | None = None) -> "ExceptionRecord":

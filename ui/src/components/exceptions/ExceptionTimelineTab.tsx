@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   Box,
   Card,
@@ -15,6 +15,9 @@ import {
   TextField,
   Button,
 } from '@mui/material'
+import PlayArrowIcon from '@mui/icons-material/PlayArrow'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import PlaylistPlayIcon from '@mui/icons-material/PlaylistPlay'
 import CardSkeleton from '../common/CardSkeleton.tsx'
 import { useExceptionEvents } from '../../hooks/useExceptions.ts'
 import { useTenant } from '../../hooks/useTenant.tsx'
@@ -50,6 +53,10 @@ function getEventColor(eventType: string): 'primary' | 'secondary' | 'success' |
   if (eventType.includes('Rejected') || eventType.includes('Failed')) return 'error'
   if (eventType.includes('Escalated')) return 'warning'
   if (eventType.includes('Evaluated') || eventType.includes('Proposed')) return 'primary'
+  // Phase 7 P7-18: Playbook events
+  if (eventType === 'PlaybookStarted') return 'info'
+  if (eventType === 'PlaybookStepCompleted') return 'success'
+  if (eventType === 'PlaybookCompleted') return 'success'
   return 'secondary'
 }
 
@@ -88,6 +95,115 @@ function formatPayloadSummary(payload: Record<string, unknown>): string {
   
   // Return a generic summary
   return `${keys.length} field${keys.length !== 1 ? 's' : ''}`
+}
+
+/**
+ * Format playbook event details for display
+ * Phase 7 P7-18: Extracts playbook-specific details from event payload
+ */
+function formatPlaybookEventDetails(eventType: string, payload: Record<string, unknown>): React.ReactNode {
+  if (!payload) return null
+
+  const details: React.ReactNode[] = []
+
+  if (eventType === 'PlaybookStarted') {
+    if (payload.playbook_id != null) {
+      details.push(
+        <Typography key="playbook_id" variant="body2" component="span">
+          <strong>Playbook ID:</strong> {String(payload.playbook_id)}
+        </Typography>
+      )
+    }
+    if (payload.playbook_name) {
+      details.push(
+        <Typography key="playbook_name" variant="body2" component="span">
+          <strong>Name:</strong> {String(payload.playbook_name)}
+        </Typography>
+      )
+    }
+    if (payload.playbook_version != null) {
+      details.push(
+        <Typography key="playbook_version" variant="body2" component="span">
+          <strong>Version:</strong> {String(payload.playbook_version)}
+        </Typography>
+      )
+    }
+    if (payload.total_steps != null) {
+      details.push(
+        <Typography key="total_steps" variant="body2" component="span">
+          <strong>Total Steps:</strong> {String(payload.total_steps)}
+        </Typography>
+      )
+    }
+  } else if (eventType === 'PlaybookStepCompleted') {
+    if (payload.playbook_id != null) {
+      details.push(
+        <Typography key="playbook_id" variant="body2" component="span">
+          <strong>Playbook ID:</strong> {String(payload.playbook_id)}
+        </Typography>
+      )
+    }
+    if (payload.step_order != null) {
+      details.push(
+        <Typography key="step_order" variant="body2" component="span">
+          <strong>Step Order:</strong> {String(payload.step_order)}
+        </Typography>
+      )
+    }
+    if (payload.step_name) {
+      details.push(
+        <Typography key="step_name" variant="body2" component="span">
+          <strong>Step Name:</strong> {String(payload.step_name)}
+        </Typography>
+      )
+    }
+    if (payload.action_type) {
+      details.push(
+        <Typography key="action_type" variant="body2" component="span">
+          <strong>Action Type:</strong> {String(payload.action_type)}
+        </Typography>
+      )
+    }
+    if (payload.notes) {
+      details.push(
+        <Typography key="notes" variant="body2" component="span" sx={{ fontStyle: 'italic' }}>
+          <strong>Notes:</strong> {String(payload.notes)}
+        </Typography>
+      )
+    }
+  } else if (eventType === 'PlaybookCompleted') {
+    if (payload.playbook_id != null) {
+      details.push(
+        <Typography key="playbook_id" variant="body2" component="span">
+          <strong>Playbook ID:</strong> {String(payload.playbook_id)}
+        </Typography>
+      )
+    }
+    if (payload.total_steps != null) {
+      details.push(
+        <Typography key="total_steps" variant="body2" component="span">
+          <strong>Total Steps:</strong> {String(payload.total_steps)}
+        </Typography>
+      )
+    }
+    if (payload.notes) {
+      details.push(
+        <Typography key="notes" variant="body2" component="span" sx={{ fontStyle: 'italic' }}>
+          <strong>Notes:</strong> {String(payload.notes)}
+        </Typography>
+      )
+    }
+  }
+
+  if (details.length === 0) {
+    return formatPayloadSummary(payload)
+  }
+
+  return (
+    <Stack spacing={0.5}>
+      {details}
+    </Stack>
+  )
 }
 
 /**
@@ -136,11 +252,23 @@ function EventTimelineCard({ event, isLast }: EventTimelineCardProps) {
           <Stack spacing={1.5}>
             {/* Event type and timestamp */}
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 1 }}>
-              <Chip
-                label={formatEventType(event.eventType)}
-                color={getEventColor(event.eventType)}
-                size="small"
-              />
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {/* Phase 7 P7-18: Playbook event icon/badge */}
+                {event.eventType === 'PlaybookStarted' && (
+                  <PlayArrowIcon sx={{ fontSize: 16, color: 'info.main' }} />
+                )}
+                {event.eventType === 'PlaybookStepCompleted' && (
+                  <CheckCircleIcon sx={{ fontSize: 16, color: 'success.main' }} />
+                )}
+                {event.eventType === 'PlaybookCompleted' && (
+                  <PlaylistPlayIcon sx={{ fontSize: 16, color: 'success.main' }} />
+                )}
+                <Chip
+                  label={formatEventType(event.eventType)}
+                  color={getEventColor(event.eventType)}
+                  size="small"
+                />
+              </Box>
               <Typography variant="caption" color="text.secondary">
                 {formatDateTime(event.createdAt)}
               </Typography>
@@ -166,12 +294,17 @@ function EventTimelineCard({ event, isLast }: EventTimelineCardProps) {
               </Box>
             </Box>
 
-            {/* Payload summary */}
+            {/* Payload summary or playbook event details */}
             <Box>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
                 Details
               </Typography>
-              <Typography variant="body2">{formatPayloadSummary(event.payload)}</Typography>
+              {/* Phase 7 P7-18: Special rendering for playbook events */}
+              {['PlaybookStarted', 'PlaybookStepCompleted', 'PlaybookCompleted'].includes(event.eventType) ? (
+                formatPlaybookEventDetails(event.eventType, event.payload)
+              ) : (
+                <Typography variant="body2">{formatPayloadSummary(event.payload)}</Typography>
+              )}
             </Box>
           </Stack>
         </CardContent>
@@ -309,6 +442,10 @@ export default function ExceptionTimelineTab({ exceptionId }: ExceptionTimelineT
               <MenuItem value="ResolutionSuggested">Resolution Suggested</MenuItem>
               <MenuItem value="ResolutionApproved">Resolution Approved</MenuItem>
               <MenuItem value="FeedbackCaptured">Feedback Captured</MenuItem>
+              {/* Phase 7 P7-18: Playbook event types */}
+              <MenuItem value="PlaybookStarted">Playbook Started</MenuItem>
+              <MenuItem value="PlaybookStepCompleted">Playbook Step Completed</MenuItem>
+              <MenuItem value="PlaybookCompleted">Playbook Completed</MenuItem>
             </Select>
           </FormControl>
 

@@ -57,6 +57,7 @@ class TriageAgent:
         audit_logger: Optional[AuditLogger] = None,
         memory_index: Optional[MemoryIndexRegistry] = None,
         llm_client: Optional[LLMClient] = None,
+        playbook_matching_service: Optional[Any] = None,
     ):
         """
         Initialize TriageAgent.
@@ -66,11 +67,13 @@ class TriageAgent:
             audit_logger: Optional AuditLogger for logging
             memory_index: Optional MemoryIndexRegistry for RAG similarity search
             llm_client: Optional LLMClient for Phase 3 LLM-enhanced reasoning
+            playbook_matching_service: Optional PlaybookMatchingService for playbook suggestions (Phase 7)
         """
         self.domain_pack = domain_pack
         self.audit_logger = audit_logger
         self.memory_index = memory_index
         self.llm_client = llm_client
+        self.playbook_matching_service = playbook_matching_service
 
     async def process(
         self,
@@ -174,10 +177,41 @@ class TriageAgent:
                 exception.exception_type = final_type
                 exception.severity = final_severity
                 
+                # Phase 7: Suggest playbook via matching service (P7-11)
+                suggested_playbook_id = None
+                playbook_reasoning = None
+                if self.playbook_matching_service:
+                    try:
+                        from src.models.tenant_policy import TenantPolicyPack
+                        # Try to get tenant_policy from context if available
+                        tenant_policy = context.get("tenant_policy") if context else None
+                        matching_result = await self.playbook_matching_service.match_playbook(
+                            tenant_id=exception.tenant_id,
+                            exception=exception,
+                            tenant_policy=tenant_policy,
+                        )
+                        if matching_result.playbook:
+                            suggested_playbook_id = matching_result.playbook.playbook_id
+                            playbook_reasoning = matching_result.reasoning
+                            logger.debug(
+                                f"TriageAgent suggested playbook {suggested_playbook_id} "
+                                f"for exception {exception.exception_id}: {playbook_reasoning}"
+                            )
+                        else:
+                            logger.debug(
+                                f"TriageAgent: No playbook match found for exception {exception.exception_id}"
+                            )
+                    except Exception as e:
+                        # Gracefully handle matching service errors - don't fail triage
+                        logger.warning(f"Playbook matching failed during triage: {e}")
+                        playbook_reasoning = f"Playbook matching error: {str(e)}"
+                
                 # Create agent decision with structured reasoning
                 context_with_search = (context or {}).copy()
                 context_with_search["hybrid_search_results"] = hybrid_search_results
                 context_with_search["llm_result"] = llm_result
+                context_with_search["suggested_playbook_id"] = suggested_playbook_id
+                context_with_search["playbook_reasoning"] = playbook_reasoning
                 decision = self._create_decision_with_reasoning(
                     exception,
                     final_type,
@@ -422,6 +456,18 @@ class TriageAgent:
                         f"  {i}. Case {result.exception_id}: "
                         f"score={result.combined_score:.2f} ({result.explanation})"
                     )
+
+        # Phase 7: Add playbook suggestion to evidence (P7-11)
+        if context and "suggested_playbook_id" in context:
+            suggested_playbook_id = context.get("suggested_playbook_id")
+            playbook_reasoning = context.get("playbook_reasoning")
+            if suggested_playbook_id:
+                evidence.append(f"Suggested playbook: {suggested_playbook_id}")
+                if playbook_reasoning:
+                    evidence.append(f"Playbook reasoning: {playbook_reasoning}")
+            elif playbook_reasoning:
+                # Include reasoning even if no playbook matched
+                evidence.append(f"Playbook matching: {playbook_reasoning}")
 
         # Calculate confidence
         # Higher confidence if exception type was already set and severity rules matched
@@ -786,6 +832,18 @@ class TriageAgent:
             else:
                 evidence.append("Note: Used LLM-enhanced reasoning")
         
+        # Phase 7: Add playbook suggestion to evidence (P7-11)
+        if context and "suggested_playbook_id" in context:
+            suggested_playbook_id = context.get("suggested_playbook_id")
+            playbook_reasoning = context.get("playbook_reasoning")
+            if suggested_playbook_id:
+                evidence.append(f"Suggested playbook: {suggested_playbook_id}")
+                if playbook_reasoning:
+                    evidence.append(f"Playbook reasoning: {playbook_reasoning}")
+            elif playbook_reasoning:
+                # Include reasoning even if no playbook matched
+                evidence.append(f"Playbook matching: {playbook_reasoning}")
+        
         decision_text = f"Triaged {exception_type} {severity.value}"
 
         return AgentDecision(
@@ -824,9 +882,42 @@ class TriageAgent:
         exception.exception_type = classified_type
         exception.severity = severity
         
+        # Phase 7: Suggest playbook via matching service (P7-11)
+        suggested_playbook_id = None
+        playbook_reasoning = None
+        if self.playbook_matching_service:
+            try:
+                from src.models.tenant_policy import TenantPolicyPack
+                # Try to get tenant_policy from context if available
+                tenant_policy = context.get("tenant_policy") if context else None
+                matching_result = await self.playbook_matching_service.match_playbook(
+                    tenant_id=exception.tenant_id,
+                    exception=exception,
+                    tenant_policy=tenant_policy,
+                )
+                if matching_result.playbook:
+                    suggested_playbook_id = matching_result.playbook.playbook_id
+                    playbook_reasoning = matching_result.reasoning
+                    logger.debug(
+                        f"TriageAgent suggested playbook {suggested_playbook_id} "
+                        f"for exception {exception.exception_id}: {playbook_reasoning}"
+                    )
+                else:
+                    # No playbook matched, but still capture reasoning
+                    playbook_reasoning = matching_result.reasoning
+                    logger.debug(
+                        f"TriageAgent: No playbook match found for exception {exception.exception_id}: {playbook_reasoning}"
+                    )
+            except Exception as e:
+                # Gracefully handle matching service errors - don't fail triage
+                logger.warning(f"Playbook matching failed during triage: {e}")
+                playbook_reasoning = f"Playbook matching error: {str(e)}"
+        
         # Create agent decision (pass hybrid_search_results via context)
         context_with_search = (context or {}).copy()
         context_with_search["hybrid_search_results"] = hybrid_search_results
+        context_with_search["suggested_playbook_id"] = suggested_playbook_id
+        context_with_search["playbook_reasoning"] = playbook_reasoning
         decision = self._create_decision(
             exception, classified_type, severity, context=context_with_search
         )

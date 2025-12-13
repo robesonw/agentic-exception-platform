@@ -632,6 +632,269 @@ class TestPolicyAgentRules:
         assert decision.next_step == "Escalate" or "Escalation recommended" in decision.evidence
 
 
+class TestPolicyAgentPlaybookAssignment:
+    """Tests for playbook assignment in PolicyAgent (P7-12)."""
+
+    @pytest.mark.asyncio
+    async def test_playbook_assignment_from_triage_suggestion(self, finance_domain_pack, finance_tenant_policy):
+        """Test that playbook is assigned when suggested by triage and approved."""
+        from unittest.mock import AsyncMock, MagicMock
+        
+        # Create mock exception events repository
+        mock_events_repo = AsyncMock()
+        mock_events_repo.append_event_if_new.return_value = True
+        
+        agent = PolicyAgent(
+            finance_domain_pack,
+            finance_tenant_policy,
+            playbook_matching_service=None,  # Use triage suggestion
+            exception_events_repository=mock_events_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_001",
+            tenantId="TENANT_FINANCE_001",
+            sourceSystem="TradingSystem",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.HIGH,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+        )
+        
+        # Context with playbook suggestion from triage
+        context = {
+            "suggested_playbook_id": 42,
+            "playbook_reasoning": "Matched based on exception type and severity",
+        }
+        
+        decision = await agent.process(exception, context)
+        
+        # Verify playbook was assigned
+        assert exception.current_playbook_id == 42
+        assert exception.current_step == 1
+        
+        # Verify PolicyEvaluated event was emitted
+        assert mock_events_repo.append_event_if_new.called
+        call_args = mock_events_repo.append_event_if_new.call_args[0][0]
+        assert call_args.event_type == "PolicyEvaluated"
+        assert call_args.payload["playbook_id"] == 42
+        assert call_args.payload["reasoning"] == "Matched based on exception type and severity"
+
+    @pytest.mark.asyncio
+    async def test_playbook_assignment_via_matching_service(self, finance_domain_pack, finance_tenant_policy):
+        """Test that playbook is assigned when matching service finds a match."""
+        from unittest.mock import AsyncMock, MagicMock
+        from src.playbooks.matching_service import MatchingResult
+        
+        # Create mock playbook matching service
+        mock_matching_service = AsyncMock()
+        mock_playbook = MagicMock()
+        mock_playbook.playbook_id = 99
+        mock_matching_service.match_playbook.return_value = MatchingResult(
+            playbook=mock_playbook,
+            reasoning="Matched based on domain and exception type"
+        )
+        
+        # Create mock exception events repository
+        mock_events_repo = AsyncMock()
+        mock_events_repo.append_event_if_new.return_value = True
+        
+        agent = PolicyAgent(
+            finance_domain_pack,
+            finance_tenant_policy,
+            playbook_matching_service=mock_matching_service,
+            exception_events_repository=mock_events_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_002",
+            tenantId="TENANT_FINANCE_001",
+            sourceSystem="TradingSystem",
+            exceptionType="POSITION_BREAK",
+            severity=Severity.CRITICAL,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+        )
+        
+        decision = await agent.process(exception, context={})
+        
+        # Verify matching service was called
+        mock_matching_service.match_playbook.assert_called_once()
+        
+        # Verify playbook was assigned
+        assert exception.current_playbook_id == 99
+        assert exception.current_step == 1
+        
+        # Verify PolicyEvaluated event was emitted
+        assert mock_events_repo.append_event_if_new.called
+        call_args = mock_events_repo.append_event_if_new.call_args[0][0]
+        assert call_args.event_type == "PolicyEvaluated"
+        assert call_args.payload["playbook_id"] == 99
+
+    @pytest.mark.asyncio
+    async def test_playbook_not_assigned_when_blocked(self, finance_domain_pack, finance_tenant_policy):
+        """Test that playbook is NOT assigned when decision is BLOCK."""
+        from unittest.mock import AsyncMock
+        
+        # Create mock exception events repository
+        mock_events_repo = AsyncMock()
+        mock_events_repo.append_event_if_new.return_value = True
+        
+        agent = PolicyAgent(
+            finance_domain_pack,
+            finance_tenant_policy,
+            exception_events_repository=mock_events_repo,
+        )
+        
+        # Exception with no approved playbook (will be blocked)
+        exception = ExceptionRecord(
+            exceptionId="exc_003",
+            tenantId="TENANT_FINANCE_001",
+            sourceSystem="TradingSystem",
+            exceptionType="UNKNOWN_TYPE",  # Not in approved list
+            severity=Severity.HIGH,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+        )
+        
+        context = {
+            "suggested_playbook_id": 42,
+            "playbook_reasoning": "Test reasoning",
+        }
+        
+        decision = await agent.process(exception, context)
+        
+        # Verify playbook was NOT assigned (decision should be blocked)
+        assert exception.current_playbook_id is None
+        assert exception.current_step is None
+        assert "Blocked" in decision.decision or decision.next_step == "Escalate"
+
+    @pytest.mark.asyncio
+    async def test_playbook_not_assigned_when_escalated(self, finance_domain_pack, finance_tenant_policy):
+        """Test that playbook is NOT assigned when decision is Escalate."""
+        from unittest.mock import AsyncMock
+        
+        # Create mock exception events repository
+        mock_events_repo = AsyncMock()
+        mock_events_repo.append_event_if_new.return_value = True
+        
+        agent = PolicyAgent(
+            finance_domain_pack,
+            finance_tenant_policy,
+            exception_events_repository=mock_events_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_004",
+            tenantId="TENANT_FINANCE_001",
+            sourceSystem="TradingSystem",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.HIGH,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+        )
+        
+        # Low confidence triggers escalation
+        context = {
+            "confidence": 0.3,  # Below threshold
+            "suggested_playbook_id": 42,
+        }
+        
+        decision = await agent.process(exception, context)
+        
+        # Verify playbook was NOT assigned (should escalate)
+        assert exception.current_playbook_id is None
+        assert exception.current_step is None
+        assert decision.next_step == "Escalate" or "Escalation recommended" in " ".join(decision.evidence)
+
+    @pytest.mark.asyncio
+    async def test_policy_evaluated_event_includes_playbook_info(self, finance_domain_pack, finance_tenant_policy):
+        """Test that PolicyEvaluated event includes playbook_id and reasoning."""
+        from unittest.mock import AsyncMock
+        
+        # Create mock exception events repository
+        mock_events_repo = AsyncMock()
+        mock_events_repo.append_event_if_new.return_value = True
+        
+        agent = PolicyAgent(
+            finance_domain_pack,
+            finance_tenant_policy,
+            exception_events_repository=mock_events_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_005",
+            tenantId="TENANT_FINANCE_001",
+            sourceSystem="TradingSystem",
+            exceptionType="SETTLEMENT_FAIL",
+            severity=Severity.HIGH,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+        )
+        
+        context = {
+            "suggested_playbook_id": 123,
+            "playbook_reasoning": "Test playbook assignment reasoning",
+        }
+        
+        decision = await agent.process(exception, context)
+        
+        # Verify event was logged
+        assert mock_events_repo.append_event_if_new.called
+        
+        # Verify event payload includes playbook info
+        call_args = mock_events_repo.append_event_if_new.call_args[0][0]
+        assert call_args.event_type == "PolicyEvaluated"
+        assert call_args.payload["playbook_id"] == 123
+        assert call_args.payload["reasoning"] == "Test playbook assignment reasoning"
+        assert call_args.payload["decision"] is not None
+
+    @pytest.mark.asyncio
+    async def test_playbook_assignment_persisted_in_exception(self, finance_domain_pack, finance_tenant_policy):
+        """Test that playbook assignment is persisted in exception object."""
+        from unittest.mock import AsyncMock
+        
+        # Create mock exception events repository
+        mock_events_repo = AsyncMock()
+        mock_events_repo.append_event_if_new.return_value = True
+        
+        agent = PolicyAgent(
+            finance_domain_pack,
+            finance_tenant_policy,
+            exception_events_repository=mock_events_repo,
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_006",
+            tenantId="TENANT_FINANCE_001",
+            sourceSystem="TradingSystem",
+            exceptionType="POSITION_BREAK",
+            severity=Severity.CRITICAL,
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+        )
+        
+        # Initially no playbook assigned
+        assert exception.current_playbook_id is None
+        assert exception.current_step is None
+        
+        context = {
+            "suggested_playbook_id": 456,
+            "playbook_reasoning": "Critical position break requires immediate playbook",
+        }
+        
+        decision = await agent.process(exception, context)
+        
+        # Verify assignment persisted
+        assert exception.current_playbook_id == 456
+        assert exception.current_step == 1
+        
+        # Verify exception can be serialized with new fields
+        exception_dict = exception.model_dump(by_alias=True)
+        assert exception_dict["currentPlaybookId"] == 456
+        assert exception_dict["currentStep"] == 1
+
+
 class TestPolicyAgentIntegration:
     """Integration tests for complete policy evaluation workflow."""
 

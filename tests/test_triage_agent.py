@@ -76,7 +76,7 @@ def sample_audit_logger(tmp_path, monkeypatch):
     audit_dir = tmp_path / "runtime" / "audit"
     audit_dir.mkdir(parents=True, exist_ok=True)
     
-    def patched_get_log_file(self):
+    def patched_get_log_file(self, tenant_id=None):
         if self._log_file is None:
             self._log_file = audit_dir / f"{self.run_id}.jsonl"
         return self._log_file
@@ -566,3 +566,240 @@ class TestTriageAgentIntegration:
         assert "CRITICAL" in decision.decision
         assert decision.confidence > 0.0
 
+
+class TestTriageAgentPlaybookSuggestion:
+    """Tests for playbook suggestion in TriageAgent (P7-11)."""
+
+    @pytest.mark.asyncio
+    async def test_playbook_suggestion_included_in_evidence(self, finance_domain_pack):
+        """Test that playbook suggestion is included in decision evidence."""
+        from unittest.mock import AsyncMock, MagicMock
+        from src.playbooks.matching_service import MatchingResult
+        
+        # Create mock playbook matching service
+        mock_matching_service = AsyncMock()
+        mock_playbook = MagicMock()
+        mock_playbook.playbook_id = 42
+        mock_matching_service.match_playbook.return_value = MatchingResult(
+            playbook=mock_playbook,
+            reasoning="Matched based on exception type and severity"
+        )
+        
+        agent = TriageAgent(
+            domain_pack=finance_domain_pack,
+            playbook_matching_service=mock_matching_service
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_001",
+            tenantId="tenant_001",
+            sourceSystem="TradingSystem",
+            exceptionType="POSITION_BREAK",
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+        )
+        
+        decision = await agent.process(exception)
+        
+        # Verify playbook suggestion is in evidence
+        evidence_text = " ".join(decision.evidence)
+        assert "Suggested playbook: 42" in evidence_text or "42" in evidence_text
+        assert "Playbook reasoning" in evidence_text or "Matched based on" in evidence_text
+        
+        # Verify matching service was called
+        mock_matching_service.match_playbook.assert_called_once()
+        call_args = mock_matching_service.match_playbook.call_args
+        assert call_args[1]["tenant_id"] == "tenant_001"
+        assert call_args[1]["exception"] == exception
+
+    @pytest.mark.asyncio
+    async def test_playbook_suggestion_logged_in_audit(self, finance_domain_pack, sample_audit_logger):
+        """Test that playbook suggestion is logged in audit trail."""
+        from unittest.mock import AsyncMock, MagicMock
+        from src.playbooks.matching_service import MatchingResult
+        
+        # Create mock playbook matching service
+        mock_matching_service = AsyncMock()
+        mock_playbook = MagicMock()
+        mock_playbook.playbook_id = 99
+        mock_matching_service.match_playbook.return_value = MatchingResult(
+            playbook=mock_playbook,
+            reasoning="Test playbook match reasoning"
+        )
+        
+        agent = TriageAgent(
+            domain_pack=finance_domain_pack,
+            audit_logger=sample_audit_logger,
+            playbook_matching_service=mock_matching_service
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_002",
+            tenantId="tenant_001",
+            sourceSystem="TradingSystem",
+            exceptionType="CASH_BREAK",
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+        )
+        
+        decision = await agent.process(exception)
+        sample_audit_logger.close()
+        
+        # Verify log file was created
+        log_file = sample_audit_logger._get_log_file()
+        assert log_file.exists()
+        
+        # Verify log contains playbook suggestion
+        import json
+        with open(log_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            # Find the TriageAgent event
+            triage_entry = None
+            for line in lines:
+                entry = json.loads(line)
+                if entry.get("event_type") == "agent_event" and entry.get("data", {}).get("agent_name") == "TriageAgent":
+                    triage_entry = entry
+                    break
+        
+        assert triage_entry is not None
+        # Verify decision evidence contains playbook suggestion
+        decision_data = triage_entry.get("data", {}).get("output", {})
+        evidence = decision_data.get("evidence", [])
+        evidence_text = " ".join(evidence)
+        assert "Suggested playbook" in evidence_text or "99" in evidence_text
+
+    @pytest.mark.asyncio
+    async def test_no_playbook_match_still_logged(self, finance_domain_pack, sample_audit_logger):
+        """Test that no playbook match is still logged with reasoning."""
+        from unittest.mock import AsyncMock
+        from src.playbooks.matching_service import MatchingResult
+        
+        # Create mock playbook matching service that returns no match
+        mock_matching_service = AsyncMock()
+        mock_matching_service.match_playbook.return_value = MatchingResult(
+            playbook=None,
+            reasoning="No playbooks matched the exception conditions"
+        )
+        
+        agent = TriageAgent(
+            domain_pack=finance_domain_pack,
+            audit_logger=sample_audit_logger,
+            playbook_matching_service=mock_matching_service
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_003",
+            tenantId="tenant_001",
+            sourceSystem="TradingSystem",
+            exceptionType="MISMATCHED_TRADE_DETAILS",
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+        )
+        
+        decision = await agent.process(exception)
+        sample_audit_logger.close()
+        
+        # Verify playbook matching reasoning is in evidence
+        evidence_text = " ".join(decision.evidence)
+        assert "Playbook matching" in evidence_text or "No playbooks matched" in evidence_text
+
+    @pytest.mark.asyncio
+    async def test_playbook_suggestion_does_not_set_exception_fields(self, finance_domain_pack):
+        """Test that playbook suggestion does NOT set exception.current_playbook_id/current_step."""
+        from unittest.mock import AsyncMock, MagicMock
+        from src.playbooks.matching_service import MatchingResult
+        
+        # Create mock playbook matching service
+        mock_matching_service = AsyncMock()
+        mock_playbook = MagicMock()
+        mock_playbook.playbook_id = 123
+        mock_matching_service.match_playbook.return_value = MatchingResult(
+            playbook=mock_playbook,
+            reasoning="Test match"
+        )
+        
+        agent = TriageAgent(
+            domain_pack=finance_domain_pack,
+            playbook_matching_service=mock_matching_service
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_004",
+            tenantId="tenant_001",
+            sourceSystem="TradingSystem",
+            exceptionType="POSITION_BREAK",
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+        )
+        
+        # Verify exception doesn't have current_playbook_id or current_step fields
+        assert not hasattr(exception, "current_playbook_id")
+        assert not hasattr(exception, "current_step")
+        
+        decision = await agent.process(exception)
+        
+        # Verify exception still doesn't have these fields set
+        assert not hasattr(exception, "current_playbook_id")
+        assert not hasattr(exception, "current_step")
+        
+        # Verify playbook suggestion is still in evidence
+        evidence_text = " ".join(decision.evidence)
+        assert "Suggested playbook" in evidence_text or "123" in evidence_text
+
+    @pytest.mark.asyncio
+    async def test_playbook_matching_error_handled_gracefully(self, finance_domain_pack):
+        """Test that playbook matching errors don't fail triage."""
+        from unittest.mock import AsyncMock
+        
+        # Create mock playbook matching service that raises an error
+        mock_matching_service = AsyncMock()
+        mock_matching_service.match_playbook.side_effect = Exception("Matching service error")
+        
+        agent = TriageAgent(
+            domain_pack=finance_domain_pack,
+            playbook_matching_service=mock_matching_service
+        )
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_005",
+            tenantId="tenant_001",
+            sourceSystem="TradingSystem",
+            exceptionType="CASH_BREAK",
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+        )
+        
+        # Should not raise - triage should complete successfully
+        decision = await agent.process(exception)
+        
+        # Verify triage completed successfully
+        assert decision is not None
+        assert "CASH_BREAK" in decision.decision
+        assert decision.next_step == "ProceedToPolicy"
+        
+        # Verify error reasoning might be in evidence
+        evidence_text = " ".join(decision.evidence)
+        # Error might be logged, but triage should still succeed
+
+    @pytest.mark.asyncio
+    async def test_playbook_suggestion_without_matching_service(self, finance_domain_pack):
+        """Test that triage works without playbook matching service."""
+        agent = TriageAgent(domain_pack=finance_domain_pack)
+        
+        exception = ExceptionRecord(
+            exceptionId="exc_006",
+            tenantId="tenant_001",
+            sourceSystem="TradingSystem",
+            exceptionType="POSITION_BREAK",
+            timestamp=datetime.now(timezone.utc),
+            rawPayload={},
+        )
+        
+        # Should work fine without matching service
+        decision = await agent.process(exception)
+        
+        assert decision is not None
+        assert "POSITION_BREAK" in decision.decision
+        # Should not have playbook suggestion in evidence
+        evidence_text = " ".join(decision.evidence)
+        assert "Suggested playbook" not in evidence_text

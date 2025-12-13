@@ -192,6 +192,74 @@ export interface ListExceptionEventsParams {
 }
 
 /**
+ * Playbook step status
+ * Mirrors PlaybookStepStatus from src/api/routes/exceptions.py
+ */
+export interface PlaybookStepStatus {
+  /** Step order number (1-indexed) */
+  stepOrder: number
+  /** Step name */
+  name: string
+  /** Action type (e.g., notify, call_tool) */
+  actionType: string
+  /** Step status: pending, completed, or skipped */
+  status: 'pending' | 'completed' | 'skipped'
+}
+
+/**
+ * Playbook status response
+ * Mirrors PlaybookStatusResponse from src/api/routes/exceptions.py
+ */
+export interface PlaybookStatusResponse {
+  /** Exception identifier */
+  exceptionId: string
+  /** Playbook identifier (optional) */
+  playbookId?: number | null
+  /** Playbook name (optional) */
+  playbookName?: string | null
+  /** Playbook version (optional) */
+  playbookVersion?: number | null
+  /** Playbook matching conditions (optional) */
+  conditions?: Record<string, unknown> | null
+  /** List of playbook steps with status */
+  steps: PlaybookStepStatus[]
+  /** Current step number (1-indexed, optional) */
+  currentStep?: number | null
+}
+
+/**
+ * Playbook recalculation response
+ * Mirrors PlaybookRecalculationResponse from src/api/routes/exceptions.py
+ */
+export interface PlaybookRecalculationResponse {
+  /** Exception identifier */
+  exceptionId: string
+  /** Current playbook identifier (optional) */
+  currentPlaybookId?: number | null
+  /** Current step number in playbook (optional) */
+  currentStep?: number | null
+  /** Name of the selected playbook (optional) */
+  playbookName?: string | null
+  /** Version of the selected playbook (optional) */
+  playbookVersion?: number | null
+  /** Reasoning for playbook selection (optional) */
+  reasoning?: string | null
+}
+
+/**
+ * Step completion request
+ * Mirrors StepCompletionRequest from src/api/routes/exceptions.py
+ */
+export interface StepCompletionRequest {
+  /** Actor type: human, agent, or system */
+  actorType: 'human' | 'agent' | 'system'
+  /** Actor identifier (user ID or agent name) */
+  actorId: string
+  /** Optional notes about step completion */
+  notes?: string | null
+}
+
+/**
  * Exception event structure
  * Mirrors response from GET /exceptions/{exception_id}/events
  */
@@ -285,5 +353,94 @@ export async function fetchExceptionEvents(
     pageSize: response.page_size || response.pageSize || 50,
     totalPages: response.total_pages || response.totalPages || 1,
   }
+}
+
+/**
+ * Get playbook status for an exception
+ * GET /exceptions/{tenant_id}/{exception_id}/playbook
+ * 
+ * Phase 7 P7-15: Returns playbook metadata and step statuses.
+ * 
+ * @param exceptionId Exception identifier
+ * @returns Playbook status with steps and current step indicator
+ */
+export async function getExceptionPlaybook(
+  exceptionId: string
+): Promise<PlaybookStatusResponse> {
+  // tenant_id will be added automatically by httpClient interceptor
+  // but we ensure it's explicitly passed in case interceptor hasn't run yet
+  const tenantId = getTenantIdForHttpClient()
+  if (!tenantId) {
+    throw new Error('tenantId is required for getExceptionPlaybook')
+  }
+  
+  // Backend endpoint is /exceptions/{tenant_id}/{exception_id}/playbook
+  // Note: tenant_id is in the path, not as a query parameter
+  const response = await httpClient.get<PlaybookStatusResponse>(
+    `/exceptions/${tenantId}/${exceptionId}/playbook`
+  )
+  
+  return response
+}
+
+/**
+ * Recalculate playbook assignment for an exception
+ * POST /exceptions/{tenant_id}/{exception_id}/playbook/recalculate
+ * 
+ * Phase 7 P7-16: Re-runs playbook matching and updates exception playbook assignment.
+ * 
+ * @param exceptionId Exception identifier
+ * @returns Playbook recalculation response with updated assignment
+ */
+export async function recalculatePlaybook(
+  exceptionId: string
+): Promise<PlaybookRecalculationResponse> {
+  // tenant_id will be added automatically by httpClient interceptor
+  // but we ensure it's explicitly passed in case interceptor hasn't run yet
+  const tenantId = getTenantIdForHttpClient()
+  if (!tenantId) {
+    throw new Error('tenantId is required for recalculatePlaybook')
+  }
+  
+  // Backend endpoint is /exceptions/{tenant_id}/{exception_id}/playbook/recalculate
+  // Note: tenant_id is in the path, not as a query parameter
+  const response = await httpClient.post<PlaybookRecalculationResponse>(
+    `/exceptions/${tenantId}/${exceptionId}/playbook/recalculate`
+  )
+  
+  return response
+}
+
+/**
+ * Complete a playbook step for an exception
+ * POST /exceptions/{tenant_id}/{exception_id}/playbook/steps/{step_order}/complete
+ * 
+ * Phase 7 P7-17: Completes a playbook step and returns updated playbook status.
+ * 
+ * @param exceptionId Exception identifier
+ * @param stepOrder Step order number to complete (1-indexed)
+ * @param request Step completion request with actor type, actor ID, and optional notes
+ * @returns Updated playbook status response
+ */
+export async function completePlaybookStep(
+  exceptionId: string,
+  stepOrder: number,
+  request: StepCompletionRequest
+): Promise<PlaybookStatusResponse> {
+  // tenant_id will be added automatically by httpClient interceptor
+  // but we ensure it's explicitly passed in case interceptor hasn't run yet
+  const tenantId = getTenantIdForHttpClient()
+  if (!tenantId) {
+    throw new Error('tenantId is required for completePlaybookStep')
+  }
+  
+  // Backend endpoint is /exceptions/{tenant_id}/{exception_id}/playbook/steps/{step_order}/complete
+  // Note: tenant_id is in the path, not as a query parameter
+  const response = await httpClient.post<PlaybookStatusResponse>(
+    `/exceptions/${tenantId}/${exceptionId}/playbook/steps/${stepOrder}/complete`,
+    request
+  )
+  
+  return response
 }
 

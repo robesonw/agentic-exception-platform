@@ -15,6 +15,8 @@ Array: [{condition: string (e.g., 'exceptionType == "CriticalFailure"'), severit
 ## Playbook Format
 Array: [{exceptionType: string, steps: array of {action: string (e.g., 'invokeTool'), parameters: object, conditional: string, fallback: string}]}.
 
+**Note:** For detailed playbook configuration guide including schema, conditions syntax, action types, placeholder templating, and examples, see [`docs/playbooks-configuration.md`](./playbooks-configuration.md).
+
 ## Guardrails Format
 Object: {allowLists: {tools: array, actions: array}, blockLists: {tools: array, actions: array}, humanApprovalThreshold: float (0.0-1.0 for confidence), severityGates: object (severity: {requireApproval: boolean})}.
 
