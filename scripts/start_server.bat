@@ -39,6 +39,9 @@ if not exist ".env" (
     echo.
 )
 
+REM Set DATABASE_URL environment variable
+set DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/sentinai
+
 REM Start server
 echo.
 echo Starting FastAPI server on http://localhost:8000

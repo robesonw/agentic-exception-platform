@@ -81,8 +81,13 @@ class IntakeAgent:
 
         # Log the event
         if self.audit_logger:
+            # P8-14: Redact secrets from raw_exception before logging
+            from src.tools.security import redact_secrets_from_dict
+            raw_exception_dict = raw_exception if isinstance(raw_exception, dict) else raw_exception.model_dump()
+            redacted_raw_exception = redact_secrets_from_dict(raw_exception_dict) if isinstance(raw_exception_dict, dict) else raw_exception_dict
+            
             input_data = {
-                "raw_exception": raw_exception if isinstance(raw_exception, dict) else raw_exception.model_dump(),
+                "raw_exception": redacted_raw_exception,  # P8-14: Use redacted version
                 "tenant_id": tenant_id,
                 "pipeline_id": pipeline_id,
             }

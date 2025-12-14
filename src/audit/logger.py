@@ -125,6 +125,7 @@ class AuditLogger:
         Write a log entry to the JSONL file.
         
         Phase 3: Uses partitioning by tenant_id for scaling.
+        P8-14: Redacts secrets from data before writing to ensure secrets are never logged.
         
         Args:
             event_type: Type of event (agent_event, tool_call, decision)
@@ -132,6 +133,10 @@ class AuditLogger:
             tenant_id: Optional tenant ID (uses default if not provided)
         """
         effective_tenant_id = tenant_id or self.default_tenant_id
+        
+        # P8-14: Redact secrets from data before logging
+        from src.tools.security import redact_secrets_from_dict
+        redacted_data = redact_secrets_from_dict(data) if isinstance(data, dict) else data
         
         # Phase 3: Extract partition key for indexing hints
         partition_key = None
@@ -143,7 +148,7 @@ class AuditLogger:
             "run_id": self.run_id,
             "tenant_id": effective_tenant_id,
             "event_type": event_type,
-            "data": data,
+            "data": redacted_data,  # P8-14: Use redacted data
         }
         
         # Phase 3: Add partition metadata for indexing

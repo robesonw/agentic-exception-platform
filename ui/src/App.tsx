@@ -4,6 +4,8 @@ import LoginPage from './routes/LoginPage.tsx'
 import ExceptionsPage from './routes/ExceptionsPage.tsx'
 import ExceptionDetailPage from './routes/ExceptionDetailPage.tsx'
 import SupervisorPage from './routes/SupervisorPage.tsx'
+import ToolsPage from './routes/ToolsPage.tsx'
+import ToolDetailPage from './routes/ToolDetailPage.tsx'
 import ConfigPage from './routes/ConfigPage.tsx'
 import ConfigDetailPage from './routes/ConfigDetailPage.tsx'
 import NotFoundPage from './routes/NotFoundPage.tsx'
@@ -28,6 +30,8 @@ function App() {
         <Route path="/exceptions" element={<ExceptionsPage />} />
         <Route path="/exceptions/:id" element={<ExceptionDetailPage />} />
         <Route path="/supervisor" element={<SupervisorPage />} />
+        <Route path="/tools" element={<ToolsPage />} />
+        <Route path="/tools/:id" element={<ToolDetailPage />} />
         <Route path="/config" element={<ConfigPage />} />
         <Route path="/config/:type/:id" element={<ConfigDetailPage />} />
         <Route path="/" element={<ExceptionsPage />} />

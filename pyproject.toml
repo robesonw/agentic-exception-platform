@@ -16,6 +16,7 @@ dependencies = [
     "httpx>=0.25.0",
     "python-dotenv>=1.0.0",
     "PyJWT>=2.8.0",
+    "jsonschema>=4.19.0",
 ]
 
 [project.optional-dependencies]

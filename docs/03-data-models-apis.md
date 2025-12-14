@@ -49,12 +49,35 @@ Agent Message Contracts
 
 As defined in Section 7: Input is exception + prior outputs; output is the standardized JSON with decision, confidence, evidence, nextStep.
 
-Tools API Specification
+Tools API Specification (Phase 8)
 
-Endpoint: POST /tools/{tenantId}/{toolName}
-Request Body: {parameters: object (per tool definition)}
-Response: {result: object, status: string}
-Security: API key + tenant scoping.
+**List Tools:** GET /api/tools
+- Query params: scope, enabled, name, type, page, pageSize
+- Returns: List of tool definitions with enablement status
+
+**Get Tool:** GET /api/tools/{tool_id}
+- Returns: Tool definition with full configuration
+
+**Execute Tool:** POST /api/tools/{tool_id}/execute
+- Request Body: {payload: object, exceptionId?: string, actorType: string, actorId: string}
+- Returns: Execution result with status (requested|running|succeeded|failed)
+
+**List Executions:** GET /api/tools/executions
+- Query params: tool_id, exception_id, status, actor_type, actor_id, page, pageSize
+- Returns: Paginated list of tool executions
+
+**Get Execution:** GET /api/tools/executions/{execution_id}
+- Returns: Execution detail with input/output payloads
+
+**Enable/Disable Tool:** PUT /api/tools/{tool_id}/enablement
+- Request Body: {enabled: boolean}
+- Returns: Enablement status
+
+**Get Enablement:** GET /api/tools/{tool_id}/enablement
+- Returns: Current enablement status for tenant
+
+Security: API key + tenant scoping. All executions are audited.
+See `docs/tools-guide.md` for complete API documentation and examples.
 
 System-Level REST APIs
 

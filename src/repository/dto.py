@@ -11,7 +11,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from src.infrastructure.db.models import ActorType, ExceptionSeverity, ExceptionStatus, TenantStatus
+from src.infrastructure.db.models import (
+    ActorType,
+    ExceptionSeverity,
+    ExceptionStatus,
+    TenantStatus,
+    ToolExecutionStatus,
+)
 
 
 class ExceptionCreateOrUpdateDTO(BaseModel):
@@ -272,6 +278,67 @@ class ToolDefinitionFilter(BaseModel):
 
     name: Optional[str] = Field(None, description="Filter by tool name (case-insensitive substring match)")
     type: Optional[str] = Field(None, description="Filter by tool type (exact match)")
+
+    class Config:
+        """Pydantic configuration."""
+
+        use_enum_values = True
+
+
+class ToolExecutionCreateDTO(BaseModel):
+    """
+    DTO for creating a new tool execution record.
+    
+    Phase 8 P8-3: Used by ToolExecutionRepository.create_execution.
+    """
+
+    tenant_id: str = Field(..., description="Tenant identifier")
+    tool_id: int = Field(..., ge=1, description="Tool definition identifier")
+    exception_id: Optional[str] = Field(None, description="Exception identifier (nullable)")
+    status: ToolExecutionStatus = Field(
+        default=ToolExecutionStatus.REQUESTED, description="Execution status"
+    )
+    requested_by_actor_type: ActorType = Field(..., description="Actor type who requested execution")
+    requested_by_actor_id: str = Field(..., min_length=1, description="Actor identifier who requested execution")
+    input_payload: dict[str, Any] = Field(..., description="Input payload (JSON) passed to tool")
+    output_payload: Optional[dict[str, Any]] = Field(None, description="Output payload (JSON) from tool execution")
+    error_message: Optional[str] = Field(None, description="Error message if execution failed")
+
+    class Config:
+        """Pydantic configuration."""
+
+        use_enum_values = True
+
+
+class ToolExecutionUpdateDTO(BaseModel):
+    """
+    DTO for updating a tool execution record.
+    
+    Phase 8 P8-3: Used by ToolExecutionRepository.update_execution.
+    """
+
+    status: Optional[ToolExecutionStatus] = Field(None, description="Execution status")
+    output_payload: Optional[dict[str, Any]] = Field(None, description="Output payload (JSON) from tool execution")
+    error_message: Optional[str] = Field(None, description="Error message if execution failed")
+
+    class Config:
+        """Pydantic configuration."""
+
+        use_enum_values = True
+
+
+class ToolExecutionFilter(BaseModel):
+    """
+    DTO for filtering tool executions in list queries.
+    
+    Phase 8 P8-3: All fields are optional - multiple filters can be combined.
+    """
+
+    tool_id: Optional[int] = Field(None, ge=1, description="Filter by tool ID")
+    exception_id: Optional[str] = Field(None, description="Filter by exception ID")
+    status: Optional[ToolExecutionStatus] = Field(None, description="Filter by execution status")
+    actor_type: Optional[ActorType] = Field(None, description="Filter by actor type")
+    actor_id: Optional[str] = Field(None, description="Filter by actor ID")
 
     class Config:
         """Pydantic configuration."""

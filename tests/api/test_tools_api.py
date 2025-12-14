@@ -664,3 +664,238 @@ class TestToolAPI:
         finally:
             session_module.get_db_session_context = original_get_context
 
+    # Phase 8 P8-1: Schema validation tests
+    @pytest.mark.asyncio
+    async def test_create_tool_phase8_format_valid(self, test_db_session, setup_test_data):
+        """Test creating a tool with Phase 8 format (all required fields)."""
+        import src.infrastructure.db.session as session_module
+        original_get_context = session_module.get_db_session_context
+        
+        async def mock_get_context():
+            class MockContext:
+                async def __aenter__(self):
+                    return test_db_session
+                
+                async def __aexit__(self, *args):
+                    pass
+            
+            return MockContext()
+        
+        session_module.get_db_session_context = mock_get_context
+        
+        try:
+            response = client.post(
+                "/api/tools?tenant_id=TENANT_001",
+                headers={"X-API-KEY": DEFAULT_API_KEY},
+                json={
+                    "name": "Phase8 HTTP Tool",
+                    "type": "http",
+                    "description": "Test HTTP tool with Phase 8 format",
+                    "inputSchema": {"type": "object", "properties": {"param": {"type": "string"}}},
+                    "outputSchema": {"type": "object"},
+                    "authType": "api_key",
+                    "endpointConfig": {
+                        "url": "https://api.example.com/webhook",
+                        "method": "POST",
+                    },
+                    "tenantScope": "tenant",
+                },
+            )
+            
+            assert response.status_code == 201
+            data = response.json()
+            assert data["name"] == "Phase8 HTTP Tool"
+            assert data["type"] == "http"
+            assert data["tenantId"] == "TENANT_001"
+        finally:
+            session_module.get_db_session_context = original_get_context
+
+    @pytest.mark.asyncio
+    async def test_create_tool_phase8_format_missing_required_fields(self, test_db_session, setup_test_data):
+        """Test creating a tool with Phase 8 format missing required fields (should fail)."""
+        import src.infrastructure.db.session as session_module
+        original_get_context = session_module.get_db_session_context
+        
+        async def mock_get_context():
+            class MockContext:
+                async def __aenter__(self):
+                    return test_db_session
+                
+                async def __aexit__(self, *args):
+                    pass
+            
+            return MockContext()
+        
+        session_module.get_db_session_context = mock_get_context
+        
+        try:
+            response = client.post(
+                "/api/tools?tenant_id=TENANT_001",
+                headers={"X-API-KEY": DEFAULT_API_KEY},
+                json={
+                    "name": "Invalid Tool",
+                    "type": "http",
+                    # Missing description, inputSchema, outputSchema, authType
+                },
+            )
+            
+            assert response.status_code == 400
+            assert "required" in response.json()["detail"].lower() or "validation" in response.json()["detail"].lower()
+        finally:
+            session_module.get_db_session_context = original_get_context
+
+    @pytest.mark.asyncio
+    async def test_create_tool_http_missing_endpoint_config(self, test_db_session, setup_test_data):
+        """Test creating an HTTP tool without endpoint_config (should fail)."""
+        import src.infrastructure.db.session as session_module
+        original_get_context = session_module.get_db_session_context
+        
+        async def mock_get_context():
+            class MockContext:
+                async def __aenter__(self):
+                    return test_db_session
+                
+                async def __aexit__(self, *args):
+                    pass
+            
+            return MockContext()
+        
+        session_module.get_db_session_context = mock_get_context
+        
+        try:
+            response = client.post(
+                "/api/tools?tenant_id=TENANT_001",
+                headers={"X-API-KEY": DEFAULT_API_KEY},
+                json={
+                    "name": "HTTP Tool Without Endpoint",
+                    "type": "http",
+                    "description": "HTTP tool missing endpoint config",
+                    "inputSchema": {"type": "object"},
+                    "outputSchema": {"type": "object"},
+                    "authType": "none",
+                    # Missing endpointConfig
+                },
+            )
+            
+            assert response.status_code == 400
+            assert "endpoint_config" in response.json()["detail"].lower() or "endpointConfig" in response.json()["detail"].lower()
+        finally:
+            session_module.get_db_session_context = original_get_context
+
+    @pytest.mark.asyncio
+    async def test_create_tool_invalid_auth_type(self, test_db_session, setup_test_data):
+        """Test creating a tool with invalid auth_type (should fail)."""
+        import src.infrastructure.db.session as session_module
+        original_get_context = session_module.get_db_session_context
+        
+        async def mock_get_context():
+            class MockContext:
+                async def __aenter__(self):
+                    return test_db_session
+                
+                async def __aexit__(self, *args):
+                    pass
+            
+            return MockContext()
+        
+        session_module.get_db_session_context = mock_get_context
+        
+        try:
+            response = client.post(
+                "/api/tools?tenant_id=TENANT_001",
+                headers={"X-API-KEY": DEFAULT_API_KEY},
+                json={
+                    "name": "Tool With Invalid Auth",
+                    "type": "dummy",
+                    "description": "Tool with invalid auth type",
+                    "inputSchema": {"type": "object"},
+                    "outputSchema": {"type": "object"},
+                    "authType": "invalid_auth_type",  # Invalid
+                },
+            )
+            
+            assert response.status_code == 400
+            assert "authtype" in response.json()["detail"].lower() or "auth_type" in response.json()["detail"].lower()
+        finally:
+            session_module.get_db_session_context = original_get_context
+
+    @pytest.mark.asyncio
+    async def test_create_tool_dummy_no_endpoint_required(self, test_db_session, setup_test_data):
+        """Test creating a dummy tool without endpoint_config (should succeed)."""
+        import src.infrastructure.db.session as session_module
+        original_get_context = session_module.get_db_session_context
+        
+        async def mock_get_context():
+            class MockContext:
+                async def __aenter__(self):
+                    return test_db_session
+                
+                async def __aexit__(self, *args):
+                    pass
+            
+            return MockContext()
+        
+        session_module.get_db_session_context = mock_get_context
+        
+        try:
+            response = client.post(
+                "/api/tools?tenant_id=TENANT_001",
+                headers={"X-API-KEY": DEFAULT_API_KEY},
+                json={
+                    "name": "Dummy Tool",
+                    "type": "dummy",
+                    "description": "Dummy tool for testing",
+                    "inputSchema": {"type": "object"},
+                    "outputSchema": {"type": "object"},
+                    "authType": "none",
+                    # No endpointConfig - should be OK for dummy tools
+                },
+            )
+            
+            assert response.status_code == 201
+            data = response.json()
+            assert data["name"] == "Dummy Tool"
+            assert data["type"] == "dummy"
+        finally:
+            session_module.get_db_session_context = original_get_context
+
+    @pytest.mark.asyncio
+    async def test_create_tool_legacy_format_backward_compatibility(self, test_db_session, setup_test_data):
+        """Test creating a tool with legacy format (backward compatibility)."""
+        import src.infrastructure.db.session as session_module
+        original_get_context = session_module.get_db_session_context
+        
+        async def mock_get_context():
+            class MockContext:
+                async def __aenter__(self):
+                    return test_db_session
+                
+                async def __aexit__(self, *args):
+                    pass
+            
+            return MockContext()
+        
+        session_module.get_db_session_context = mock_get_context
+        
+        try:
+            response = client.post(
+                "/api/tools?tenant_id=TENANT_001",
+                headers={"X-API-KEY": DEFAULT_API_KEY},
+                json={
+                    "name": "Legacy Tool",
+                    "type": "webhook",
+                    "config": {
+                        "endpoint": "https://api.example.com/legacy",
+                        "method": "POST",
+                    },
+                },
+            )
+            
+            # Should succeed for backward compatibility
+            assert response.status_code == 201
+            data = response.json()
+            assert data["name"] == "Legacy Tool"
+            assert data["type"] == "webhook"
+        finally:
+            session_module.get_db_session_context = original_get_context
+

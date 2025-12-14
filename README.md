@@ -15,6 +15,8 @@ Start here:
 - `docs/playbooks-configuration.md` - Playbooks configuration guide (schema, conditions, actions, examples)
 - `docs/playbooks-api.md` - Playbooks API reference (endpoints, schemas, examples)
 - `docs/phase7-completion-report.md` - Phase 7 completion report (implementation status, how to run, limitations)
+- `docs/phase8-tools-mvp.md` - Phase 8: Tool Registry & Execution MVP specification
+- `docs/tools-guide.md` - Complete tool guide (schema, APIs, enable/disable, security, troubleshooting)
 
 ## Project Structure
 
@@ -215,15 +217,16 @@ View coverage report:
 
 Coverage threshold: Tests will fail if coverage is below 85% (Phase 2 requirement).
 
-## Phase 1, Phase 2, Phase 3, Phase 6 & Phase 7 MVP Status
+## Phase 1, Phase 2, Phase 3, Phase 6, Phase 7 & Phase 8 MVP Status
 
 **Phase 1 MVP:** ✅ COMPLETE (21 issues)
 **Phase 2 MVP:** ✅ COMPLETE (25 issues)
 **Phase 3 MVP:** ✅ COMPLETE (31 issues)
 **Phase 6 MVP:** ✅ COMPLETE (Persistence & State Management)
 **Phase 7 MVP:** ✅ COMPLETE (Playbooks & Actions)
+**Phase 8 MVP:** ✅ COMPLETE (Tool Registry & Execution)
 
-**Total Issues Implemented:** 100+ issues across all phases (100% complete)
+**Total Issues Implemented:** 117+ issues across all phases (100% complete)
 
 ### Documentation
 
@@ -232,6 +235,7 @@ Coverage threshold: Tests will fail if coverage is below 85% (Phase 2 requiremen
 - **Phase 1 Issues:** `.github/ISSUE_TEMPLATE/phase1-mvp-issues.md`
 - **Phase 2 Issues:** `.github/ISSUE_TEMPLATE/phase2-mvp-issues.md`
 - **Phase 3 Issues:** `.github/ISSUE_TEMPLATE/phase3-mvp-issues.md`
+- **Phase 8 Issues:** `.github/ISSUE_TEMPLATE/phase8-mvp-issues.md`
 
 ### Key Features Implemented
 
@@ -283,6 +287,21 @@ Coverage threshold: Tests will fail if coverage is below 85% (Phase 2 requiremen
 - ✅ UI integration (playbook panel, step completion, timeline events)
 - ✅ Playbook events (PlaybookAssigned, PlaybookRecalculated, PlaybookStepCompleted, PlaybookCompleted)
 - ✅ Comprehensive playbook configuration and API documentation
+
+**Phase 8:**
+- ✅ Tool Registry with global and tenant-scoped tools
+- ✅ Tool definition schema with JSON Schema validation
+- ✅ Tool execution service with lifecycle events (requested, running, succeeded, failed)
+- ✅ Tool enable/disable per tenant
+- ✅ HTTP tool provider with URL allow-list enforcement
+- ✅ Secret redaction in logs and events
+- ✅ API key management via environment variables
+- ✅ Tool execution APIs (execute, list executions, get execution detail)
+- ✅ UI for tool management (list, detail, execute)
+- ✅ Tool execution events in exception timeline
+- ✅ Comprehensive security features (URL validation, secret masking, tenant isolation)
+- ✅ Integration tests and >80% code coverage for tool components
+- ✅ Complete documentation (schema, APIs, security, troubleshooting)
 
 ## Phase 6: Persistence & State Management
 

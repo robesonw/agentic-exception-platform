@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Box,
   Card,
@@ -18,11 +19,14 @@ import {
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import PlaylistPlayIcon from '@mui/icons-material/PlaylistPlay'
+import BuildIcon from '@mui/icons-material/Build'
 import CardSkeleton from '../common/CardSkeleton.tsx'
 import { useExceptionEvents } from '../../hooks/useExceptions.ts'
 import { useTenant } from '../../hooks/useTenant.tsx'
 import { formatDateTime } from '../../utils/dateFormat.ts'
+import { useToolExecutions, useToolsList } from '../../hooks/useTools.ts'
 import type { ExceptionEvent } from '../../api/exceptions.ts'
+import type { ToolExecution } from '../../api/tools.ts'
 
 /**
  * Props for ExceptionTimelineTab component
@@ -95,6 +99,40 @@ function formatPayloadSummary(payload: Record<string, unknown>): string {
   
   // Return a generic summary
   return `${keys.length} field${keys.length !== 1 ? 's' : ''}`
+}
+
+/**
+ * Truncate output summary for display
+ */
+function truncateOutputSummary(outputPayload: Record<string, any> | null, maxLength: number = 100): string {
+  if (!outputPayload || Object.keys(outputPayload).length === 0) {
+    return 'No output'
+  }
+  
+  const jsonString = JSON.stringify(outputPayload, null, 2)
+  if (jsonString.length <= maxLength) {
+    return jsonString
+  }
+  
+  return jsonString.substring(0, maxLength) + '...'
+}
+
+/**
+ * Get execution status color
+ */
+function getExecutionStatusColor(status: string): 'success' | 'error' | 'warning' | 'info' | 'default' {
+  switch (status) {
+    case 'succeeded':
+      return 'success'
+    case 'failed':
+      return 'error'
+    case 'running':
+      return 'warning'
+    case 'requested':
+      return 'info'
+    default:
+      return 'default'
+  }
 }
 
 /**
@@ -207,6 +245,129 @@ function formatPlaybookEventDetails(eventType: string, payload: Record<string, u
 }
 
 /**
+ * Tool execution timeline card component
+ */
+interface ToolExecutionTimelineCardProps {
+  execution: ToolExecution
+  toolName?: string
+  isLast: boolean
+}
+
+function ToolExecutionTimelineCard({ execution, toolName, isLast }: ToolExecutionTimelineCardProps) {
+  return (
+    <Box sx={{ position: 'relative', pb: isLast ? 0 : 3 }}>
+      {/* Vertical connector line */}
+      {!isLast && (
+        <Box
+          sx={{
+            position: 'absolute',
+            left: 20,
+            top: 48,
+            bottom: 0,
+            width: 2,
+            bgcolor: 'divider',
+          }}
+        />
+      )}
+
+      {/* Event indicator dot */}
+      <Box
+        sx={{
+          position: 'absolute',
+          left: 12,
+          top: 12,
+          width: 16,
+          height: 16,
+          borderRadius: '50%',
+          bgcolor: (theme) => theme.palette[getExecutionStatusColor(execution.status)].main,
+          border: (theme) => `2px solid ${theme.palette.background.paper}`,
+          zIndex: 1,
+        }}
+      />
+
+      {/* Card content */}
+      <Card sx={{ ml: 4, position: 'relative' }}>
+        <CardContent>
+          <Stack spacing={1.5}>
+            {/* Tool name, status, and timestamp */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <BuildIcon sx={{ fontSize: 16, color: 'primary.main' }} />
+                <Chip
+                  label="Tool Execution"
+                  color="primary"
+                  size="small"
+                />
+                {toolName && (
+                  <Typography variant="body2" sx={{ fontWeight: 500, ml: 0.5 }}>
+                    {toolName}
+                  </Typography>
+                )}
+                <Chip
+                  label={execution.status.charAt(0).toUpperCase() + execution.status.slice(1)}
+                  color={getExecutionStatusColor(execution.status)}
+                  size="small"
+                  variant="outlined"
+                />
+              </Box>
+              <Typography variant="caption" color="text.secondary">
+                {formatDateTime(execution.createdAt)}
+              </Typography>
+            </Box>
+
+            {/* Actor information */}
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                Actor
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Chip
+                  label={execution.requestedByActorType.charAt(0).toUpperCase() + execution.requestedByActorType.slice(1)}
+                  color={getActorTypeColor(execution.requestedByActorType)}
+                  size="small"
+                  variant="outlined"
+                />
+                <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                  {execution.requestedByActorId}
+                </Typography>
+              </Box>
+            </Box>
+
+            {/* Output summary */}
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                Output Summary
+              </Typography>
+              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem', wordBreak: 'break-word' }}>
+                {truncateOutputSummary(execution.outputPayload)}
+              </Typography>
+              {execution.errorMessage && (
+                <Alert severity="error" sx={{ mt: 1 }}>
+                  <Typography variant="body2">{execution.errorMessage}</Typography>
+                </Alert>
+              )}
+            </Box>
+
+            {/* Link to execution detail */}
+            <Box>
+              <Button
+                component={Link}
+                to={`/tools/${execution.toolId}`}
+                size="small"
+                variant="outlined"
+                startIcon={<BuildIcon />}
+              >
+                View Tool Details
+              </Button>
+            </Box>
+          </Stack>
+        </CardContent>
+      </Card>
+    </Box>
+  )
+}
+
+/**
  * Event timeline card component
  */
 interface EventTimelineCardProps {
@@ -314,12 +475,21 @@ function EventTimelineCard({ event, isLast }: EventTimelineCardProps) {
 }
 
 /**
+ * Unified timeline item type
+ */
+type TimelineItem = 
+  | { type: 'event'; data: ExceptionEvent }
+  | { type: 'toolExecution'; data: ToolExecution; toolName?: string }
+
+/**
  * Exception Timeline Tab Component
  * 
  * P6-27: Updated to use DB-backed event timeline from /exceptions/{id}/events
+ * P8-13: Added tool execution events to timeline
  * 
  * Displays the event timeline for an exception, showing all events in chronological order
  * with event type, actor information, timestamps, and payload summaries.
+ * Also displays tool execution events with tool name, status, timestamp, and output summary.
  */
 export default function ExceptionTimelineTab({ exceptionId }: ExceptionTimelineTabProps) {
   const { tenantId } = useTenant()
@@ -354,8 +524,73 @@ export default function ExceptionTimelineTab({ exceptionId }: ExceptionTimelineT
     return params
   }, [eventTypeFilter, actorTypeFilter, dateFromFilter, dateToFilter])
 
-  // Fetch events
-  const { data, isLoading, isError, error } = useExceptionEvents(exceptionId, apiParams)
+  // Fetch exception events
+  const { data: eventsData, isLoading: isLoadingEvents, isError: isErrorEvents, error: eventsError } = useExceptionEvents(exceptionId, apiParams)
+  
+  // Fetch tool executions for this exception
+  const { data: executionsData, isLoading: isLoadingExecutions } = useToolExecutions({
+    exception_id: exceptionId,
+  })
+
+  // Get unique tool IDs from executions
+  const toolIds = useMemo(() => {
+    if (!executionsData?.items) return []
+    return Array.from(new Set(executionsData.items.map(e => e.toolId)))
+  }, [executionsData])
+
+  // Fetch all tools to get names (we'll fetch all tools and filter by IDs)
+  // For MVP, we'll fetch tools individually but in a way that doesn't violate hooks rules
+  // We'll use a single query to get all tools and filter client-side
+  const { data: allToolsData } = useToolsList({ scope: 'all' })
+
+  // Create tool name map
+  const toolNameMap = useMemo(() => {
+    const map = new Map<number, string>()
+    if (allToolsData?.items) {
+      allToolsData.items.forEach(tool => {
+        if (toolIds.includes(tool.toolId)) {
+          map.set(tool.toolId, tool.name)
+        }
+      })
+    }
+    return map
+  }, [allToolsData, toolIds])
+
+  // Merge events and tool executions into unified timeline
+  const timelineItems = useMemo((): TimelineItem[] => {
+    const items: TimelineItem[] = []
+    
+    // Add exception events
+    if (eventsData?.items) {
+      eventsData.items.forEach(event => {
+        items.push({ type: 'event', data: event })
+      })
+    }
+    
+    // Add tool executions
+    if (executionsData?.items) {
+      executionsData.items.forEach(execution => {
+        items.push({
+          type: 'toolExecution',
+          data: execution,
+          toolName: toolNameMap.get(execution.toolId),
+        })
+      })
+    }
+    
+    // Sort by timestamp (oldest first)
+    items.sort((a, b) => {
+      const timeA = a.type === 'event' ? a.data.createdAt : a.data.createdAt
+      const timeB = b.type === 'event' ? b.data.createdAt : b.data.createdAt
+      return new Date(timeA).getTime() - new Date(timeB).getTime()
+    })
+    
+    return items
+  }, [eventsData, executionsData, toolNameMap])
+
+  const isLoading = isLoadingEvents || isLoadingExecutions
+  const isError = isErrorEvents
+  const error = eventsError
 
   // Handle clear filters
   const handleClearFilters = () => {
@@ -396,7 +631,7 @@ export default function ExceptionTimelineTab({ exceptionId }: ExceptionTimelineT
   }
 
   // Empty state
-  if (!data || !data.items || data.items.length === 0) {
+  if (!isLoading && timelineItems.length === 0) {
     return (
       <Box>
         {hasActiveFilters && (
@@ -409,15 +644,14 @@ export default function ExceptionTimelineTab({ exceptionId }: ExceptionTimelineT
         )}
         {!hasActiveFilters && (
           <Alert severity="info">
-            No events available for this exception yet.
+            No events or tool executions available for this exception yet.
           </Alert>
         )}
       </Box>
     )
   }
 
-  // Events are already sorted chronologically by the backend (oldest first)
-  const events = data.items
+  const totalEvents = (eventsData?.total || 0) + (executionsData?.total || 0)
 
   return (
     <Box>
@@ -498,22 +732,35 @@ export default function ExceptionTimelineTab({ exceptionId }: ExceptionTimelineT
       </Paper>
 
       {/* Event count info */}
-      {data.total > 0 && (
+      {totalEvents > 0 && (
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-          Showing {events.length} of {data.total} event{data.total !== 1 ? 's' : ''}
+          Showing {timelineItems.length} of {totalEvents} item{totalEvents !== 1 ? 's' : ''}
           {hasActiveFilters && ' (filtered)'}
         </Typography>
       )}
 
       {/* Timeline */}
       <Stack spacing={0}>
-        {events.map((event, index) => (
-          <EventTimelineCard
-            key={event.eventId || `${event.eventType}-${event.createdAt}-${index}`}
-            event={event}
-            isLast={index === events.length - 1}
-          />
-        ))}
+        {timelineItems.map((item, index) => {
+          if (item.type === 'toolExecution') {
+            return (
+              <ToolExecutionTimelineCard
+                key={`tool-execution-${item.data.executionId}`}
+                execution={item.data}
+                toolName={item.toolName}
+                isLast={index === timelineItems.length - 1}
+              />
+            )
+          } else {
+            return (
+              <EventTimelineCard
+                key={item.data.eventId || `event-${item.data.eventType}-${item.data.createdAt}-${index}`}
+                event={item.data}
+                isLast={index === timelineItems.length - 1}
+              />
+            )
+          }
+        })}
       </Stack>
     </Box>
   )

@@ -11,6 +11,7 @@ from enum import Enum as PyEnum
 from uuid import uuid4
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Enum,
@@ -22,6 +23,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgresUUID
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -66,6 +68,15 @@ class ActorType(PyEnum):
     AGENT = "agent"
     USER = "user"
     SYSTEM = "system"
+
+
+class ToolExecutionStatus(PyEnum):
+    """Tool execution status."""
+
+    REQUESTED = "requested"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
 
 
 # ============================================================================
@@ -118,6 +129,9 @@ class Tenant(Base):
     playbooks = relationship("Playbook", back_populates="tenant", cascade="all, delete-orphan")
     tool_definitions = relationship(
         "ToolDefinition", back_populates="tenant", cascade="all, delete-orphan"
+    )
+    tool_executions = relationship(
+        "ToolExecution", back_populates="tenant", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
@@ -470,5 +484,175 @@ class ToolDefinition(Base):
         return (
             f"<ToolDefinition(tool_id={self.tool_id}, name={self.name!r}, "
             f"tenant_id={self.tenant_id!r}, type={self.type!r})>"
+        )
+
+
+class ToolExecution(Base):
+    """
+    Tool execution records for Phase 8.
+    
+    Matches docs/phase8-tools-mvp.md Section 3.1 (tool_execution table).
+    """
+
+    __tablename__ = "tool_execution"
+
+    id = Column(
+        PostgresUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        doc="Primary key (UUID)",
+    )
+    tenant_id = Column(
+        String,
+        ForeignKey("tenant.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        doc="Tenant identifier",
+    )
+    tool_id = Column(
+        Integer,
+        ForeignKey("tool_definition.tool_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        doc="Tool definition identifier",
+    )
+    exception_id = Column(
+        String,
+        ForeignKey("exception.exception_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        doc="Exception identifier (nullable, if execution is linked to exception)",
+    )
+    status = Column(
+        Enum(
+            ToolExecutionStatus,
+            name="tool_execution_status",
+            create_constraint=True,
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=False,
+        default=ToolExecutionStatus.REQUESTED,
+        doc="Execution status",
+    )
+    requested_by_actor_type = Column(
+        Enum(
+            ActorType,
+            name="actor_type",
+            create_constraint=False,  # Reuse existing enum
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=False,
+        doc="Actor type who requested execution",
+    )
+    requested_by_actor_id = Column(
+        String,
+        nullable=False,
+        doc="Actor identifier who requested execution",
+    )
+    input_payload = Column(
+        JSONB,
+        nullable=False,
+        doc="Input payload (JSON) passed to tool",
+    )
+    output_payload = Column(
+        JSONB,
+        nullable=True,
+        doc="Output payload (JSON) from tool execution",
+    )
+    error_message = Column(
+        String,
+        nullable=True,
+        doc="Error message if execution failed",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when execution was created",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        doc="Timestamp when execution was last updated",
+    )
+
+    # Relationships
+    tenant = relationship("Tenant", back_populates="tool_executions")
+    tool_definition = relationship("ToolDefinition")
+    exception = relationship("Exception")
+
+    # Indexes for common query patterns
+    __table_args__ = (
+        Index("idx_tool_execution_tenant_tool", "tenant_id", "tool_id"),
+        Index("idx_tool_execution_tenant_exception", "tenant_id", "exception_id"),
+        Index("idx_tool_execution_tenant_status", "tenant_id", "status"),
+        Index("idx_tool_execution_tenant_created", "tenant_id", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ToolExecution(id={self.id}, tenant_id={self.tenant_id!r}, "
+            f"tool_id={self.tool_id}, status={self.status.value})>"
+        )
+
+
+class ToolEnablement(Base):
+    """
+    Per-tenant tool enablement policy for Phase 8.
+    
+    Controls which tools are enabled/disabled for each tenant.
+    Tools are enabled by default if no record exists.
+    """
+    
+    __tablename__ = "tool_enablement"
+    
+    tenant_id = Column(
+        String,
+        ForeignKey("tenant.tenant_id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+        doc="Tenant identifier",
+    )
+    tool_id = Column(
+        Integer,
+        ForeignKey("tool_definition.tool_id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+        doc="Tool definition identifier",
+    )
+    enabled = Column(
+        sa.Boolean,
+        nullable=False,
+        default=True,
+        doc="Whether the tool is enabled for this tenant",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when enablement was created",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        doc="Timestamp when enablement was last updated",
+    )
+    
+    # Relationships
+    tenant = relationship("Tenant")
+    tool_definition = relationship("ToolDefinition")
+    
+    # Unique constraint on (tenant_id, tool_id) is enforced by composite primary key
+    
+    def __repr__(self) -> str:
+        return (
+            f"<ToolEnablement(tenant_id={self.tenant_id!r}, "
+            f"tool_id={self.tool_id}, enabled={self.enabled})>"
         )
 

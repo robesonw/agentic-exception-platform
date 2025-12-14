@@ -27,6 +27,7 @@ import MenuIcon from '@mui/icons-material/Menu'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount'
 import SettingsIcon from '@mui/icons-material/Settings'
+import BuildIcon from '@mui/icons-material/Build'
 import SearchIcon from '@mui/icons-material/Search'
 import NotificationsIcon from '@mui/icons-material/Notifications'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
@@ -57,6 +58,11 @@ const navItems: NavItem[] = [
     label: 'Supervisor',
     to: '/supervisor',
     icon: <SupervisorAccountIcon />,
+  },
+  {
+    label: 'Tools',
+    to: '/tools',
+    icon: <BuildIcon />,
   },
   {
     label: 'Config',

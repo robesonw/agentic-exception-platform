@@ -4,9 +4,21 @@ FastAPI application entry point.
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Load .env file if it exists
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        logging.getLogger(__name__).info(f"Loaded .env file from {env_path}")
+except ImportError:
+    # python-dotenv not installed, skip .env loading
+    pass
 
 from src.api.middleware import TenantRouterMiddleware
 from src.infrastructure.db.session import close_engine, initialize_database

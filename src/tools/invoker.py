@@ -15,6 +15,7 @@ from src.models.domain_pack import DomainPack, ToolDefinition
 from src.models.tenant_policy import TenantPolicyPack
 from src.tools.execution_engine import ToolExecutionEngine
 from src.tools.registry import AllowListEnforcer, ToolRegistry, ToolRegistryError
+from src.tools.security import redact_secrets_from_dict, safe_log_payload
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +139,12 @@ class ToolInvoker:
         
         # Perform HTTP call (or mock if dry_run)
         if dry_run:
-            logger.info(f"DRY RUN: Would invoke tool '{tool_name}' with args: {args}")
+            # P8-14: Redact secrets from args before logging
+            redacted_args = redact_secrets_from_dict(args)
+            logger.info(
+                f"DRY RUN: Would invoke tool '{tool_name}' with args (secrets redacted): "
+                f"{safe_log_payload(redacted_args)}"
+            )
             mock_response = {
                 "status": "success",
                 "dry_run": True,
@@ -146,11 +152,11 @@ class ToolInvoker:
                 "message": "Dry run mode - no actual tool invocation performed",
                 "mock_result": {
                     "executed": True,
-                    "parameters": args,
+                    "parameters": redacted_args,  # Use redacted args in response
                     "endpoint": tool_def.endpoint,
                 },
             }
-            self._audit_log_invocation(tool_name, args, mock_response, None, tenant_id)
+            self._audit_log_invocation(tool_name, redacted_args, mock_response, None, tenant_id)
             return mock_response
         
         # Use execution engine if enabled (Phase 2)
@@ -173,14 +179,19 @@ class ToolInvoker:
         
         # Legacy basic HTTP invocation (Phase 1)
         try:
-            logger.info(f"Invoking tool '{tool_name}' at endpoint: {tool_def.endpoint}")
+            # P8-14: Redact secrets from args before logging
+            redacted_args = redact_secrets_from_dict(args)
+            logger.info(
+                f"Invoking tool '{tool_name}' at endpoint: {tool_def.endpoint}\n"
+                f"Args (secrets redacted): {safe_log_payload(redacted_args)}"
+            )
             
             client = await self._get_http_client()
             
             # Perform HTTP POST request (MVP assumes POST for all tools)
             response = await client.post(
                 tool_def.endpoint,
-                json=args,
+                json=args,  # Use original args for actual request
                 headers={"Content-Type": "application/json"},
             )
             
@@ -188,15 +199,23 @@ class ToolInvoker:
             response.raise_for_status()
             
             # Parse response
+            raw_response = response.json() if response.content else {}
+            # P8-14: Redact secrets from response
+            redacted_response = redact_secrets_from_dict(raw_response) if isinstance(raw_response, dict) else raw_response
+            
             result = {
                 "status": "success",
                 "tool": tool_name,
                 "http_status": response.status_code,
-                "response": response.json() if response.content else {},
+                "response": raw_response,  # Keep original for return value
             }
             
-            logger.info(f"Tool '{tool_name}' invocation successful: {result}")
-            self._audit_log_invocation(tool_name, args, result, None, tenant_id)
+            logger.info(
+                f"Tool '{tool_name}' invocation successful (status: {response.status_code})\n"
+                f"Response (secrets redacted): {safe_log_payload(redacted_response)}"
+            )
+            # P8-14: Use redacted args and response for audit log
+            self._audit_log_invocation(tool_name, redacted_args, {"status": "success", "http_status": response.status_code, "response": redacted_response}, None, tenant_id)
             
             return result
             
@@ -227,27 +246,35 @@ class ToolInvoker:
         """
         Log tool invocation to audit logger.
         
+        P8-14: All secrets are redacted before audit logging.
+        
         Args:
             tool_name: Name of the tool
-            args: Arguments passed to tool
-            response: Tool response (if successful)
+            args: Arguments passed to tool (should already be redacted)
+            response: Tool response (if successful, should already be redacted)
             error: Error message (if failed)
             tenant_id: Tenant identifier
         """
         if not self.audit_logger:
             return
         
+        # P8-14: Ensure args and response are redacted (defensive check)
+        redacted_args = redact_secrets_from_dict(args) if isinstance(args, dict) else args
+        redacted_response = redact_secrets_from_dict(response) if isinstance(response, dict) else response
+        
         audit_data = {
             "tool_name": tool_name,
-            "args": args,
+            "args": redacted_args,
             "tenant_id": tenant_id,
         }
         
-        if response:
-            audit_data["response"] = response
+        if redacted_response:
+            audit_data["response"] = redacted_response
             audit_data["status"] = "success"
         else:
-            audit_data["error"] = error
+            # P8-14: Redact secrets from error messages
+            redacted_error = safe_log_payload(error) if error else None
+            audit_data["error"] = redacted_error
             audit_data["status"] = "error"
         
         try:

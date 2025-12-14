@@ -26,6 +26,15 @@ from src.models.domain_pack import (
     ToolDefinition,
 )
 
+# Phase 8 Tool Definition
+from src.models.tool_definition_phase8 import (
+    AuthType,
+    EndpointConfig,
+    TenantScope,
+    ToolDefinitionConfig,
+    ToolDefinitionRequest,
+)
+
 # Tenant Policy Pack
 from src.models.tenant_policy import (
     HumanApprovalRule,
@@ -53,6 +62,12 @@ __all__ = [
     "SeverityRule",
     "TestCase",
     "ToolDefinition",
+    # Phase 8 Tool Definition
+    "AuthType",
+    "EndpointConfig",
+    "TenantScope",
+    "ToolDefinitionConfig",
+    "ToolDefinitionRequest",
     # Tenant Policy Pack
     "TenantPolicyPack",
     "SeverityOverride",

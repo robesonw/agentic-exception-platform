@@ -109,6 +109,7 @@ class APIKeyAuth:
         self._api_keys["test_api_key_tenant_002"] = ("TENANT_002", Role.OPERATOR)
         self._api_keys["test_api_key_tenant_finance"] = ("TENANT_FINANCE_001", Role.ADMIN)
         self._api_keys["test_api_key_tenant_healthcare"] = ("TENANT_HEALTHCARE_001", Role.VIEWER)
+        self._api_keys["test_api_key_tenant_health"] = ("TENANT_HEALTH_001", Role.ADMIN)
         # Test API key used in test suites
         self._api_keys["test-api-key-123"] = ("tenant_001", Role.ADMIN)
 
