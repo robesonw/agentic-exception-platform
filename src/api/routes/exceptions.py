@@ -3,17 +3,20 @@ Exception ingestion and status API routes.
 Handles raw exception ingestion and normalization.
 
 Phase 6 P6-22: Updated to use DB-backed repositories for all operations.
+Phase 9 P9-16: POST /exceptions transformed to async command pattern - events published to broker.
 """
 
 import logging
 from datetime import datetime
 from typing import Any, Optional
+from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Path, Query, Request
+from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 from pydantic import BaseModel, Field
 
-from src.agents.intake import IntakeAgent, IntakeAgentError
+from src.events.types import ExceptionIngested, PlaybookRecalculationRequested, PlaybookStepCompletionRequested
 from src.infrastructure.db.models import ActorType, ExceptionSeverity, ExceptionStatus
+from src.messaging.event_publisher import EventPublisherService
 from src.models.exception_record import ExceptionRecord, ResolutionStatus, Severity
 from src.repository.dto import EventFilter, ExceptionFilter, ExceptionUpdateDTO
 
@@ -21,23 +24,30 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/exceptions", tags=["exceptions"])
 
+# IMPORTANT: More specific routes must come BEFORE less specific ones
+# FastAPI matches routes in order, so specific routes like /{tenant_id}/{exception_id}/reprocess
+# must come before general routes like /{tenant_id}
+
 
 class ExceptionIngestionRequest(BaseModel):
     """Request model for exception ingestion."""
 
     exception: dict[str, Any] | None = Field(None, description="Single exception payload")
     exceptions: list[dict[str, Any]] | None = Field(None, description="Batch of exception payloads")
+    source_system: Optional[str] = Field(None, description="Source system name (if not in payload)")
+    ingestion_method: Optional[str] = Field(None, description="Ingestion method (e.g., 'api', 'webhook', 'file')")
 
-    model_config = {"json_schema_extra": {"example": {"exception": {"sourceSystem": "ERP", "rawPayload": {}}}}}
+    model_config = {"json_schema_extra": {"example": {"exception": {"error": "Test error"}, "source_system": "ERP"}}}
 
 
 class ExceptionIngestionResponse(BaseModel):
-    """Response model for exception ingestion."""
+    """Response model for exception ingestion (202 Accepted)."""
 
-    exceptionIds: list[str] = Field(..., description="List of normalized exception IDs")
-    count: int = Field(..., description="Number of exceptions ingested")
+    exception_id: str = Field(..., alias="exceptionId", description="Exception identifier (generated)")
+    status: str = Field(default="accepted", description="Status: 'accepted'")
+    message: str = Field(default="Exception ingestion request accepted", description="Status message")
 
-    model_config = {"json_schema_extra": {"example": {"exceptionIds": ["exc_001"], "count": 1}}}
+    model_config = {"json_schema_extra": {"example": {"exceptionId": "exc_001", "status": "accepted", "message": "Exception ingestion request accepted"}}}
 
 
 class ExceptionListResponse(BaseModel):
@@ -74,19 +84,19 @@ class ExceptionEventListResponse(BaseModel):
     page: int = Field(..., description="Current page number (1-indexed)")
     page_size: int = Field(..., description="Number of items per page")
     total_pages: int = Field(..., description="Total number of pages")
+    correlation_id: Optional[str] = Field(None, description="Correlation ID for tracing (equals exception_id)")
+
+    model_config = {"json_schema_extra": {"example": {"items": [], "total": 0, "page": 1, "page_size": 50, "total_pages": 0, "correlation_id": "exc_001"}}}
 
 
 class PlaybookRecalculationResponse(BaseModel):
-    """Response model for playbook recalculation."""
+    """Response model for playbook recalculation (202 Accepted)."""
 
     exception_id: str = Field(..., alias="exceptionId", description="Exception identifier")
-    current_playbook_id: Optional[int] = Field(None, alias="currentPlaybookId", description="Current playbook identifier")
-    current_step: Optional[int] = Field(None, alias="currentStep", description="Current step number in playbook")
-    playbook_name: Optional[str] = Field(None, alias="playbookName", description="Name of the selected playbook")
-    playbook_version: Optional[int] = Field(None, alias="playbookVersion", description="Version of the selected playbook")
-    reasoning: Optional[str] = Field(None, description="Reasoning for playbook selection")
+    status: str = Field(default="accepted", description="Status: 'accepted'")
+    message: str = Field(default="Playbook recalculation request accepted", description="Status message")
 
-    model_config = {"json_schema_extra": {"example": {"exceptionId": "exc_001", "currentPlaybookId": 1, "currentStep": 1, "playbookName": "PaymentFailurePlaybook", "playbookVersion": 1}}}
+    model_config = {"json_schema_extra": {"example": {"exceptionId": "exc_001", "status": "accepted", "message": "Playbook recalculation request accepted"}}}
 
 
 class PlaybookStepStatus(BaseModel):
@@ -122,22 +132,232 @@ class StepCompletionRequest(BaseModel):
     model_config = {"json_schema_extra": {"example": {"actorType": "human", "actorId": "user_123", "notes": "Step completed successfully"}}}
 
 
-@router.post("/{tenant_id}", response_model=ExceptionIngestionResponse)
+def get_event_publisher() -> EventPublisherService:
+    """
+    Get the global event publisher service instance.
+    
+    In production, this would be injected via dependency injection.
+    
+    Returns:
+        EventPublisherService instance
+    """
+    # For MVP, create a singleton instance
+    # In production, use dependency injection
+    from src.messaging.settings import get_broker_settings
+    from src.messaging.kafka_broker import KafkaBroker
+    from src.messaging.event_store import DatabaseEventStore
+    
+    # Get broker settings and create broker
+    broker_settings = get_broker_settings()
+    broker = KafkaBroker(settings=broker_settings)
+    
+    # Create event store (database-backed)
+    # Note: In production, this would be injected
+    event_store = DatabaseEventStore()
+    
+    return EventPublisherService(broker=broker, event_store=event_store)
+
+
+# Reprocess route must come BEFORE the general POST /{tenant_id} route
+# to ensure FastAPI matches it first (more specific routes must come first)
+@router.post("/{tenant_id}/{exception_id}/reprocess", response_model=ExceptionIngestionResponse, status_code=status.HTTP_202_ACCEPTED)
+async def reprocess_exception(
+    tenant_id: str = Path(..., description="Tenant identifier"),
+    exception_id: str = Path(..., description="Exception identifier"),
+    request: Request = None,
+) -> ExceptionIngestionResponse:
+    """
+    Manually trigger processing for an existing exception.
+    
+    This endpoint allows you to reprocess an exception that exists in the database
+    but hasn't been processed through the pipeline (e.g., if workers weren't running
+    when it was ingested, or if it was created directly in the database).
+    
+    It:
+    1. Retrieves the exception from the database
+    2. Creates an ExceptionIngested event with the exception's data
+    3. Publishes it to Kafka so workers can process it
+    
+    Returns:
+    - 202 Accepted
+    - exception_id
+    - status: "accepted"
+    
+    Raises:
+    - HTTPException 403 if tenant ID mismatch
+    - HTTPException 404 if exception not found
+    - HTTPException 500 if event publishing fails
+    """
+    # Verify tenant ID matches authenticated tenant if available
+    if request and hasattr(request.state, "tenant_id"):
+        authenticated_tenant_id = request.state.tenant_id
+        if authenticated_tenant_id != tenant_id:
+            logger.warning(
+                f"Tenant mismatch: authenticated={authenticated_tenant_id}, "
+                f"path={tenant_id} for {request.url.path}"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=f"Tenant ID mismatch: authenticated tenant '{authenticated_tenant_id}' "
+                f"does not match path tenant '{tenant_id}'",
+            )
+        tenant_id = authenticated_tenant_id
+    
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="tenant_id is required")
+    
+    logger.info(f"Reprocessing exception {exception_id} for tenant {tenant_id}")
+    
+    # Get exception from database
+    try:
+        from src.infrastructure.db.session import get_db_session_context
+        from src.repository.exceptions_repository import ExceptionRepository
+        
+        async with get_db_session_context() as session:
+            exception_repo = ExceptionRepository(session)
+            db_exception = await exception_repo.get_exception(tenant_id, exception_id)
+            
+            if db_exception is None:
+                logger.warning(
+                    f"Exception {exception_id} not found for tenant {tenant_id}"
+                )
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Exception {exception_id} not found for tenant {tenant_id}",
+                )
+            
+            # Reconstruct raw_payload from exception data
+            # Try to get raw_payload from exception metadata or reconstruct from fields
+            raw_payload = {}
+            
+            # If there's a raw_payload field in the database, use it
+            # Otherwise, reconstruct from exception fields
+            if hasattr(db_exception, 'raw_payload') and db_exception.raw_payload:
+                import json
+                if isinstance(db_exception.raw_payload, dict):
+                    raw_payload = db_exception.raw_payload
+                elif isinstance(db_exception.raw_payload, str):
+                    try:
+                        raw_payload = json.loads(db_exception.raw_payload)
+                    except json.JSONDecodeError:
+                        raw_payload = {"error": db_exception.raw_payload}
+            else:
+                # Reconstruct from exception fields
+                raw_payload = {
+                    "exception_id": db_exception.exception_id,
+                    "tenant_id": db_exception.tenant_id,
+                    "source_system": db_exception.source_system or "UNKNOWN",
+                    "exception_type": db_exception.type,
+                    "severity": db_exception.severity.value if hasattr(db_exception.severity, 'value') else str(db_exception.severity),
+                    "status": db_exception.status.value if hasattr(db_exception.status, 'value') else str(db_exception.status),
+                    "domain": db_exception.domain,
+                    "entity": db_exception.entity,
+                    "amount": float(db_exception.amount) if db_exception.amount else None,
+                    "timestamp": db_exception.created_at.isoformat() if db_exception.created_at else None,
+                }
+                # Remove None values
+                raw_payload = {k: v for k, v in raw_payload.items() if v is not None}
+            
+            # Determine source system
+            source_system = db_exception.source_system or raw_payload.get("sourceSystem") or raw_payload.get("source_system") or "UNKNOWN"
+            
+            # Phase 9 P9-24: Redact PII at reprocessing
+            from src.security.pii_redaction import get_pii_redaction_service
+            
+            pii_service = get_pii_redaction_service()
+            redacted_payload, redaction_metadata = pii_service.redact_pii(
+                data=raw_payload,
+                tenant_id=tenant_id,
+            )
+            
+            # Ensure secrets never logged
+            redacted_payload = pii_service.ensure_secrets_never_logged(redacted_payload, tenant_id)
+            
+            # Create ExceptionIngested event
+            try:
+                exception_ingested_event = ExceptionIngested.create(
+                    tenant_id=tenant_id,
+                    exception_id=exception_id,
+                    raw_payload=redacted_payload,
+                    source_system=source_system,
+                    ingestion_method="reprocess",  # Mark as reprocessed
+                    correlation_id=exception_id,
+                    metadata={
+                        "redaction_metadata": redaction_metadata,
+                        "reprocessed": True,
+                        "original_created_at": db_exception.created_at.isoformat() if db_exception.created_at else None,
+                    },
+                )
+            except Exception as e:
+                logger.error(f"Failed to create ExceptionIngested event: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to create event: {str(e)}",
+                )
+            
+            # Publish event
+            from src.messaging.event_store import DatabaseEventStore
+            from src.messaging.settings import get_broker_settings
+            from src.messaging.kafka_broker import KafkaBroker
+            
+            broker_settings = get_broker_settings()
+            broker = KafkaBroker(settings=broker_settings)
+            event_store = DatabaseEventStore(session=session)
+            event_publisher = EventPublisherService(broker=broker, event_store=event_store)
+            
+            await event_publisher.publish_event(
+                topic="exceptions",
+                event=exception_ingested_event.model_dump(by_alias=True),
+            )
+            
+            logger.info(
+                f"Published ExceptionIngested event for reprocessing: exception_id={exception_id}, "
+                f"tenant_id={tenant_id}"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to reprocess exception {exception_id}: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to reprocess exception: {str(e)}",
+        )
+    
+    # Return 202 Accepted
+    return ExceptionIngestionResponse(
+        exceptionId=exception_id,
+        status="accepted",
+        message="Exception reprocessing request accepted and queued for processing",
+    )
+
+
+@router.post("/{tenant_id}", response_model=ExceptionIngestionResponse, status_code=status.HTTP_202_ACCEPTED)
 async def ingest_exception(
     tenant_id: str = Path(..., description="Tenant identifier"),
     request: ExceptionIngestionRequest | None = None,
     http_request: Request = None,
 ) -> ExceptionIngestionResponse:
     """
-    Ingest raw exception payload(s) and normalize via IntakeAgent.
+    Ingest raw exception payload(s) and publish ExceptionIngested event.
+    
+    Phase 9 P9-16: Transformed to async command pattern.
+    - Validates request
+    - Creates ExceptionIngested event
+    - Stores event in EventStore
+    - Publishes to message broker
+    - Returns 202 Accepted with exception_id
     
     Accepts either:
     - Single exception: {"exception": {...}}
     - Batch: {"exceptions": [{...}, {...}]}
     
     Returns:
-    - List of normalized exception IDs
-    - Count of ingested exceptions
+    - 202 Accepted
+    - exception_id (generated UUID)
+    - status: "accepted"
     """
     # Verify tenant ID matches authenticated tenant
     if http_request and hasattr(http_request.state, "tenant_id"):
@@ -172,183 +392,118 @@ async def ingest_exception(
     if not raw_exceptions:
         raise HTTPException(status_code=400, detail="No exceptions provided")
     
+    # Validate raw exceptions
+    for raw_exception in raw_exceptions:
+        if not isinstance(raw_exception, dict):
+            raise HTTPException(status_code=400, detail="Each exception must be a JSON object")
+        if not raw_exception:
+            raise HTTPException(status_code=400, detail="Exception payload cannot be empty")
+    
     # Log ingestion event
     logger.info(f"Ingesting {len(raw_exceptions)} exception(s) for tenant {tenant_id}")
     
-    # Get domain pack for tenant (for validation)
-    # Note: In MVP, we'll try to get from registry, but allow None for flexibility
-    domain_pack = None
-    try:
-        from src.domainpack.loader import DomainPackRegistry
-        
-        registry = DomainPackRegistry()
-        domain_pack = registry.get_latest(tenant_id)
-    except Exception:
-        # If no domain pack available, IntakeAgent will handle gracefully
-        logger.warning(f"No domain pack found for tenant {tenant_id}, proceeding without validation")
+    # Generate exception_id for the first exception (for MVP, we handle one at a time)
+    # In production, we'd handle batch ingestion differently
+    exception_id = str(uuid4())
     
-    # Initialize IntakeAgent
-    intake_agent = IntakeAgent(domain_pack=domain_pack)
+    # For MVP, process first exception only
+    # In production, we'd emit multiple ExceptionIngested events for batch
+    raw_payload = raw_exceptions[0]
     
-    # Normalize each exception
-    exception_ids = []
-    errors = []
+    # Phase 9 P9-24: Redact PII at ingestion
+    from src.security.pii_redaction import get_pii_redaction_service
     
-    for raw_exception in raw_exceptions:
-        try:
-            # Ensure tenantId is set in raw exception
-            if "tenantId" not in raw_exception:
-                raw_exception["tenantId"] = tenant_id
-            
-            # Normalize via IntakeAgent
-            normalized, decision = await intake_agent.process(
-                raw_exception=raw_exception,
-                tenant_id=tenant_id,
-            )
-            
-            exception_ids.append(normalized.exception_id)
-            logger.info(
-                f"Normalized exception {normalized.exception_id} for tenant {tenant_id}: "
-                f"{decision.decision}"
-            )
-            
-            # Phase 6: Persist to PostgreSQL
-            try:
-                from src.infrastructure.db.session import get_db_session_context
-                from src.repository.dto import ExceptionCreateOrUpdateDTO
-                from src.repository.exception_events_repository import ExceptionEventRepository
-                from src.repository.exceptions_repository import ExceptionRepository
-                from src.infrastructure.db.models import ExceptionSeverity, ExceptionStatus, ActorType, Tenant, TenantStatus
-                from sqlalchemy import select
-                from uuid import uuid4
-                
-                async with get_db_session_context() as session:
-                    # Ensure tenant exists in database
-                    result = await session.execute(
-                        select(Tenant).where(Tenant.tenant_id == tenant_id)
-                    )
-                    existing_tenant = result.scalar_one_or_none()
-                    
-                    if existing_tenant is None:
-                        # Create tenant if it doesn't exist
-                        # Use raw SQL to avoid enum conversion issues
-                        from sqlalchemy import text
-                        await session.execute(
-                            text(
-                                "INSERT INTO tenant (tenant_id, name, status) "
-                                "VALUES (:tenant_id, :name, :status) "
-                                "ON CONFLICT (tenant_id) DO NOTHING"
-                            ),
-                            {
-                                "tenant_id": tenant_id,
-                                "name": f"Tenant {tenant_id}",
-                                "status": "active",  # Use lowercase string directly
-                            },
-                        )
-                        await session.flush()
-                        logger.info(f"Created tenant {tenant_id} in PostgreSQL")
-                    
-                    # Map ExceptionRecord to database Exception model
-                    # Extract domain from normalized_context
-                    domain = normalized.normalized_context.get("domain", "Generic")
-                    
-                    # Map severity (ExceptionRecord uses uppercase, DB uses lowercase)
-                    severity_map = {
-                        "LOW": ExceptionSeverity.LOW,
-                        "MEDIUM": ExceptionSeverity.MEDIUM,
-                        "HIGH": ExceptionSeverity.HIGH,
-                        "CRITICAL": ExceptionSeverity.CRITICAL,
-                    }
-                    db_severity = severity_map.get(
-                        normalized.severity.value if normalized.severity else "MEDIUM",
-                        ExceptionSeverity.MEDIUM
-                    )
-                    
-                    # Map resolution status to exception status
-                    status_map = {
-                        "OPEN": ExceptionStatus.OPEN,
-                        "IN_PROGRESS": ExceptionStatus.ANALYZING,
-                        "RESOLVED": ExceptionStatus.RESOLVED,
-                        "ESCALATED": ExceptionStatus.ESCALATED,
-                        "PENDING_APPROVAL": ExceptionStatus.ANALYZING,
-                    }
-                    db_status = status_map.get(
-                        normalized.resolution_status.value,
-                        ExceptionStatus.OPEN
-                    )
-                    
-                    # Create exception DTO for upsert (idempotent)
-                    upsert_data = ExceptionCreateOrUpdateDTO(
-                        exception_id=normalized.exception_id,
-                        tenant_id=normalized.tenant_id,
-                        domain=domain,
-                        type=normalized.exception_type or "Unknown",
-                        severity=db_severity,
-                        status=db_status,
-                        source_system=normalized.source_system,
-                        entity=normalized.normalized_context.get("entity"),
-                        amount=normalized.normalized_context.get("amount"),
-                        sla_deadline=normalized.normalized_context.get("sla_deadline"),
-                    )
-                    
-                    # Save to database using upsert (idempotent)
-                    repo = ExceptionRepository(session)
-                    await repo.upsert_exception(tenant_id, upsert_data)
-                    await session.flush()  # Flush to ensure exception exists before creating event
-                    logger.debug(f"Saved/upserted exception {normalized.exception_id} to PostgreSQL")
-                    
-                    # Log creation event
-                    event_repo = ExceptionEventRepository(session)
-                    from src.repository.dto import ExceptionEventCreateDTO
-                    
-                    event_data = ExceptionEventCreateDTO(
-                        event_id=uuid4(),
-                        exception_id=normalized.exception_id,
-                        tenant_id=tenant_id,
-                        event_type="ExceptionCreated",
-                        actor_type=ActorType.SYSTEM,
-                        payload={
-                            "source": "api_ingestion",
-                            "normalized_context": normalized.normalized_context,
-                            "decision": decision.decision,
-                        },
-                    )
-                    
-                    # Use idempotent append
-                    await event_repo.append_event_if_new(event_data)
-                    await session.flush()
-                    logger.debug(f"Logged event for exception {normalized.exception_id}")
-                    # Note: session.commit() is called automatically by get_db_session_context
-                    
-            except Exception as db_error:
-                # Log but don't fail the ingestion if DB save fails
-                import traceback
-                error_trace = traceback.format_exc()
-                logger.error(
-                    f"Failed to persist exception {normalized.exception_id} to PostgreSQL: {db_error}\n"
-                    f"Traceback: {error_trace}"
-                )
-                # Re-raise in development to see the error, but catch in production
-                # For now, log the error but continue
-        except IntakeAgentError as e:
-            error_msg = f"Failed to normalize exception: {str(e)}"
-            logger.error(f"{error_msg} for tenant {tenant_id}")
-            errors.append(error_msg)
-        except Exception as e:
-            error_msg = f"Unexpected error normalizing exception: {str(e)}"
-            logger.error(f"{error_msg} for tenant {tenant_id}")
-            errors.append(error_msg)
+    pii_service = get_pii_redaction_service()
+    redacted_payload, redaction_metadata = pii_service.redact_pii(
+        data=raw_payload,
+        tenant_id=tenant_id,
+    )
     
-    if not exception_ids and errors:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Failed to normalize any exceptions: {', '.join(errors)}",
+    # Ensure secrets never logged - additional defensive redaction
+    redacted_payload = pii_service.ensure_secrets_never_logged(redacted_payload, tenant_id)
+    
+    # Log redaction if any fields were redacted
+    if redaction_metadata.get("redaction_count", 0) > 0:
+        logger.info(
+            f"Redacted {redaction_metadata['redaction_count']} PII field(s) for exception {exception_id}, "
+            f"tenant {tenant_id}: {', '.join(redaction_metadata['redacted_fields'][:5])}"
         )
     
-    # Log completion
-    logger.info(f"Ingested {len(exception_ids)} exception(s) for tenant {tenant_id}")
+    # Ensure tenantId is set in redacted exception
+    if "tenantId" not in redacted_payload:
+        redacted_payload["tenantId"] = tenant_id
     
-    return ExceptionIngestionResponse(exceptionIds=exception_ids, count=len(exception_ids))
+    # Determine source system
+    source_system = request.source_system or redacted_payload.get("sourceSystem") or redacted_payload.get("source_system") or "UNKNOWN"
+    
+    # Determine ingestion method
+    ingestion_method = request.ingestion_method or "api"
+    
+    # Create ExceptionIngested event with redacted payload
+    # Phase 9 P9-21: correlation_id = exception_id for distributed tracing
+    # Phase 9 P9-24: Use redacted payload to ensure PII/secrets never logged
+    try:
+        exception_ingested_event = ExceptionIngested.create(
+            tenant_id=tenant_id,
+            exception_id=exception_id,
+            raw_payload=redacted_payload,  # Use redacted payload
+            source_system=source_system,
+            ingestion_method=ingestion_method,
+            correlation_id=exception_id,  # Explicitly set correlation_id = exception_id
+            metadata={
+                "redaction_metadata": redaction_metadata,  # Store redaction metadata in event
+            },
+        )
+    except Exception as e:
+        logger.error(f"Failed to create ExceptionIngested event: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create event: {str(e)}",
+        )
+    
+    # Publish event (this will store in EventStore and publish to broker)
+    # Create event publisher with database session context
+    from src.infrastructure.db.session import get_db_session_context
+    from src.messaging.event_store import DatabaseEventStore
+    
+    try:
+        async with get_db_session_context() as session:
+            # Create event store with session
+            event_store = DatabaseEventStore(session=session)
+            
+            # Get broker and create event publisher
+            from src.messaging.settings import get_broker_settings
+            from src.messaging.kafka_broker import KafkaBroker
+            
+            broker_settings = get_broker_settings()
+            broker = KafkaBroker(settings=broker_settings)
+            event_publisher = EventPublisherService(broker=broker, event_store=event_store)
+            
+            await event_publisher.publish_event(
+                topic="exceptions",
+                event=exception_ingested_event.model_dump(by_alias=True),
+            )
+        
+        logger.info(
+            f"Published ExceptionIngested event: exception_id={exception_id}, "
+            f"tenant_id={tenant_id}, source_system={source_system}"
+        )
+    except Exception as e:
+        logger.error(
+            f"Failed to publish ExceptionIngested event: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to publish event: {str(e)}",
+        )
+    
+    # Return 202 Accepted
+    return ExceptionIngestionResponse(
+        exceptionId=exception_id,
+        status="accepted",
+        message="Exception ingestion request accepted and queued for processing",
+    )
 
 
 # IMPORTANT: More specific routes must come BEFORE less specific ones
@@ -366,7 +521,10 @@ async def get_exception_events(
     request: Request = None,
 ) -> ExceptionEventListResponse:
     """
-    Get event timeline for a specific exception.
+    Get event timeline for a specific exception (trace).
+    
+    Phase 9 P9-21: Trace query helper - returns all events for an exception.
+    Queries by both exception_id and correlation_id (which equals exception_id) to get complete trace.
     
     GET /exceptions/{exception_id}/events
     
@@ -382,6 +540,7 @@ async def get_exception_events(
     Returns:
     - Paginated list of events in chronological order (oldest first)
     - Total count and pagination metadata
+    - All events in the trace (correlation_id = exception_id)
     
     Raises:
     - HTTPException 400 if tenant_id is missing or invalid
@@ -428,70 +587,54 @@ async def get_exception_events(
                     detail=f"Exception {exception_id} not found for tenant {tenant_id}",
                 )
             
-            # Build event filter from query parameters
-            event_filters = EventFilter()
+            # Phase 9 P9-21: Use TraceService for trace querying (queries by correlation_id = exception_id)
+            from src.infrastructure.repositories.event_store_repository import EventStoreRepository
+            from src.services.trace_service import TraceService
             
+            event_store_repo = EventStoreRepository(session)
+            trace_service = TraceService(event_store_repo)
+            
+            # Parse event type filter (TraceService.get_trace_for_exception accepts single event_type string)
+            event_type_filter = None
             if event_type:
-                # Parse comma-separated event types
+                # Parse comma-separated event types (use first one for TraceService)
                 event_types_list = [et.strip() for et in event_type.split(",") if et.strip()]
                 if event_types_list:
-                    event_filters.event_types = event_types_list
+                    event_type_filter = event_types_list[0]
             
-            if actor_type:
-                # Map string actor_type to ActorType enum
-                actor_type_map = {
-                    "agent": ActorType.AGENT,
-                    "user": ActorType.USER,
-                    "system": ActorType.SYSTEM,
-                }
-                db_actor_type = actor_type_map.get(actor_type.lower())
-                if db_actor_type is None:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Invalid actor_type value: {actor_type}. Must be one of: agent, user, system",
-                    )
-                event_filters.actor_type = db_actor_type
-            
-            if date_from:
-                event_filters.date_from = date_from
-            if date_to:
-                event_filters.date_to = date_to
-            
-            # Get events from repository (returns list, not paginated result)
-            event_repo = ExceptionEventRepository(session)
-            all_events = await event_repo.get_events_for_exception(
-                tenant_id=tenant_id,
+            # Get trace for exception (queries by correlation_id = exception_id)
+            trace_result = await trace_service.get_trace_for_exception(
                 exception_id=exception_id,
-                filters=event_filters,
+                tenant_id=tenant_id,
+                event_type=event_type_filter,
+                start_timestamp=date_from,
+                end_timestamp=date_to,
+                page=page,
+                page_size=page_size,
             )
             
-            # Apply pagination manually
-            total = len(all_events)
-            total_pages = (total + page_size - 1) // page_size if page_size > 0 else 0
-            start_idx = (page - 1) * page_size
-            end_idx = start_idx + page_size
-            paginated_events = all_events[start_idx:end_idx]
-            
-            # Transform to response format
+            # Transform EventLog to response format
             events = []
-            for event in paginated_events:
+            for event_log in trace_result.items:
                 events.append({
-                    "eventId": str(event.event_id),
-                    "exceptionId": event.exception_id,
-                    "tenantId": event.tenant_id,
-                    "eventType": event.event_type,
-                    "actorType": event.actor_type.value if hasattr(event.actor_type, "value") else str(event.actor_type),
-                    "actorId": event.actor_id,
-                    "payload": event.payload if isinstance(event.payload, dict) else {},
-                    "createdAt": event.created_at.isoformat() if hasattr(event.created_at, "isoformat") else str(event.created_at),
+                    "eventId": str(event_log.event_id),
+                    "exceptionId": event_log.exception_id,
+                    "tenantId": event_log.tenant_id,
+                    "eventType": event_log.event_type,
+                    "actorType": "system",  # Default, can be extracted from metadata
+                    "actorId": "system",
+                    "payload": event_log.payload if isinstance(event_log.payload, dict) else {},
+                    "createdAt": event_log.timestamp.isoformat() if event_log.timestamp else None,
+                    "correlationId": event_log.correlation_id,  # Phase 9 P9-21: Include correlation_id
                 })
             
             return ExceptionEventListResponse(
                 items=events,
-                total=total,
-                page=page,
-                page_size=page_size,
-                total_pages=total_pages,
+                total=trace_result.total,
+                page=trace_result.page,
+                page_size=trace_result.page_size,
+                total_pages=trace_result.total_pages,
+                correlation_id=exception_id,  # Phase 9 P9-21: correlation_id = exception_id
             )
     
     except HTTPException:
@@ -501,6 +644,88 @@ async def get_exception_events(
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: Failed to retrieve events: {str(e)}",
+        )
+
+
+@router.get("/{tenant_id}/{exception_id}/trace", response_model=dict)
+async def get_exception_trace(
+    tenant_id: str = Path(..., description="Tenant identifier"),
+    exception_id: str = Path(..., description="Exception identifier"),
+    request: Request = None,
+) -> dict[str, Any]:
+    """
+    Get trace summary for an exception.
+    
+    Phase 9 P9-21: Trace query helper - returns trace summary including:
+    - Total event count
+    - Event types and counts
+    - First and last event timestamps
+    - Worker types involved
+    - Duration
+    
+    GET /exceptions/{tenant_id}/{exception_id}/trace
+    
+    Returns:
+    - Trace summary with event counts, types, timestamps, and worker types
+    
+    Raises:
+    - HTTPException 400 if tenant_id is missing
+    - HTTPException 403 if tenant ID mismatch
+    - HTTPException 404 if exception not found
+    - HTTPException 500 if database error occurs
+    """
+    # Verify tenant ID matches authenticated tenant if available
+    if request and hasattr(request.state, "tenant_id"):
+        authenticated_tenant_id = request.state.tenant_id
+        if authenticated_tenant_id != tenant_id:
+            logger.warning(
+                f"Tenant mismatch: authenticated={authenticated_tenant_id}, "
+                f"path={tenant_id} for {request.url.path}"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=f"Tenant ID mismatch: authenticated tenant '{authenticated_tenant_id}' "
+                f"does not match path tenant '{tenant_id}'",
+            )
+        tenant_id = authenticated_tenant_id
+    
+    logger.info(f"Getting trace summary for exception {exception_id}, tenant {tenant_id}")
+    
+    try:
+        from src.infrastructure.db.session import get_db_session_context
+        from src.infrastructure.repositories.event_store_repository import EventStoreRepository
+        from src.services.trace_service import TraceService
+        from src.repository.exceptions_repository import ExceptionRepository
+        
+        async with get_db_session_context() as session:
+            # Verify exception exists
+            exception_repo = ExceptionRepository(session)
+            db_exception = await exception_repo.get_exception(tenant_id, exception_id)
+            
+            if db_exception is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Exception {exception_id} not found for tenant {tenant_id}",
+                )
+            
+            # Get trace summary
+            event_store_repo = EventStoreRepository(session)
+            trace_service = TraceService(event_store_repo)
+            
+            trace_summary = await trace_service.get_trace_summary(
+                exception_id=exception_id,
+                tenant_id=tenant_id,
+            )
+            
+            return trace_summary
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving trace summary: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: Failed to retrieve trace summary: {str(e)}",
         )
 
 
@@ -1050,40 +1275,32 @@ async def update_exception(
         )
 
 
-@router.post("/{tenant_id}/{exception_id}/playbook/recalculate", response_model=PlaybookRecalculationResponse)
+@router.post("/{tenant_id}/{exception_id}/playbook/recalculate", response_model=PlaybookRecalculationResponse, status_code=status.HTTP_202_ACCEPTED)
 async def recalculate_playbook(
     tenant_id: str = Path(..., description="Tenant identifier"),
     exception_id: str = Path(..., description="Exception identifier"),
     request: Request = None,
 ) -> PlaybookRecalculationResponse:
     """
-    Recalculate and update the playbook assignment for an exception.
+    Request playbook recalculation for an exception.
     
-    POST /exceptions/{exception_id}/playbook/recalculate
-    
-    Phase 7 P7-8: Re-runs playbook matching and updates exception playbook assignment.
-    
-    This endpoint:
-    - Loads the exception from the database
-    - Re-runs playbook matching using the Playbook Matching Service
-    - Updates exception.current_playbook_id and exception.current_step
-    - Emits a PlaybookRecalculated event (idempotent - only if assignment changed)
-    
-    Query Parameters:
-    - tenant_id: Tenant identifier (required for isolation)
+    Phase 9 P9-17: Transformed to async command pattern.
+    - Validates request
+    - Creates PlaybookRecalculationRequested event
+    - Stores event in EventStore
+    - Publishes to message broker
+    - Returns 202 Accepted
     
     Returns:
-    - Exception ID
-    - Current playbook ID (or None if no playbook matched)
-    - Current step (or None if no playbook matched)
-    - Playbook metadata (name, version) if available
-    - Reasoning for playbook selection
+    - 202 Accepted
+    - exception_id
+    - status: "accepted"
     
     Raises:
     - HTTPException 400 if tenant_id is missing or invalid
     - HTTPException 403 if tenant ID mismatch
     - HTTPException 404 if exception not found or doesn't belong to tenant
-    - HTTPException 500 if database or matching service error occurs
+    - HTTPException 500 if event publishing fails
     """
     # Verify tenant ID matches authenticated tenant if available
     if request and hasattr(request.state, "tenant_id"):
@@ -1091,35 +1308,26 @@ async def recalculate_playbook(
         if authenticated_tenant_id != tenant_id:
             logger.warning(
                 f"Tenant mismatch: authenticated={authenticated_tenant_id}, "
-                f"query={tenant_id} for {request.url.path}"
+                f"path={tenant_id} for {request.url.path}"
             )
             raise HTTPException(
                 status_code=403,
                 detail=f"Tenant ID mismatch: authenticated tenant '{authenticated_tenant_id}' "
-                f"does not match query tenant '{tenant_id}'",
+                f"does not match path tenant '{tenant_id}'",
             )
         tenant_id = authenticated_tenant_id
     
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id is required")
     
-    logger.info(f"Recalculating playbook for exception {exception_id}, tenant {tenant_id}")
+    logger.info(f"Requesting playbook recalculation for exception {exception_id}, tenant {tenant_id}")
     
+    # Verify exception exists (basic validation)
     try:
         from src.infrastructure.db.session import get_db_session_context
         from src.repository.exceptions_repository import ExceptionRepository
-        from src.repository.exception_events_repository import ExceptionEventRepository
-        from src.repository.dto import ExceptionUpdateDTO, ExceptionEventDTO
-        from src.infrastructure.repositories.playbook_repository import PlaybookRepository
-        from src.playbooks.matching_service import PlaybookMatchingService
-        from src.models.exception_record import ExceptionRecord, Severity, ResolutionStatus
-        from src.infrastructure.db.models import ActorType
-        from datetime import datetime, timezone
-        import uuid
-        import hashlib
         
         async with get_db_session_context() as session:
-            # Load exception from database
             exception_repo = ExceptionRepository(session)
             db_exception = await exception_repo.get_exception(tenant_id, exception_id)
             
@@ -1132,168 +1340,56 @@ async def recalculate_playbook(
                     status_code=404,
                     detail=f"Exception {exception_id} not found for tenant {tenant_id}",
                 )
-            
-            # Store previous playbook assignment for idempotency check
-            previous_playbook_id = db_exception.current_playbook_id
-            previous_step = db_exception.current_step
-            
-            # Convert DB Exception to ExceptionRecord for matching service
-            severity_map = {
-                "low": Severity.LOW,
-                "medium": Severity.MEDIUM,
-                "high": Severity.HIGH,
-                "critical": Severity.CRITICAL,
-            }
-            severity = severity_map.get(
-                db_exception.severity.value if hasattr(db_exception.severity, 'value') else str(db_exception.severity).lower(),
-                Severity.MEDIUM
-            )
-            
-            status_map = {
-                "open": ResolutionStatus.OPEN,
-                "analyzing": ResolutionStatus.IN_PROGRESS,
-                "resolved": ResolutionStatus.RESOLVED,
-                "escalated": ResolutionStatus.ESCALATED,
-            }
-            resolution_status = status_map.get(
-                db_exception.status.value if hasattr(db_exception.status, 'value') else str(db_exception.status).lower(),
-                ResolutionStatus.OPEN
-            )
-            
-            # Build normalized context from database fields
-            normalized_context = {
-                "domain": db_exception.domain,
-            }
-            if db_exception.entity:
-                normalized_context["entity"] = db_exception.entity
-            if db_exception.amount:
-                normalized_context["amount"] = float(db_exception.amount)
-            if db_exception.sla_deadline:
-                normalized_context["sla_deadline"] = db_exception.sla_deadline
-            
-            # Create ExceptionRecord from database model
-            exception_record = ExceptionRecord(
-                exception_id=db_exception.exception_id,
-                tenant_id=db_exception.tenant_id,
-                source_system=db_exception.source_system,
-                exception_type=db_exception.type,
-                severity=severity,
-                timestamp=db_exception.created_at or datetime.now(timezone.utc),
-                raw_payload={},
-                normalized_context=normalized_context,
-                resolution_status=resolution_status,
-                audit_trail=[],
-            )
-            
-            # Load TenantPolicyPack if available (optional for matching)
-            tenant_policy = None
-            try:
-                from src.tenantpack.loader import load_tenant_policy
-                from src.domainpack.registry import DomainPackRegistry
-                registry = DomainPackRegistry()
-                domain_pack = registry.get_latest(tenant_id)
-                if domain_pack:
-                    # Try to load tenant policy from the same directory structure
-                    # This is a simplified approach - in production, this would come from a config
-                    tenant_policy = None  # Optional, matching service can work without it
-            except Exception as e:
-                logger.debug(f"Could not load tenant policy for tenant {tenant_id}: {e}")
-                tenant_policy = None
-            
-            # Initialize Playbook Matching Service
-            playbook_repo = PlaybookRepository(session)
-            matching_service = PlaybookMatchingService(playbook_repo)
-            
-            # Run playbook matching
-            matching_result = await matching_service.match_playbook(
-                tenant_id=tenant_id,
-                exception=exception_record,
-                tenant_policy=tenant_policy,
-            )
-            
-            # Determine new playbook assignment
-            new_playbook_id = matching_result.playbook.playbook_id if matching_result.playbook is not None else None
-            new_step = 1 if matching_result.playbook is not None else None  # Reset to first step if playbook assigned
-            
-            # Check if playbook assignment changed (for idempotency)
-            playbook_changed = (
-                previous_playbook_id != new_playbook_id or
-                (new_playbook_id is not None and previous_step != new_step)
-            )
-            
-            # Update exception with new playbook assignment
-            await exception_repo.update_exception(
-                tenant_id=tenant_id,
-                exception_id=exception_id,
-                updates=ExceptionUpdateDTO(
-                    current_playbook_id=new_playbook_id,
-                    current_step=new_step,
-                ),
-            )
-            
-            # Emit PlaybookRecalculated event (only if playbook assignment changed)
-            event_repo = ExceptionEventRepository(session)
-            if playbook_changed:
-                # Generate deterministic event ID based on exception_id and new assignment for idempotency
-                # This ensures re-running recalculation with same result doesn't create duplicate events
-                event_id_str = f"{exception_id}:{new_playbook_id}:{new_step}:recalculated"
-                event_id_bytes = hashlib.md5(event_id_str.encode()).digest()
-                event_id = uuid.UUID(bytes=event_id_bytes[:16])
-                
-                event = ExceptionEventDTO(
-                    event_id=event_id,
-                    exception_id=exception_id,
-                    tenant_id=tenant_id,
-                    event_type="PlaybookRecalculated",
-                    actor_type=ActorType.SYSTEM,
-                    actor_id="PlaybookRecalculationAPI",
-                    payload={
-                        "previous_playbook_id": previous_playbook_id,
-                        "previous_step": previous_step,
-                        "new_playbook_id": new_playbook_id,
-                        "new_step": new_step,
-                        "playbook_name": matching_result.playbook.name if matching_result.playbook is not None else None,
-                        "playbook_version": matching_result.playbook.version if matching_result.playbook is not None else None,
-                        "reasoning": matching_result.reasoning,
-                    },
-                )
-                
-                # Use idempotent event insertion
-                event_created = await event_repo.append_event_if_new(event)
-                if event_created:
-                    logger.info(
-                        f"Recalculated playbook for exception {exception_id}: "
-                        f"playbook_id={previous_playbook_id} -> {new_playbook_id}, "
-                        f"step={previous_step} -> {new_step}"
-                    )
-                else:
-                    logger.info(
-                        f"PlaybookRecalculated event already exists for exception {exception_id} "
-                        f"with playbook_id={new_playbook_id}, step={new_step}. Skipping duplicate event."
-                    )
-            else:
-                logger.info(
-                    f"Playbook recalculation for exception {exception_id} resulted in same assignment "
-                    f"(playbook_id={new_playbook_id}, step={new_step}). No event emitted."
-                )
-            
-            # Build response (use aliases for JSON serialization)
-            response = PlaybookRecalculationResponse(
-                exceptionId=exception_id,  # Use alias
-                currentPlaybookId=new_playbook_id,  # Use alias
-                currentStep=new_step,  # Use alias
-                playbookName=matching_result.playbook.name if matching_result.playbook is not None else None,  # Use alias
-                playbookVersion=matching_result.playbook.version if matching_result.playbook is not None else None,  # Use alias
-                reasoning=matching_result.reasoning,
-            )
-            
-            return response
-            
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error recalculating playbook: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to recalculate playbook: {str(e)}")
+        logger.error(f"Error validating exception: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to validate exception: {str(e)}")
+    
+    # Get event publisher
+    event_publisher = get_event_publisher()
+    
+    # Create PlaybookRecalculationRequested event
+    try:
+        playbook_recalculation_event = PlaybookRecalculationRequested.create(
+            tenant_id=tenant_id,
+            exception_id=exception_id,
+            requested_by="api",
+        )
+    except Exception as e:
+        logger.error(f"Failed to create PlaybookRecalculationRequested event: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create event: {str(e)}",
+        )
+    
+    # Publish event (this will store in EventStore and publish to broker)
+    try:
+        await event_publisher.publish_event(
+            topic="exceptions",
+            event=playbook_recalculation_event.model_dump(by_alias=True),
+        )
+        
+        logger.info(
+            f"Published PlaybookRecalculationRequested event: exception_id={exception_id}, "
+            f"tenant_id={tenant_id}"
+        )
+    except Exception as e:
+        logger.error(
+            f"Failed to publish PlaybookRecalculationRequested event: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to publish event: {str(e)}",
+        )
+    
+    # Return 202 Accepted
+    return PlaybookRecalculationResponse(
+        exceptionId=exception_id,
+        status="accepted",
+        message="Playbook recalculation request accepted and queued for processing",
+    )
 
 
 def _derive_step_status_from_events(
@@ -1544,7 +1640,7 @@ async def get_playbook_status(
         raise HTTPException(status_code=500, detail=f"Failed to retrieve playbook status: {str(e)}")
 
 
-@router.post("/{tenant_id}/{exception_id}/playbook/steps/{step_order}/complete", response_model=PlaybookStatusResponse)
+@router.post("/{tenant_id}/{exception_id}/playbook/steps/{step_order}/complete", response_model=PlaybookStatusResponse, status_code=status.HTTP_202_ACCEPTED)
 async def complete_playbook_step(
     tenant_id: str = Path(..., description="Tenant identifier"),
     exception_id: str = Path(..., description="Exception identifier"),
@@ -1553,20 +1649,14 @@ async def complete_playbook_step(
     request: Request = None,
 ) -> PlaybookStatusResponse:
     """
-    Complete a playbook step for an exception.
+    Request playbook step completion for an exception.
     
-    POST /exceptions/{tenant_id}/{exception_id}/playbook/steps/{step_order}/complete
-    
-    Phase 7 P7-10: Completes a playbook step and returns updated playbook status.
-    
-    This endpoint:
-    - Validates tenant ownership of the exception
-    - Validates the step is the next expected step
-    - Calls PlaybookExecutionService to complete the step
-    - Executes safe actions for the step (if applicable)
-    - Emits PlaybookStepCompleted event
-    - Updates exception.current_step
-    - Returns updated playbook status
+    Phase 9 P9-17: Transformed to async command pattern.
+    - Validates request
+    - Creates PlaybookStepCompletionRequested event
+    - Stores event in EventStore
+    - Publishes to message broker
+    - Returns 202 Accepted
     
     Request Body:
     - actorType: "human", "agent", or "system"
@@ -1574,15 +1664,15 @@ async def complete_playbook_step(
     - notes: Optional notes about completion
     
     Returns:
-    - Updated playbook status (same structure as GET /playbook endpoint)
+    - 202 Accepted
+    - exception_id
+    - status: "accepted"
     
     Raises:
-    - HTTPException 400 if request body is invalid or actor_type is invalid
+    - HTTPException 400 if request body is invalid or step_order is invalid
     - HTTPException 403 if tenant ID mismatch
     - HTTPException 404 if exception not found or doesn't belong to tenant
-    - HTTPException 400 if no playbook is assigned
-    - HTTPException 400 if step_order is invalid or not the next expected step
-    - HTTPException 500 if execution service error occurs
+    - HTTPException 500 if event publishing fails
     """
     # Verify tenant ID matches authenticated tenant if available
     if request and hasattr(request.state, "tenant_id"):
@@ -1603,23 +1693,24 @@ async def complete_playbook_step(
     if step_order < 1:
         raise HTTPException(status_code=400, detail="step_order must be >= 1")
     
+    # Validate actor_type
+    if request_body.actor_type not in ["human", "agent", "system"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid actor_type: {request_body.actor_type}. Must be 'human', 'agent', or 'system'",
+        )
+    
     logger.info(
-        f"Completing step {step_order} for exception {exception_id}, tenant {tenant_id} "
+        f"Requesting step {step_order} completion for exception {exception_id}, tenant {tenant_id} "
         f"(actor: {request_body.actor_type}/{request_body.actor_id})"
     )
     
+    # Verify exception exists (basic validation)
     try:
         from src.infrastructure.db.session import get_db_session_context
         from src.repository.exceptions_repository import ExceptionRepository
-        from src.infrastructure.repositories.playbook_repository import PlaybookRepository
-        from src.infrastructure.repositories.playbook_step_repository import PlaybookStepRepository
-        from src.repository.exception_events_repository import ExceptionEventRepository
-        from src.playbooks.execution_service import PlaybookExecutionService, PlaybookExecutionError
-        from src.infrastructure.db.models import ActorType
-        import json
         
         async with get_db_session_context() as session:
-            # Load exception and verify tenant ownership
             exception_repo = ExceptionRepository(session)
             db_exception = await exception_repo.get_exception(tenant_id, exception_id)
             
@@ -1632,162 +1723,62 @@ async def complete_playbook_step(
                     status_code=404,
                     detail=f"Exception {exception_id} not found for tenant {tenant_id}",
                 )
-            
-            # Validate playbook is assigned
-            if db_exception.current_playbook_id is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Exception {exception_id} has no playbook assigned",
-                )
-            
-            # Map actor_type string to ActorType enum
-            actor_type_map = {
-                "human": ActorType.USER,
-                "agent": ActorType.AGENT,
-                "system": ActorType.SYSTEM,
-            }
-            actor_type_str = request_body.actor_type.lower()
-            if actor_type_str not in actor_type_map:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid actor_type: {request_body.actor_type}. Must be one of: human, agent, system",
-                )
-            actor_type = actor_type_map[actor_type_str]
-            
-            # Initialize Playbook Execution Service
-            event_repo = ExceptionEventRepository(session)
-            playbook_repo = PlaybookRepository(session)
-            step_repo = PlaybookStepRepository(session)
-            
-            execution_service = PlaybookExecutionService(
-                exception_repository=exception_repo,
-                event_repository=event_repo,
-                playbook_repository=playbook_repo,
-                step_repository=step_repo,
-            )
-            
-            # Complete the step
-            try:
-                await execution_service.complete_step(
-                    tenant_id=tenant_id,
-                    exception_id=exception_id,
-                    playbook_id=db_exception.current_playbook_id,
-                    step_order=step_order,
-                    actor_type=actor_type,
-                    actor_id=request_body.actor_id,
-                    notes=request_body.notes,
-                )
-            except PlaybookExecutionError as e:
-                # Convert PlaybookExecutionError to appropriate HTTP status
-                error_msg = str(e)
-                if "not found" in error_msg.lower():
-                    raise HTTPException(status_code=404, detail=error_msg)
-                elif "not the next expected step" in error_msg.lower() or "not active" in error_msg.lower():
-                    raise HTTPException(status_code=400, detail=error_msg)
-                elif "requires human approval" in error_msg.lower():
-                    raise HTTPException(status_code=403, detail=error_msg)
-                else:
-                    raise HTTPException(status_code=400, detail=error_msg)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-            
-            # Commit the transaction to ensure updates are persisted
-            await session.commit()
-            
-            # Refresh the exception object to get the latest state from the database
-            await session.refresh(db_exception)
-            
-            # After completion, fetch updated playbook status (reuse logic from GET endpoint)
-            # Use the refreshed exception object
-            
-            # Load playbook (use the refreshed exception's playbook_id)
-            playbook_id = db_exception.current_playbook_id
-            playbook = await playbook_repo.get_playbook(
-                playbook_id,
-                tenant_id,
-            )
-            
-            if playbook is None:
-                # Playbook was deleted (shouldn't happen, but handle gracefully)
-                return PlaybookStatusResponse(
-                    exceptionId=exception_id,
-                    playbookId=db_exception.current_playbook_id,
-                    playbookName=None,
-                    playbookVersion=None,
-                    conditions=None,
-                    steps=[],
-                    currentStep=db_exception.current_step,
-                )
-            
-            # Load ordered steps
-            steps = await step_repo.get_steps_ordered(
-                db_exception.current_playbook_id,
-                tenant_id,
-            )
-            
-            # Load playbook-related events
-            from src.repository.dto import EventFilter
-            event_filter = EventFilter(
-                event_types=["PlaybookStarted", "PlaybookStepCompleted", "PlaybookCompleted"],
-            )
-            events = await event_repo.get_events_for_exception(
-                tenant_id=tenant_id,
-                exception_id=exception_id,
-                filters=event_filter,
-            )
-            
-            # Derive step status from events
-            step_status_map = _derive_step_status_from_events(
-                steps=steps,
-                events=events,
-                current_step=db_exception.current_step,
-            )
-            
-            # Build step status list
-            step_statuses = []
-            for step in steps:
-                status = step_status_map.get(step.step_order, "pending")
-                step_statuses.append(
-                    PlaybookStepStatus(
-                        stepOrder=step.step_order,
-                        name=step.name,
-                        actionType=step.action_type,
-                        status=status,
-                    )
-                )
-            
-            # Parse conditions from JSON if stored as string
-            conditions = None
-            if playbook.conditions:
-                if isinstance(playbook.conditions, str):
-                    try:
-                        conditions = json.loads(playbook.conditions)
-                    except (json.JSONDecodeError, TypeError):
-                        conditions = {}
-                elif isinstance(playbook.conditions, dict):
-                    conditions = playbook.conditions
-            
-            # Build response
-            response = PlaybookStatusResponse(
-                exceptionId=exception_id,
-                playbookId=playbook.playbook_id,
-                playbookName=playbook.name,
-                playbookVersion=playbook.version,
-                conditions=conditions,
-                steps=step_statuses,
-                currentStep=db_exception.current_step,
-            )
-            
-            logger.info(
-                f"Completed step {step_order} for exception {exception_id}: "
-                f"playbook_id={playbook.playbook_id}, new current_step={db_exception.current_step}"
-            )
-            
-            return response
-            
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error completing playbook step: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to complete playbook step: {str(e)}")
+        logger.error(f"Error validating exception: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to validate exception: {str(e)}")
+    
+    # Get event publisher
+    event_publisher = get_event_publisher()
+    
+    # Create PlaybookStepCompletionRequested event
+    try:
+        step_completion_event = PlaybookStepCompletionRequested.create(
+            tenant_id=tenant_id,
+            exception_id=exception_id,
+            step_order=step_order,
+            actor_type=request_body.actor_type,
+            actor_id=request_body.actor_id,
+            notes=request_body.notes,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create PlaybookStepCompletionRequested event: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create event: {str(e)}",
+        )
+    
+    # Publish event (this will store in EventStore and publish to broker)
+    try:
+        await event_publisher.publish_event(
+            topic="exceptions",
+            event=step_completion_event.model_dump(by_alias=True),
+        )
+        
+        logger.info(
+            f"Published PlaybookStepCompletionRequested event: exception_id={exception_id}, "
+            f"step_order={step_order}, tenant_id={tenant_id}"
+        )
+    except Exception as e:
+        logger.error(
+            f"Failed to publish PlaybookStepCompletionRequested event: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to publish event: {str(e)}",
+        )
+    
+    # Return 202 Accepted with minimal response
+    # Note: Full playbook status would be available via GET endpoint after async processing
+    return PlaybookStatusResponse(
+        exceptionId=exception_id,
+        playbookId=None,  # Will be populated after async processing
+        playbookName=None,
+        playbookVersion=None,
+        conditions=None,
+        steps=[],
+        currentStep=None,
+    )
 

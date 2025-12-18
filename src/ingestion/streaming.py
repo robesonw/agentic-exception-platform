@@ -496,7 +496,7 @@ def load_streaming_config() -> dict[str, Any]:
         "enabled": os.getenv("STREAMING_ENABLED", "false").lower() == "true",
         "backend": os.getenv("STREAMING_BACKEND", "stub"),
         "kafka": {
-            "bootstrap_servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+            "bootstrap_servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092"),
             "topic": os.getenv("KAFKA_TOPIC", "exceptions"),
             "group_id": os.getenv("KAFKA_GROUP_ID", "exception-processor"),
         },

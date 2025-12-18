@@ -39,8 +39,8 @@ if not exist ".env" (
     echo.
 )
 
-REM Set DATABASE_URL environment variable
-set DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/sentinai
+REM Set DATABASE_URL environment variable (matches docker-compose.yml)
+set DATABASE_URL=postgresql+asyncpg://sentinai:sentinai@localhost:5432/sentinai
 
 REM Start server
 echo.

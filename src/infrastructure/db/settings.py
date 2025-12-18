@@ -41,12 +41,14 @@ def get_database_url() -> str:
 
 def get_db_pool_size() -> int:
     """Get database connection pool size from environment variable."""
-    return int(os.getenv("DB_POOL_SIZE", "5"))
+    # Increase default pool size to handle concurrent workers
+    return int(os.getenv("DB_POOL_SIZE", "20"))
 
 
 def get_db_max_overflow() -> int:
     """Get database connection pool max overflow from environment variable."""
-    return int(os.getenv("DB_MAX_OVERFLOW", "5"))
+    # Increase default max overflow to handle concurrent workers
+    return int(os.getenv("DB_MAX_OVERFLOW", "10"))
 
 
 def get_db_pool_timeout() -> int:

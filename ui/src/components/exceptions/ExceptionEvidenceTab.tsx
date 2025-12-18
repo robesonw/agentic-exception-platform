@@ -317,6 +317,10 @@ export default function ExceptionEvidenceTab({ exceptionId }: ExceptionEvidenceT
     return (
       <Alert severity="error">
         Failed to load evidence: {error?.message || 'Unknown error'}
+        <br />
+        <Typography variant="caption" sx={{ mt: 1, display: 'block' }}>
+          If this exception was just created, evidence may not be available yet. Try refreshing the page.
+        </Typography>
       </Alert>
     )
   }

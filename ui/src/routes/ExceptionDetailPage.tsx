@@ -19,13 +19,15 @@ import ExceptionAuditTab from '../components/exceptions/ExceptionAuditTab.tsx'
 import SimulationDialog from '../components/exceptions/SimulationDialog.tsx'
 import SimulationResult from '../components/exceptions/SimulationResult.tsx'
 import RecommendedPlaybookPanel from '../components/exceptions/RecommendedPlaybookPanel.tsx'
+import PipelineStatus from '../components/exceptions/PipelineStatus.tsx'
 import { SeverityChip } from '../components/common'
-import { useExceptionDetail } from '../hooks/useExceptions.ts'
+import { useExceptionDetail, useReprocessException } from '../hooks/useExceptions.ts'
 import { useSnackbar } from '../components/common/SnackbarProvider.tsx'
 import { useNavigate } from 'react-router-dom'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import { formatDateTime } from '../utils/dateFormat.ts'
 import { useTenant } from '../hooks/useTenant.tsx'
+import LoadingButton from '../components/common/LoadingButton.tsx'
 
 
 /**
@@ -48,10 +50,11 @@ function TabPanel({ children, value, index }: TabPanelProps) {
 export default function ExceptionDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { showInfo } = useSnackbar()
+  const { showInfo, showSuccess, showError } = useSnackbar()
   const navigate = useNavigate()
   const { tenantId, apiKey } = useTenant()
   const [simulationDialogOpen, setSimulationDialogOpen] = useState(false)
+  const reprocessMutation = useReprocessException(id || '')
 
   // Read simulationId from URL query params
   const simulationId = searchParams.get('simulationId')
@@ -213,6 +216,19 @@ export default function ExceptionDetailPage() {
     showInfo('Escalate functionality coming in a later phase')
   }
 
+  const handleReprocess = async () => {
+    try {
+      const result = await reprocessMutation.mutateAsync()
+      showSuccess(
+        result.message || 'Exception reprocessing request accepted. The exception will be processed through the pipeline shortly.'
+      )
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to reprocess exception'
+      showError(errorMessage)
+      console.error('Exception reprocessing error:', err)
+    }
+  }
+
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue)
     // Update URL query param while preserving other params (like simulationId)
@@ -262,6 +278,15 @@ export default function ExceptionDetailPage() {
           </Box>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
+          <LoadingButton
+            variant="outlined"
+            color="info"
+            onClick={handleReprocess}
+            loading={reprocessMutation.isPending}
+            disabled={reprocessMutation.isPending}
+          >
+            Reprocess
+          </LoadingButton>
           <Button
             variant="outlined"
             color="error"
@@ -284,6 +309,9 @@ export default function ExceptionDetailPage() {
         {/* LEFT: key attributes / RAG preview */}
         <Grid item xs={12} md={3}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {/* Pipeline Status Widget */}
+            <PipelineStatus exceptionId={id!} />
+
             <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
               <Typography variant="subtitle2" gutterBottom>
                 Key Attributes

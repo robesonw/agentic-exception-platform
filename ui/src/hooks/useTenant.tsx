@@ -79,11 +79,17 @@ export function TenantProvider({ children }: TenantProviderProps) {
   // Update HTTP client when tenantId changes
   useEffect(() => {
     setTenantIdForHttpClient(tenantId)
+    if (import.meta.env.DEV) {
+      console.log('[TenantProvider] Updated httpClient tenantId:', tenantId)
+    }
   }, [tenantId])
 
   // Update HTTP client when API key changes
   useEffect(() => {
     setApiKeyForHttpClient(apiKey)
+    if (import.meta.env.DEV) {
+      console.log('[TenantProvider] Updated httpClient apiKey:', apiKey ? apiKey.substring(0, 15) + '...' : null)
+    }
   }, [apiKey])
 
   const setTenantId = (id: string | null) => {

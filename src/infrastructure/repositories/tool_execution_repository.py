@@ -101,6 +101,65 @@ class ToolExecutionRepository(AbstractBaseRepository[ToolExecution]):
         
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
+    
+    async def get_execution_by_execution_id(
+        self, execution_id: str, tenant_id: str
+    ) -> Optional[ToolExecution]:
+        """
+        Get a tool execution by execution_id string with tenant isolation.
+        
+        This method is used for idempotency checks when processing ToolExecutionRequested events.
+        The execution_id in the event payload is a UUID string.
+        
+        Args:
+            execution_id: Execution identifier (UUID string)
+            tenant_id: Tenant identifier (required for isolation)
+            
+        Returns:
+            ToolExecution instance or None if not found or access denied
+            
+        Raises:
+            ValueError: If tenant_id is empty or execution_id is invalid
+        """
+        if not tenant_id or not tenant_id.strip():
+            raise ValueError("tenant_id is required for tenant isolation")
+        
+        try:
+            execution_uuid = UUID(execution_id)
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid execution_id format: {execution_id}") from e
+        
+        return await self.get_execution(execution_uuid, tenant_id)
+    
+    async def is_execution_completed(
+        self, execution_id: str, tenant_id: str
+    ) -> bool:
+        """
+        Check if a tool execution is already completed (SUCCEEDED or FAILED).
+        
+        Used for idempotency checks to prevent duplicate executions.
+        
+        Args:
+            execution_id: Execution identifier (UUID string)
+            tenant_id: Tenant identifier (required for isolation)
+            
+        Returns:
+            True if execution exists and status is SUCCEEDED or FAILED, False otherwise
+            
+        Raises:
+            ValueError: If tenant_id is empty or execution_id is invalid
+        """
+        from src.infrastructure.db.models import ToolExecutionStatus
+        
+        execution = await self.get_execution_by_execution_id(execution_id, tenant_id)
+        
+        if execution is None:
+            return False
+        
+        return execution.status in (
+            ToolExecutionStatus.SUCCEEDED,
+            ToolExecutionStatus.FAILED,
+        )
 
     async def list_executions(
         self,
@@ -266,5 +325,7 @@ class ToolExecutionRepository(AbstractBaseRepository[ToolExecution]):
         return await self.list_executions(
             tenant_id=tenant_id, filters=tool_filter, page=page, page_size=page_size
         )
+
+
 
 

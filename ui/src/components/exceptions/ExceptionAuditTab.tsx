@@ -166,6 +166,10 @@ export default function ExceptionAuditTab({ exceptionId }: ExceptionAuditTabProp
     return (
       <Alert severity="error">
         Failed to load audit trail: {error?.message || 'Unknown error'}
+        <br />
+        <Typography variant="caption" sx={{ mt: 1, display: 'block' }}>
+          If this exception was just created, audit events may not be available yet. Try refreshing the page.
+        </Typography>
       </Alert>
     )
   }

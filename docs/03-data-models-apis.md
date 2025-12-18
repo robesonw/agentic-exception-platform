@@ -81,8 +81,114 @@ See `docs/tools-guide.md` for complete API documentation and examples.
 
 System-Level REST APIs
 
-Ingestion API: POST /exceptions/{tenantId} - Body: raw exception; Returns: exceptionId.
-Status API: GET /exceptions/{tenantId}/{exceptionId} - Returns: full exception schema.
-Admin API: POST /tenants/{tenantId}/packs/domain - Body: Domain Pack JSON.
-Metrics API: GET /metrics/{tenantId} - Returns: {autoResolutionRate: float, mttr: float, etc.}
-All APIs use HTTPS, JWT auth, and rate limiting.
+## Exception Ingestion API (Phase 9: Async Command Pattern)
+
+**POST /exceptions/{tenantId}**
+- **Request Body**: `{exception: object, source_system: string, ingestion_method: string}`
+- **Response**: `202 Accepted` with `{exceptionId: string, status: "accepted", message: string}`
+- **Behavior**: 
+  - Validates request and redacts PII
+  - Creates `ExceptionIngested` event
+  - Stores event in EventStore (append-only)
+  - Publishes event to Kafka topic "exceptions"
+  - Returns `202 Accepted` immediately (does not wait for processing)
+- **Phase 9**: Transformed to async command pattern. Processing happens asynchronously via workers.
+
+**GET /exceptions/{tenantId}/{exceptionId}**
+- **Response**: Full exception schema with current state
+- **Behavior**: Reads from database only (no agent calls)
+- **Phase 9**: Query API - reads from materialized views (database tables)
+
+**GET /exceptions/{exceptionId}/events**
+- **Response**: List of events for exception (trace)
+- **Query Params**: `page`, `page_size`, `event_type`, `start_timestamp`, `end_timestamp`
+- **Behavior**: Queries EventStoreRepository by correlation_id (exception_id)
+
+**GET /exceptions/{tenantId}/{exceptionId}/trace**
+- **Response**: Trace summary for exception
+- **Behavior**: Uses TraceService to aggregate events
+
+## Playbook APIs (Phase 9: Async Command Pattern)
+
+**POST /exceptions/{tenantId}/{exceptionId}/playbook/recalculate**
+- **Response**: `202 Accepted` with `{exceptionId: string, status: "accepted", message: string}`
+- **Behavior**: 
+  - Creates `PlaybookRecalculationRequested` event
+  - Publishes event to Kafka
+  - Returns `202 Accepted` immediately
+- **Phase 9**: Transformed to async command pattern
+
+**POST /exceptions/{tenantId}/{exceptionId}/playbook/steps/{step_order}/complete**
+- **Response**: `202 Accepted` with `{exceptionId: string, status: "accepted", message: string}`
+- **Behavior**: 
+  - Creates `PlaybookStepCompletionRequested` event
+  - Publishes event to Kafka
+  - Returns `202 Accepted` immediately
+- **Phase 9**: Transformed to async command pattern
+
+**GET /exceptions/{tenantId}/{exceptionId}/playbook**
+- **Response**: Playbook status with steps
+- **Behavior**: Reads from database only (no agent calls)
+- **Phase 9**: Query API - reads from materialized views
+
+## Tool Execution API (Phase 9: Async Command Pattern)
+
+**POST /api/tools/{tool_id}/execute**
+- **Request Body**: `{payload: object, exceptionId?: string, actorType: string, actorId: string}`
+- **Response**: `202 Accepted` with `{executionId: string, status: "accepted", message: string}`
+- **Behavior**: 
+  - Validates request
+  - Creates `tool_execution` record in "requested" state
+  - Creates `ToolExecutionRequested` event
+  - Publishes event to Kafka
+  - Returns `202 Accepted` immediately
+- **Phase 9**: Transformed to async command pattern
+
+**GET /api/tools/executions**
+- **Response**: Paginated list of tool executions
+- **Behavior**: Reads from database only (no agent calls)
+- **Phase 9**: Query API - reads from materialized views
+
+## Audit API (Phase 9)
+
+**GET /api/audit/exceptions/{tenantId}/{exceptionId}**
+- **Response**: Paginated audit trail for exception
+- **Query Params**: `page`, `page_size`, `event_type`, `start_timestamp`, `end_timestamp`
+- **Behavior**: Queries EventStoreRepository (source of truth for audit)
+
+**GET /api/audit/tenants/{tenantId}**
+- **Response**: Paginated audit trail for tenant
+- **Query Params**: `page`, `page_size`, `event_type`, `exception_id`, `correlation_id`, `start_timestamp`, `end_timestamp`
+- **Behavior**: Queries EventStoreRepository with tenant isolation
+
+## Admin APIs
+
+**POST /tenants/{tenantId}/packs/domain** - Body: Domain Pack JSON.
+**GET /metrics/{tenantId}** - Returns: `{autoResolutionRate: float, mttr: float, etc.}`
+
+## API Patterns (Phase 9)
+
+### Command Pattern (Write Operations)
+- **POST** endpoints that modify state return `202 Accepted`
+- Events are published to Kafka for asynchronous processing
+- Response includes `exceptionId` or `executionId` for tracking
+- Processing happens asynchronously via workers
+
+### Query Pattern (Read Operations)
+- **GET** endpoints read from database only (no agent calls)
+- No event publishing or worker processing
+- Fast, consistent reads from materialized views
+
+### Authentication and Security
+- All APIs use HTTPS, JWT auth, and rate limiting
+- Tenant isolation enforced at API, broker, and worker levels
+- PII redaction at ingestion point
+
+## API Response Codes
+
+- **202 Accepted**: Command accepted, processing asynchronously
+- **200 OK**: Query successful, data returned
+- **400 Bad Request**: Invalid request format or parameters
+- **403 Forbidden**: Tenant isolation violation or unauthorized access
+- **404 Not Found**: Resource not found
+- **500 Internal Server Error**: Server error (check logs)

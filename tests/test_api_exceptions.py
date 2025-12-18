@@ -31,7 +31,7 @@ class TestExceptionIngestionAPI:
     """Tests for POST /exceptions/{tenantId} endpoint."""
 
     def test_ingest_single_exception(self):
-        """Test ingesting a single exception."""
+        """Test ingesting a single exception (202 Accepted)."""
         response = client.post(
             "/exceptions/TENANT_001",
             headers={"X-API-KEY": DEFAULT_API_KEY},
@@ -43,16 +43,16 @@ class TestExceptionIngestionAPI:
             },
         )
         
-        assert response.status_code == 200
+        assert response.status_code == 202
         data = response.json()
-        assert "exceptionIds" in data
-        assert "count" in data
-        assert data["count"] == 1
-        assert len(data["exceptionIds"]) == 1
-        assert isinstance(data["exceptionIds"][0], str)
+        assert "exceptionId" in data
+        assert "status" in data
+        assert "message" in data
+        assert data["status"] == "accepted"
+        assert isinstance(data["exceptionId"], str)
 
     def test_ingest_batch_exceptions(self):
-        """Test ingesting multiple exceptions in batch."""
+        """Test ingesting multiple exceptions in batch (202 Accepted, MVP handles first only)."""
         response = client.post(
             "/exceptions/TENANT_001",
             headers={"X-API-KEY": DEFAULT_API_KEY},
@@ -64,10 +64,11 @@ class TestExceptionIngestionAPI:
             },
         )
         
-        assert response.status_code == 200
+        assert response.status_code == 202
         data = response.json()
-        assert data["count"] == 2
-        assert len(data["exceptionIds"]) == 2
+        assert "exceptionId" in data
+        assert data["status"] == "accepted"
+        # Note: MVP handles first exception only; batch support in future
 
     def test_ingest_missing_request_body(self):
         """Test that missing request body returns 400."""
@@ -103,9 +104,10 @@ class TestExceptionIngestionAPI:
             },
         )
         
-        assert response.status_code == 200
+        assert response.status_code == 202
         data = response.json()
-        assert data["count"] == 1
+        assert data["status"] == "accepted"
+        assert "exceptionId" in data
 
     def test_ingest_with_timestamp(self):
         """Test ingesting exception with timestamp."""
@@ -121,9 +123,10 @@ class TestExceptionIngestionAPI:
             },
         )
         
-        assert response.status_code == 200
+        assert response.status_code == 202
         data = response.json()
-        assert data["count"] == 1
+        assert data["status"] == "accepted"
+        assert "exceptionId" in data
 
     def test_ingest_tenant_id_in_path(self):
         """Test that tenant ID in path is used."""
@@ -139,10 +142,11 @@ class TestExceptionIngestionAPI:
             },
         )
         
-        assert response.status_code == 200
+        assert response.status_code == 202
         # Tenant ID should be set even if not in payload
         data = response.json()
-        assert data["count"] == 1
+        assert data["status"] == "accepted"
+        assert "exceptionId" in data
 
 
 class TestExceptionIngestionAPIErrorHandling:
@@ -171,8 +175,10 @@ class TestExceptionIngestionAPIErrorHandling:
             },
         )
         
-        # Should still work (IntakeAgent uses "UNKNOWN" as default)
-        assert response.status_code == 200
+        # Should still work (defaults to "UNKNOWN" source system)
+        assert response.status_code == 202
+        data = response.json()
+        assert data["status"] == "accepted"
 
     def test_ingest_missing_raw_payload(self):
         """Test that missing rawPayload is handled."""
@@ -186,8 +192,10 @@ class TestExceptionIngestionAPIErrorHandling:
             },
         )
         
-        # Should still work (IntakeAgent uses exception dict as payload)
-        assert response.status_code == 200
+        # Should still work (empty payload is allowed)
+        assert response.status_code == 202
+        data = response.json()
+        assert data["status"] == "accepted"
 
 
 class TestExceptionIngestionAPIResponseFormat:
@@ -206,12 +214,13 @@ class TestExceptionIngestionAPIResponseFormat:
             },
         )
         
-        assert response.status_code == 200
+        assert response.status_code == 202
         data = response.json()
-        assert "exceptionIds" in data
-        assert "count" in data
-        assert isinstance(data["exceptionIds"], list)
-        assert isinstance(data["count"], int)
+        assert "exceptionId" in data
+        assert "status" in data
+        assert "message" in data
+        assert data["status"] == "accepted"
+        assert isinstance(data["exceptionId"], str)
 
     def test_response_exception_ids_are_unique(self):
         """Test that exception IDs are unique."""
@@ -226,8 +235,9 @@ class TestExceptionIngestionAPIResponseFormat:
             },
         )
         
-        assert response.status_code == 200
+        assert response.status_code == 202
         data = response.json()
-        exception_ids = data["exceptionIds"]
-        assert len(exception_ids) == len(set(exception_ids))  # All unique
+        # MVP handles first exception only; batch support in future
+        assert "exceptionId" in data
+        assert data["status"] == "accepted"
 

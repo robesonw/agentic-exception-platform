@@ -8,6 +8,7 @@ import ToolsPage from './routes/ToolsPage.tsx'
 import ToolDetailPage from './routes/ToolDetailPage.tsx'
 import ConfigPage from './routes/ConfigPage.tsx'
 import ConfigDetailPage from './routes/ConfigDetailPage.tsx'
+import OpsPage from './routes/OpsPage.tsx'
 import NotFoundPage from './routes/NotFoundPage.tsx'
 
 function App() {
@@ -34,6 +35,9 @@ function App() {
         <Route path="/tools/:id" element={<ToolDetailPage />} />
         <Route path="/config" element={<ConfigPage />} />
         <Route path="/config/:type/:id" element={<ConfigDetailPage />} />
+        {import.meta.env.VITE_ENABLE_OPS_PAGE === 'true' && (
+          <Route path="/ops" element={<OpsPage />} />
+        )}
         <Route path="/" element={<ExceptionsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

@@ -22,6 +22,7 @@ import {
   getExceptionPlaybook,
   recalculatePlaybook,
   completePlaybookStep,
+  reprocessException,
   type ListExceptionsParams,
   type ListExceptionEventsParams,
   type ExceptionEventsListResponse,
@@ -316,6 +317,51 @@ export function useCompletePlaybookStep(exceptionId: string) {
           return (
             key[0] === 'exceptions' &&
             key[1] === 'events' &&
+            key[2] === tenantId &&
+            key[3] === exceptionId
+          )
+        },
+      })
+    },
+  })
+}
+
+/**
+ * Hook to reprocess an existing exception through the pipeline
+ * 
+ * Manually triggers processing for an exception that exists in the database
+ * but hasn't been processed through the pipeline.
+ * 
+ * @param exceptionId Exception identifier
+ * @returns Mutation object with mutate function and status
+ */
+export function useReprocessException(exceptionId: string) {
+  const queryClient = useQueryClient()
+  const { tenantId } = useTenant()
+
+  return useMutation({
+    mutationFn: () => reprocessException(exceptionId),
+    onSuccess: () => {
+      // Invalidate all exception-related queries to refresh data
+      queryClient.invalidateQueries({
+        queryKey: exceptionKeys.detail(tenantId, exceptionId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: exceptionKeys.evidence(tenantId, exceptionId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: exceptionKeys.audit(tenantId, exceptionId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: exceptionKeys.playbook(tenantId, exceptionId),
+      })
+      // Invalidate timeline events
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey
+          return (
+            key[0] === 'exceptions' &&
+            (key[1] === 'events' || key[1] === 'detail' || key[1] === 'evidence' || key[1] === 'audit') &&
             key[2] === tenantId &&
             key[3] === exceptionId
           )

@@ -273,9 +273,26 @@ class TriageAgent:
         """
         # If exception type is already set, validate it exists
         if exception.exception_type:
+            # Allow "Unknown" type if domain pack has no exception types defined
+            # or if it's explicitly in the domain pack
+            if exception.exception_type == "Unknown" and not self.domain_pack.exception_types:
+                logger.warning(
+                    f"Exception type is 'Unknown' and domain pack has no exception types defined. "
+                    f"Proceeding with 'Unknown' type."
+                )
+                return "Unknown"
+            
             if exception.exception_type in self.domain_pack.exception_types:
                 return exception.exception_type
             else:
+                # If domain pack has no types defined, allow any type (including Unknown)
+                if not self.domain_pack.exception_types:
+                    logger.warning(
+                        f"Domain pack has no exception types defined. "
+                        f"Allowing exception type '{exception.exception_type}'."
+                    )
+                    return exception.exception_type
+                
                 raise TriageAgentError(
                     f"Exception type '{exception.exception_type}' not found in domain pack. "
                     f"Valid types: {sorted(self.domain_pack.exception_types.keys())}"

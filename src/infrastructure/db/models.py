@@ -273,6 +273,12 @@ class Exception(Base):
     tenant = relationship("Tenant", back_populates="exceptions")
     current_playbook = relationship("Playbook", foreign_keys=[current_playbook_id])
     events = relationship("ExceptionEvent", back_populates="exception", cascade="all, delete-orphan")
+    pii_redaction_metadata = relationship(
+        "PIIRedactionMetadata",
+        back_populates="exception",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
     # Indexes as specified in docs/phase6-persistence-mvp.md Section 4.4
     __table_args__ = (
@@ -285,6 +291,75 @@ class Exception(Base):
         return (
             f"<Exception(exception_id={self.exception_id!r}, tenant_id={self.tenant_id!r}, "
             f"domain={self.domain!r}, severity={self.severity.value}, status={self.status.value})>"
+        )
+
+
+class PIIRedactionMetadata(Base):
+    """
+    PII redaction metadata for exceptions.
+    
+    Phase 9 P9-24: Stores metadata about PII fields that were redacted at ingestion.
+    """
+    
+    __tablename__ = "pii_redaction_metadata"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True, doc="Primary key")
+    exception_id = Column(
+        String,
+        ForeignKey("exception.exception_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        doc="Exception identifier",
+    )
+    tenant_id = Column(
+        String,
+        ForeignKey("tenant.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        doc="Tenant identifier",
+    )
+    redacted_fields = Column(
+        JSONB,
+        nullable=False,
+        doc="List of field paths that were redacted (e.g., ['email', 'phone', 'address.street'])",
+    )
+    redaction_count = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        doc="Number of fields redacted",
+    )
+    redaction_placeholder = Column(
+        String,
+        nullable=False,
+        default="[REDACTED]",
+        doc="Placeholder used for redacted values",
+    )
+    redacted_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when redaction occurred",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    
+    # Relationships
+    exception = relationship("Exception", back_populates="pii_redaction_metadata")
+    tenant = relationship("Tenant")
+    
+    __table_args__ = (
+        Index("idx_pii_redaction_exception", "exception_id"),
+        Index("idx_pii_redaction_tenant", "tenant_id"),
+    )
+    
+    def __repr__(self) -> str:
+        return (
+            f"<PIIRedactionMetadata(exception_id={self.exception_id!r}, "
+            f"tenant_id={self.tenant_id!r}, redaction_count={self.redaction_count})>"
         )
 
 
@@ -598,6 +673,101 @@ class ToolExecution(Base):
             f"<ToolExecution(id={self.id}, tenant_id={self.tenant_id!r}, "
             f"tool_id={self.tool_id}, status={self.status.value})>"
         )
+
+
+class EventLog(Base):
+    """
+    Canonical event log for event store (append-only).
+    
+    Phase 9 P9-4: Stores all canonical events for event sourcing and audit.
+    """
+    __tablename__ = "event_log"
+    
+    event_id = Column(String, primary_key=True)
+    event_type = Column(String, nullable=False, index=True)
+    tenant_id = Column(String, ForeignKey("tenant.tenant_id", ondelete="CASCADE"), nullable=False, index=True)
+    exception_id = Column(String, ForeignKey("exception.exception_id", ondelete="SET NULL"), nullable=True, index=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    correlation_id = Column(String, nullable=True, index=True)
+    payload = Column(JSONB, nullable=False)
+    event_metadata = Column("metadata", JSONB, nullable=True)
+    version = Column(Integer, nullable=False, server_default="1")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Indexes for common queries
+    __table_args__ = (
+        Index("idx_event_log_tenant_timestamp", "tenant_id", "timestamp"),
+        Index("idx_event_log_exception_timestamp", "exception_id", "timestamp"),
+        Index("idx_event_log_tenant_type_timestamp", "tenant_id", "event_type", "timestamp"),
+    )
+
+
+class EventProcessingStatus(PyEnum):
+    """Event processing status."""
+    
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class EventProcessing(Base):
+    """
+    Event processing tracking for idempotency.
+    
+    Phase 9 P9-12: Tracks event processing status to ensure idempotency.
+    """
+    __tablename__ = "event_processing"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(String, nullable=False, index=True)
+    worker_type = Column(String, nullable=False, index=True)
+    tenant_id = Column(String, ForeignKey("tenant.tenant_id", ondelete="CASCADE"), nullable=False, index=True)
+    exception_id = Column(String, ForeignKey("exception.exception_id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(Enum(EventProcessingStatus, name="event_processing_status", create_type=True), nullable=False, index=True)
+    processed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    error_message = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Unique constraint on (event_id, worker_type)
+    __table_args__ = (
+        UniqueConstraint("event_id", "worker_type", name="uq_event_processing_event_worker"),
+        Index("idx_event_processing_tenant_worker", "tenant_id", "worker_type"),
+        Index("idx_event_processing_exception_worker", "exception_id", "worker_type"),
+        Index("idx_event_processing_status", "status", "processed_at"),
+    )
+
+
+class DeadLetterEvent(Base):
+    """
+    Dead Letter Queue event entry.
+    
+    Phase 9 P9-15: Stores events that failed processing after max retries.
+    """
+    __tablename__ = "dead_letter_events"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(String, nullable=False, unique=True, index=True)
+    event_type = Column(String, nullable=False, index=True)
+    tenant_id = Column(String, ForeignKey("tenant.tenant_id", ondelete="CASCADE"), nullable=False, index=True)
+    exception_id = Column(String, ForeignKey("exception.exception_id", ondelete="SET NULL"), nullable=True, index=True)
+    original_topic = Column(String, nullable=False)
+    failure_reason = Column(String, nullable=False)
+    retry_count = Column(Integer, nullable=False, server_default="0")
+    worker_type = Column(String, nullable=False, index=True)
+    payload = Column(JSONB, nullable=False)
+    event_metadata = Column("metadata", JSONB, nullable=True, server_default="{}")
+    failed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Indexes for common queries
+    __table_args__ = (
+        Index("idx_dlq_tenant_failed_at", "tenant_id", "failed_at"),
+        Index("idx_dlq_exception_failed_at", "exception_id", "failed_at"),
+        Index("idx_dlq_tenant_type_failed_at", "tenant_id", "event_type", "failed_at"),
+        Index("idx_dlq_worker_failed_at", "worker_type", "failed_at"),
+    )
 
 
 class ToolEnablement(Base):

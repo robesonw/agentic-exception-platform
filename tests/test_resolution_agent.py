@@ -93,7 +93,7 @@ def sample_audit_logger(tmp_path, monkeypatch):
     audit_dir = tmp_path / "runtime" / "audit"
     audit_dir.mkdir(parents=True, exist_ok=True)
     
-    def patched_get_log_file(self):
+    def patched_get_log_file(self, tenant_id=None):
         if self._log_file is None:
             self._log_file = audit_dir / f"{self.run_id}.jsonl"
         return self._log_file

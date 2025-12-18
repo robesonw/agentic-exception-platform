@@ -22,41 +22,69 @@ from src.infrastructure.db.settings import get_database_settings
 logger = logging.getLogger(__name__)
 
 # Global engine and session factory
+# Note: Engine is created per-thread to avoid asyncpg event loop conflicts
 _engine: Optional[AsyncEngine] = None
 _SessionLocal: Optional[async_sessionmaker[AsyncSession]] = None
+_thread_local_engines: dict[int, AsyncEngine] = {}  # Thread-local engines
+import threading
 
 
 def get_engine() -> AsyncEngine:
     """
     Get or create the async database engine.
     
+    Creates engine per-thread to avoid asyncpg event loop conflicts.
+    Each thread gets its own engine with connections tied to its event loop.
+    
     Returns:
         AsyncEngine instance
     """
-    global _engine
-    if _engine is None:
-        settings = get_database_settings()
-        
-        logger.info(
-            f"Creating async database engine (pool_size={settings.pool_size}, "
-            f"max_overflow={settings.max_overflow}, timeout={settings.pool_timeout})"
-        )
-        
-        # Mask password in URL for logging
-        safe_url = _mask_password_in_url(settings.database_url)
-        logger.debug(f"Database URL: {safe_url}")
-        
-        _engine = create_async_engine(
-            settings.database_url,
-            pool_size=settings.pool_size,
-            max_overflow=settings.max_overflow,
-            pool_timeout=settings.pool_timeout,
-            echo=settings.echo,
-        )
-        
-        logger.info("Database engine created successfully")
+    global _engine, _thread_local_engines
     
-    return _engine
+    # Get current thread ID
+    thread_id = threading.get_ident()
+    
+    # Check if we have an engine for this thread
+    if thread_id in _thread_local_engines:
+        return _thread_local_engines[thread_id]
+    
+    # Create engine for this thread
+    settings = get_database_settings()
+    
+    logger.info(
+        f"Creating async database engine for thread {thread_id} "
+        f"(pool_size={settings.pool_size}, max_overflow={settings.max_overflow})"
+    )
+    
+    # Mask password in URL for logging
+    safe_url = _mask_password_in_url(settings.database_url)
+    logger.debug(f"Database URL: {safe_url}")
+    
+    engine = create_async_engine(
+        settings.database_url,
+        pool_size=settings.pool_size,
+        max_overflow=settings.max_overflow,
+        pool_timeout=settings.pool_timeout,
+        echo=settings.echo,
+        pool_pre_ping=True,  # Enable to check connections before use (prevents stale connections)
+        pool_reset_on_return='commit',  # Reset connections on return
+        connect_args={
+            "server_settings": {
+                "application_name": "agentic_exception_platform",
+            },
+            "command_timeout": 30,  # 30 second command timeout
+        },
+    )
+    
+    _thread_local_engines[thread_id] = engine
+    
+    # Also set as global for main thread compatibility
+    if _engine is None:
+        _engine = engine
+    
+    logger.info(f"Database engine created successfully for thread {thread_id}")
+    
+    return engine
 
 
 def get_session_factory() -> async_sessionmaker[AsyncSession]:

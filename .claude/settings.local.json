@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pytest:*)",
+      "Bash(powershell.exe:*)",
+      "Bash(Start-Sleep -Seconds 10)",
+      "Bash(timeout 30 bash -c 'while true; do sleep 5; done')",
+      "Bash(docker-compose:*)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker restart:*)",
+      "Bash(cat:*)",
+      "Bash(iconv:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

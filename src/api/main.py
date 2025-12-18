@@ -31,9 +31,11 @@ from src.api.routes import (
     admin_tools,
     approvals,
     approval_ui,
+    audit,
     dashboards,
     exceptions,
     metrics,
+    ops,
     playbooks,
     run,
     router_config_view,
@@ -115,6 +117,8 @@ app.include_router(router_explanations.router)  # Phase 3: Explanation API Endpo
 app.include_router(router_guardrail_recommendations.router)  # Phase 3: Guardrail Recommendation API (P3-10)
 app.include_router(router_copilot.router)  # Phase 5: Copilot Chat API (P5-9)
 app.include_router(playbooks.router)  # Phase 6: Playbook API (P6-24)
+app.include_router(audit.router)  # Phase 9: Audit Trail API (P9-25)
+app.include_router(ops.router)  # Operations API (DLQ monitoring)
 
 
 @app.get("/health")
@@ -151,12 +155,26 @@ async def health_check_db():
         )
 
 
-# TODO (LR-11): Expose Prometheus metrics endpoint
-# If prometheus_client is available, mount /metrics endpoint
-# Example:
-#   try:
-#       from prometheus_client import make_asgi_app
-#       metrics_app = make_asgi_app()
-#       app.mount("/metrics", metrics_app)
-#   except ImportError:
-#       logger.warning("prometheus_client not available, /metrics endpoint not mounted")
+# Phase 9 P9-20: Expose Prometheus metrics endpoint
+try:
+    from prometheus_client import make_asgi_app
+    from src.observability.prometheus_metrics import get_metrics
+    
+    # Create ASGI app for Prometheus metrics
+    metrics_app = make_asgi_app()
+    app.mount("/metrics", metrics_app)
+    
+    logger.info("Prometheus metrics endpoint mounted at /metrics")
+except ImportError:
+    # Fallback: create a simple endpoint that returns our custom metrics
+    from fastapi import Response
+    from src.observability.prometheus_metrics import get_metrics
+    
+    @app.get("/metrics")
+    async def get_metrics_endpoint() -> Response:
+        """Get Prometheus metrics."""
+        metrics = get_metrics()
+        metrics_text = metrics.get_metrics()
+        return Response(content=metrics_text, media_type="text/plain")
+    
+    logger.warning("prometheus_client not available, using custom /metrics endpoint")

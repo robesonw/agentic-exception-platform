@@ -112,16 +112,20 @@ export async function getExceptionDetail(
   exceptionId: string
 ): Promise<ExceptionDetailResponse> {
   // tenant_id will be added automatically by httpClient interceptor
-  // but we ensure it's explicitly passed in case interceptor hasn't run yet
+  // Validate tenantId exists before making request
   const tenantId = getTenantIdForHttpClient()
-  if (!tenantId) {
-    throw new Error('tenantId is required for getExceptionDetail')
+  if (!tenantId || typeof tenantId !== 'string' || tenantId.trim() === '') {
+    const errorMsg = `tenantId is required for getExceptionDetail and must be a non-empty string. Current value: ${JSON.stringify(tenantId)}`
+    console.error('[getExceptionDetail]', errorMsg)
+    throw new Error(errorMsg)
   }
-  return httpClient.get<ExceptionDetailResponse>(`/ui/exceptions/${exceptionId}`, {
-    params: {
-      tenant_id: tenantId,
-    },
-  })
+  const validTenantId = tenantId.trim()
+  if (import.meta.env.DEV) {
+    console.log('[getExceptionDetail] Making request with tenantId:', validTenantId, 'exceptionId:', exceptionId)
+  }
+  // Don't explicitly pass params - let the interceptor handle it
+  // This avoids potential conflicts with param merging
+  return httpClient.get<ExceptionDetailResponse>(`/ui/exceptions/${exceptionId}`)
 }
 
 /**
@@ -135,16 +139,13 @@ export async function getExceptionEvidence(
   exceptionId: string
 ): Promise<EvidenceResponse> {
   // tenant_id will be added automatically by httpClient interceptor
-  // but we ensure it's explicitly passed in case interceptor hasn't run yet
+  // Validate tenantId exists before making request
   const tenantId = getTenantIdForHttpClient()
-  if (!tenantId) {
-    throw new Error('tenantId is required for getExceptionEvidence')
+  if (!tenantId || typeof tenantId !== 'string' || tenantId.trim() === '') {
+    throw new Error('tenantId is required for getExceptionEvidence and must be a non-empty string')
   }
-  return httpClient.get<EvidenceResponse>(`/ui/exceptions/${exceptionId}/evidence`, {
-    params: {
-      tenant_id: tenantId,
-    },
-  })
+  // Don't explicitly pass params - let the interceptor handle it
+  return httpClient.get<EvidenceResponse>(`/ui/exceptions/${exceptionId}/evidence`)
 }
 
 /**
@@ -158,16 +159,13 @@ export async function getExceptionAudit(
   exceptionId: string
 ): Promise<AuditResponse> {
   // tenant_id will be added automatically by httpClient interceptor
-  // but we ensure it's explicitly passed in case interceptor hasn't run yet
+  // Validate tenantId exists before making request
   const tenantId = getTenantIdForHttpClient()
-  if (!tenantId) {
-    throw new Error('tenantId is required for getExceptionAudit')
+  if (!tenantId || typeof tenantId !== 'string' || tenantId.trim() === '') {
+    throw new Error('tenantId is required for getExceptionAudit and must be a non-empty string')
   }
-  return httpClient.get<AuditResponse>(`/ui/exceptions/${exceptionId}/audit`, {
-    params: {
-      tenant_id: tenantId,
-    },
-  })
+  // Don't explicitly pass params - let the interceptor handle it
+  return httpClient.get<AuditResponse>(`/ui/exceptions/${exceptionId}/audit`)
 }
 
 /**
@@ -370,14 +368,14 @@ export async function getExceptionPlaybook(
   // tenant_id will be added automatically by httpClient interceptor
   // but we ensure it's explicitly passed in case interceptor hasn't run yet
   const tenantId = getTenantIdForHttpClient()
-  if (!tenantId) {
-    throw new Error('tenantId is required for getExceptionPlaybook')
+  if (!tenantId || typeof tenantId !== 'string' || tenantId.trim() === '') {
+    throw new Error('tenantId is required for getExceptionPlaybook and must be a non-empty string')
   }
   
   // Backend endpoint is /exceptions/{tenant_id}/{exception_id}/playbook
   // Note: tenant_id is in the path, not as a query parameter
   const response = await httpClient.get<PlaybookStatusResponse>(
-    `/exceptions/${tenantId}/${exceptionId}/playbook`
+    `/exceptions/${tenantId.trim()}/${exceptionId}/playbook`
   )
   
   return response
@@ -398,14 +396,14 @@ export async function recalculatePlaybook(
   // tenant_id will be added automatically by httpClient interceptor
   // but we ensure it's explicitly passed in case interceptor hasn't run yet
   const tenantId = getTenantIdForHttpClient()
-  if (!tenantId) {
-    throw new Error('tenantId is required for recalculatePlaybook')
+  if (!tenantId || typeof tenantId !== 'string' || tenantId.trim() === '') {
+    throw new Error('tenantId is required for recalculatePlaybook and must be a non-empty string')
   }
   
   // Backend endpoint is /exceptions/{tenant_id}/{exception_id}/playbook/recalculate
   // Note: tenant_id is in the path, not as a query parameter
   const response = await httpClient.post<PlaybookRecalculationResponse>(
-    `/exceptions/${tenantId}/${exceptionId}/playbook/recalculate`
+    `/exceptions/${tenantId.trim()}/${exceptionId}/playbook/recalculate`
   )
   
   return response
@@ -430,15 +428,51 @@ export async function completePlaybookStep(
   // tenant_id will be added automatically by httpClient interceptor
   // but we ensure it's explicitly passed in case interceptor hasn't run yet
   const tenantId = getTenantIdForHttpClient()
-  if (!tenantId) {
-    throw new Error('tenantId is required for completePlaybookStep')
+  if (!tenantId || typeof tenantId !== 'string' || tenantId.trim() === '') {
+    throw new Error('tenantId is required for completePlaybookStep and must be a non-empty string')
   }
   
   // Backend endpoint is /exceptions/{tenant_id}/{exception_id}/playbook/steps/{step_order}/complete
   // Note: tenant_id is in the path, not as a query parameter
   const response = await httpClient.post<PlaybookStatusResponse>(
-    `/exceptions/${tenantId}/${exceptionId}/playbook/steps/${stepOrder}/complete`,
+    `/exceptions/${tenantId.trim()}/${exceptionId}/playbook/steps/${stepOrder}/complete`,
     request
+  )
+  
+  return response
+}
+
+/**
+ * Reprocess response (same structure as ExceptionIngestionResponse)
+ */
+export interface ReprocessExceptionResponse {
+  exceptionId: string
+  status: string
+  message: string
+}
+
+/**
+ * Reprocess an existing exception through the pipeline
+ * POST /exceptions/{tenant_id}/{exception_id}/reprocess
+ * 
+ * Manually triggers processing for an exception that exists in the database
+ * but hasn't been processed through the pipeline.
+ * 
+ * @param exceptionId Exception identifier
+ * @returns Reprocessing response
+ */
+export async function reprocessException(
+  exceptionId: string
+): Promise<ReprocessExceptionResponse> {
+  // tenant_id will be added automatically by httpClient interceptor
+  const tenantId = getTenantIdForHttpClient()
+  if (!tenantId || typeof tenantId !== 'string' || tenantId.trim() === '') {
+    throw new Error('tenantId is required for reprocessException and must be a non-empty string')
+  }
+  
+  // Backend endpoint is /exceptions/{tenant_id}/{exception_id}/reprocess
+  const response = await httpClient.post<ReprocessExceptionResponse>(
+    `/exceptions/${tenantId.trim()}/${exceptionId}/reprocess`
   )
   
   return response

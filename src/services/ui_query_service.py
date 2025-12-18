@@ -301,7 +301,6 @@ class UIQueryService:
         try:
             from src.infrastructure.db.session import get_db_session_context
             from src.repository.exceptions_repository import ExceptionRepository
-            from src.repository.exception_events_repository import ExceptionEventRepository
             from src.models.exception_record import Severity, ResolutionStatus
             
             async with get_db_session_context() as session:
@@ -350,9 +349,20 @@ class UIQueryService:
                     resolution_status=resolution_status,
                 )
                 
-                # Get events for pipeline result
-                event_repo = ExceptionEventRepository(session)
-                events = await event_repo.get_events_for_exception(tenant_id, exception_id)
+                # Get events from event_log table (EventStore) using TraceService
+                from src.infrastructure.repositories.event_store_repository import EventStoreRepository
+                from src.services.trace_service import TraceService
+                
+                event_store_repo = EventStoreRepository(session)
+                trace_service = TraceService(event_store_repo)
+                
+                # Get all events for this exception (trace)
+                trace_result = await trace_service.get_trace_for_exception(
+                    exception_id=exception_id,
+                    tenant_id=tenant_id,
+                    page=1,
+                    page_size=1000,  # Get all events for pipeline result
+                )
                 
                 # Build pipeline result from events
                 pipeline_result = {
@@ -362,14 +372,29 @@ class UIQueryService:
                 }
                 
                 agent_decisions = {}
-                for event in events:
-                    if event.event_type.endswith("Completed"):
-                        stage_name = event.event_type.replace("Completed", "").lower()
+                for event_log in trace_result.items:
+                    # Handle JSONB payload
+                    payload = getattr(event_log, 'payload', None)
+                    if payload is None:
+                        payload = {}
+                    elif not isinstance(payload, dict):
+                        try:
+                            import json
+                            if isinstance(payload, str):
+                                payload = json.loads(payload)
+                            else:
+                                payload = {}
+                        except (json.JSONDecodeError, TypeError, ValueError):
+                            payload = {}
+                    
+                    # Extract agent decisions from Completed events
+                    if event_log.event_type.endswith("Completed"):
+                        stage_name = event_log.event_type.replace("Completed", "").lower()
                         pipeline_result["stages"][stage_name] = {
                             "status": "completed",
-                            "timestamp": event.created_at.isoformat(),
+                            "timestamp": event_log.timestamp.isoformat() if event_log.timestamp else None,
                         }
-                        agent_decisions[stage_name] = event.payload
+                        agent_decisions[stage_name] = payload
                 
                 return {
                     "exception": exception.model_dump(),
@@ -422,7 +447,6 @@ class UIQueryService:
         try:
             from src.infrastructure.db.session import get_db_session_context
             from src.repository.exceptions_repository import ExceptionRepository
-            from src.repository.exception_events_repository import ExceptionEventRepository
             
             async with get_db_session_context() as session:
                 repo = ExceptionRepository(session)
@@ -431,9 +455,25 @@ class UIQueryService:
                 if db_exception is None:
                     return None
                 
-                # Get events for evidence
-                event_repo = ExceptionEventRepository(session)
-                events = await event_repo.get_events_for_exception(tenant_id, exception_id)
+                # Get events from event_log table (EventStore) using TraceService
+                from src.infrastructure.repositories.event_store_repository import EventStoreRepository
+                from src.services.trace_service import TraceService
+                
+                event_store_repo = EventStoreRepository(session)
+                trace_service = TraceService(event_store_repo)
+                
+                # Get all events for this exception (trace)
+                trace_result = await trace_service.get_trace_for_exception(
+                    exception_id=exception_id,
+                    tenant_id=tenant_id,
+                    page=1,
+                    page_size=1000,  # Get all events for evidence extraction
+                )
+                
+                logger.info(
+                    f"Retrieved {trace_result.total} events for evidence extraction "
+                    f"(exception_id={exception_id}, tenant_id={tenant_id}, items={len(trace_result.items)})"
+                )
                 
                 # Build evidence from events
                 evidence = {
@@ -442,30 +482,93 @@ class UIQueryService:
                     "agent_evidence": [],
                 }
                 
-                for event in events:
-                    payload = event.payload if isinstance(event.payload, dict) else {}
+                if trace_result.total == 0 or len(trace_result.items) == 0:
+                    logger.warning(f"No events found for exception {exception_id} in EventStore")
+                    return evidence
+                
+                for event_log in trace_result.items:
+                    logger.debug(
+                        f"Processing event {event_log.event_type} for evidence extraction "
+                        f"(event_id={event_log.event_id})"
+                    )
+                    # Handle JSONB payload - SQLAlchemy should return dict directly for JSONB
+                    payload = getattr(event_log, 'payload', None)
+                    if payload is None:
+                        logger.debug(f"Event {event_log.event_id} has no payload")
+                        continue
+                    if not isinstance(payload, dict):
+                        # Try to parse if it's a string
+                        try:
+                            import json
+                            if isinstance(payload, str):
+                                payload = json.loads(payload)
+                            else:
+                                logger.warning(f"Event {event_log.event_id} has non-dict payload: {type(payload)}")
+                                continue
+                        except (json.JSONDecodeError, TypeError, ValueError) as e:
+                            logger.warning(f"Failed to parse payload for event {event_log.event_id}: {e}")
+                            continue
                     
                     # Extract agent evidence from events
+                    # TriageCompleted, PolicyEvaluationCompleted, etc. have evidence directly in payload
                     if "evidence" in payload:
-                        evidence["agent_evidence"].append({
-                            "stage": event.event_type,
-                            "evidence": payload["evidence"],
-                        })
+                        evidence_list = payload["evidence"]
+                        if isinstance(evidence_list, list) and evidence_list:
+                            evidence["agent_evidence"].append({
+                                "stage": event_log.event_type,
+                                "evidence": evidence_list,
+                            })
+                            logger.debug(f"Added evidence from {event_log.event_type}: {len(evidence_list)} items")
+                        elif evidence_list:  # Single item, not a list
+                            evidence["agent_evidence"].append({
+                                "stage": event_log.event_type,
+                                "evidence": [evidence_list],
+                            })
+                            logger.debug(f"Added evidence from {event_log.event_type}: 1 item")
+                    
+                    # Also check for triage_result.evidence structure (nested)
+                    if "triage_result" in payload and isinstance(payload["triage_result"], dict):
+                        triage_result = payload["triage_result"]
+                        if "evidence" in triage_result:
+                            evidence_list = triage_result["evidence"] if isinstance(triage_result["evidence"], list) else [triage_result["evidence"]]
+                            if evidence_list:  # Only add if not empty
+                                evidence["agent_evidence"].append({
+                                    "stage": "TriageCompleted",
+                                    "evidence": evidence_list,
+                                })
+                    
+                    # Also check for decision.evidence structure (nested)
+                    if "decision" in payload:
+                        if isinstance(payload["decision"], dict) and "evidence" in payload["decision"]:
+                            decision = payload["decision"]
+                            evidence_list = decision["evidence"] if isinstance(decision["evidence"], list) else [decision["evidence"]]
+                            if evidence_list:  # Only add if not empty
+                                evidence["agent_evidence"].append({
+                                    "stage": event_log.event_type,
+                                    "evidence": evidence_list,
+                                })
                     
                     # Extract tool outputs
                     if "tool_output" in payload or "tool_result" in payload:
                         tool_output = payload.get("tool_output") or payload.get("tool_result")
-                        evidence["tool_outputs"].append(tool_output)
+                        if tool_output:  # Only add if not empty
+                            evidence["tool_outputs"].append(tool_output)
                     
                     # Extract RAG results
                     if "rag_results" in payload or "similar_exceptions" in payload:
                         rag_results = payload.get("rag_results") or payload.get("similar_exceptions")
-                        if isinstance(rag_results, list):
+                        if isinstance(rag_results, list) and rag_results:
                             evidence["rag_results"].extend(rag_results)
                 
                 return evidence
         except Exception as e:
-            logger.warning(f"Error reading from PostgreSQL, falling back to in-memory store: {e}")
+            logger.error(f"Error reading evidence from EventStore: {e}", exc_info=True)
+            # Return empty evidence instead of falling back to in-memory store
+            return {
+                "rag_results": [],
+                "tool_outputs": [],
+                "agent_evidence": [],
+            }
             # Fallback to in-memory store
             result = self.exception_store.get_exception(tenant_id, exception_id)
             if not result:
@@ -520,29 +623,43 @@ class UIQueryService:
         Returns:
             List of audit event dictionaries
         """
-        # Phase 6: Read from PostgreSQL exception_event table
+        # Phase 9: Read from PostgreSQL event_log table (EventStore) using TraceService
         try:
             from src.infrastructure.db.session import get_db_session_context
-            from src.repository.exception_events_repository import ExceptionEventRepository
+            from src.infrastructure.repositories.event_store_repository import EventStoreRepository
+            from src.services.trace_service import TraceService
             
             async with get_db_session_context() as session:
-                event_repo = ExceptionEventRepository(session)
-                events = await event_repo.get_events_for_exception(tenant_id, exception_id)
+                event_store_repo = EventStoreRepository(session)
+                trace_service = TraceService(event_store_repo)
+                
+                # Get all events for this exception (trace)
+                trace_result = await trace_service.get_trace_for_exception(
+                    exception_id=exception_id,
+                    tenant_id=tenant_id,
+                    page=1,
+                    page_size=1000,  # Get all events for audit trail
+                )
                 
                 # Convert events to audit event format
                 audit_events = []
-                for event in events:
-                    actor_type = event.actor_type.value if hasattr(event.actor_type, 'value') else str(event.actor_type)
+                for event_log in trace_result.items:
+                    # Extract actor info from metadata if available
+                    metadata = event_log.event_metadata if isinstance(event_log.event_metadata, dict) else {}
+                    actor_type = metadata.get("actor_type", "system")
+                    actor_id = metadata.get("actor_id", "system")
+                    
                     audit_events.append({
-                        "timestamp": event.created_at.isoformat() if event.created_at else None,
-                        "tenant_id": event.tenant_id,
-                        "exception_id": event.exception_id,
-                        "event_type": event.event_type,
+                        "timestamp": event_log.timestamp.isoformat() if event_log.timestamp else None,
+                        "tenant_id": event_log.tenant_id,
+                        "exception_id": event_log.exception_id,
+                        "event_type": event_log.event_type,
                         "actor_type": actor_type,
-                        "actor_id": event.actor_id,
+                        "actor_id": actor_id,
                         "data": {
-                            "event_type": event.event_type,
-                            "payload": event.payload,
+                            "event_type": event_log.event_type,
+                            "payload": event_log.payload if isinstance(event_log.payload, dict) else {},
+                            "metadata": metadata,
                         },
                     })
                 
@@ -551,7 +668,9 @@ class UIQueryService:
                 
                 return audit_events
         except Exception as e:
-            logger.warning(f"Error reading from PostgreSQL, falling back to JSONL files: {e}")
+            logger.error(f"Error reading audit from EventStore: {e}", exc_info=True)
+            # Return empty audit instead of falling back to JSONL files
+            return []
             # Fallback to JSONL files
             audit_events = []
             

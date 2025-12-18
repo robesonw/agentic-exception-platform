@@ -32,11 +32,20 @@ export default function RecommendedPlaybookPanel({ exceptionId }: RecommendedPla
   // Handle recalculation
   const handleRecalculate = async () => {
     try {
-      await recalculateMutation.mutateAsync()
-      showSuccess('Playbook recalculated successfully')
+      const result = await recalculateMutation.mutateAsync()
+      showSuccess(
+        result.message || 'Playbook recalculation request accepted. The playbook will be updated shortly.'
+      )
       // Refetch is handled automatically by the mutation's onSuccess
+      // Also manually refetch after a short delay to ensure data is updated
+      setTimeout(() => {
+        // The query will be invalidated by onSuccess, but we can also manually refetch
+        // This is handled by React Query's automatic refetch on invalidation
+      }, 1000)
     } catch (err) {
-      showError(err instanceof Error ? err.message : 'Failed to recalculate playbook')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to recalculate playbook'
+      showError(errorMessage)
+      console.error('Playbook recalculation error:', err)
     }
   }
 

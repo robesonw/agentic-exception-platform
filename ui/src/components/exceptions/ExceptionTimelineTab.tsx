@@ -626,6 +626,10 @@ export default function ExceptionTimelineTab({ exceptionId }: ExceptionTimelineT
           : isTenantMismatch
           ? 'Tenant mismatch. Please ensure you are viewing the correct tenant.'
           : `Failed to load timeline: ${error?.message || 'Unknown error'}`}
+        <br />
+        <Typography variant="caption" sx={{ mt: 1, display: 'block' }}>
+          If this exception was just created, events may not be available yet. Try refreshing the page.
+        </Typography>
       </Alert>
     )
   }
@@ -645,6 +649,10 @@ export default function ExceptionTimelineTab({ exceptionId }: ExceptionTimelineT
         {!hasActiveFilters && (
           <Alert severity="info">
             No events or tool executions available for this exception yet.
+            <br />
+            <Typography variant="caption" sx={{ mt: 1, display: 'block' }}>
+              Events will appear here as the exception is processed through the pipeline stages.
+            </Typography>
           </Alert>
         )}
       </Box>

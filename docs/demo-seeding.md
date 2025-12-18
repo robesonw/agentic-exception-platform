@@ -240,3 +240,7 @@ The seeder follows the repository pattern and respects tenant isolation:
 - No external calls are made during seeding
 - All data is clearly marked as demo data in payloads
 
+
+
+
+

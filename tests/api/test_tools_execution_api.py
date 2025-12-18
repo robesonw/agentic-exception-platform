@@ -170,15 +170,12 @@ class TestToolExecutionAPI:
                     headers={"X-API-Key": DEFAULT_API_KEY},
                 )
                 
-                assert response.status_code == 200
+                assert response.status_code == 202
                 data = response.json()
                 assert data["executionId"] is not None
-                assert data["tenantId"] == "TENANT_001"
-                assert data["toolId"] == 1
-                assert data["status"] in ["succeeded", "running"]  # May be running if async
-                assert data["requestedByActorType"] == "user"
-                assert data["requestedByActorId"] == "user123"
-                assert data["inputPayload"] == {"param": "value"}
+                assert data["status"] == "accepted"
+                assert "message" in data
+                assert isinstance(data["executionId"], str)
         finally:
             session_module.get_db_session_context = original_get_context
 
@@ -215,9 +212,10 @@ class TestToolExecutionAPI:
                     headers={"X-API-Key": DEFAULT_API_KEY},
                 )
                 
-                assert response.status_code == 200
+                assert response.status_code == 202
                 data = response.json()
-                assert data["exceptionId"] == "EXC_001"
+                assert data["status"] == "accepted"
+                assert "executionId" in data
         finally:
             session_module.get_db_session_context = original_get_context
 
@@ -502,10 +500,11 @@ class TestToolExecutionAPI:
                     headers={"X-API-Key": DEFAULT_API_KEY},
                 )
                 
-                assert create_response.status_code == 200
+                assert create_response.status_code == 202
                 execution_id = create_response.json()["executionId"]
+                assert create_response.json()["status"] == "accepted"
                 
-                # Get execution
+                # Get execution (query endpoint still returns full details)
                 response = client.get(
                     f"/api/tools/executions/{execution_id}",
                     headers={"X-API-Key": DEFAULT_API_KEY},
@@ -516,6 +515,7 @@ class TestToolExecutionAPI:
                 assert data["executionId"] == execution_id
                 assert data["toolId"] == 1
                 assert data["tenantId"] == "TENANT_001"
+                assert data["status"] == "requested"  # Should be in requested state initially
         finally:
             session_module.get_db_session_context = original_get_context
 

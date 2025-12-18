@@ -3,6 +3,7 @@ Tool definition and invocation API routes.
 
 Phase 6 P6-25: Tool definition CRUD endpoints for Phase 8 preparation.
 Phase 8 P8-1: Enhanced schema validation with required fields.
+Phase 9 P9-18: POST /api/tools/{tool_id}/execute transformed to async command pattern.
 
 Supports both tenant-scoped and global tools.
 Maintains backward compatibility with existing tool definitions.
@@ -11,13 +12,16 @@ Maintains backward compatibility with existing tool definitions.
 import logging
 from typing import Any, Literal, Optional, Union
 
-from fastapi import APIRouter, HTTPException, Path, Query, Request
+from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 from pydantic import BaseModel, Field, ValidationError
+from uuid import uuid4
 
+from src.events.types import ToolExecutionRequested
 from src.infrastructure.db.models import ActorType, ToolExecutionStatus
 from src.infrastructure.db.session import get_db_session_context
 from src.infrastructure.repositories.tool_definition_repository import ToolDefinitionRepository
 from src.infrastructure.repositories.tool_execution_repository import ToolExecutionRepository
+from src.messaging.event_publisher import EventPublisherService
 from src.models.tool_definition_phase8 import (
     ToolDefinitionRequest,
     ToolDefinitionConfig,
@@ -25,7 +29,7 @@ from src.models.tool_definition_phase8 import (
     AuthType,
     TenantScope,
 )
-from src.repository.dto import ToolDefinitionCreateDTO, ToolDefinitionFilter, ToolExecutionFilter
+from src.repository.dto import ToolDefinitionCreateDTO, ToolDefinitionFilter, ToolExecutionCreateDTO, ToolExecutionFilter
 from src.repository.exception_events_repository import ExceptionEventRepository
 from src.tools.execution_service import ToolExecutionService, ToolExecutionServiceError
 from src.tools.provider import DummyToolProvider, HttpToolProvider
@@ -318,6 +322,197 @@ async def list_tools(
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: Failed to list tools: {str(e)}",
+        )
+
+
+# ============================================================================
+# Phase 8: Tool Execution API Models (must be defined before routes)
+# ============================================================================
+
+class ToolExecutionResponse(BaseModel):
+    """Response model for a tool execution."""
+
+    executionId: str = Field(..., alias="execution_id", description="Execution identifier (UUID)")
+    tenantId: str = Field(..., alias="tenant_id", description="Tenant identifier")
+    toolId: int = Field(..., alias="tool_id", description="Tool definition identifier")
+    exceptionId: Optional[str] = Field(None, alias="exception_id", description="Exception identifier (if linked)")
+    status: str = Field(..., description="Execution status: requested, running, succeeded, failed")
+    requestedByActorType: str = Field(..., alias="requested_by_actor_type", description="Actor type who requested execution")
+    requestedByActorId: str = Field(..., alias="requested_by_actor_id", description="Actor identifier who requested execution")
+    inputPayload: dict[str, Any] = Field(..., alias="input_payload", description="Input payload provided to tool")
+    outputPayload: Optional[dict[str, Any]] = Field(None, alias="output_payload", description="Output payload from tool (if succeeded)")
+    errorMessage: Optional[str] = Field(None, alias="error_message", description="Error message (if failed)")
+    createdAt: str = Field(..., alias="created_at", description="Timestamp when execution was created (ISO format)")
+    updatedAt: str = Field(..., alias="updated_at", description="Timestamp when execution was last updated (ISO format)")
+
+    class Config:
+        populate_by_name = True
+
+
+class ToolExecutionListResponse(BaseModel):
+    """Response model for listing tool executions."""
+
+    items: list[ToolExecutionResponse] = Field(..., description="List of execution records")
+    total: int = Field(..., description="Total number of executions matching filters")
+    page: int = Field(..., description="Current page number (1-indexed)")
+    pageSize: int = Field(..., alias="page_size", description="Number of items per page")
+    totalPages: int = Field(..., alias="total_pages", description="Total number of pages")
+
+    class Config:
+        populate_by_name = True
+
+
+# ============================================================================
+# Phase 8: Tool Execution API Routes
+# ============================================================================
+
+# IMPORTANT: More specific routes (like /executions) must come BEFORE less specific ones (like /{tool_id})
+# FastAPI matches routes in order, so /executions must come before /{tool_id}
+
+@router.get("/executions", response_model=ToolExecutionListResponse)
+async def list_executions(
+    request: Request,
+    tool_id: Optional[int] = Query(None, ge=1, description="Filter by tool ID"),
+    exception_id: Optional[str] = Query(None, description="Filter by exception ID"),
+    status: Optional[str] = Query(None, description="Filter by status: requested, running, succeeded, failed"),
+    actor_type: Optional[str] = Query(None, description="Filter by actor type: user, agent, system"),
+    actor_id: Optional[str] = Query(None, description="Filter by actor ID"),
+    tenant_id: Optional[str] = Query(None, description="Tenant identifier (required for isolation)"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(50, ge=1, le=100, description="Number of items per page (max 100)"),
+) -> ToolExecutionListResponse:
+    """
+    List tool executions with filtering and pagination.
+    
+    GET /api/tools/executions
+    
+    Query Parameters:
+    - tool_id: Optional filter by tool ID
+    - exception_id: Optional filter by exception ID
+    - status: Optional filter by status (requested, running, succeeded, failed)
+    - actor_type: Optional filter by actor type (user, agent, system)
+    - actor_id: Optional filter by actor ID
+    - tenant_id: Tenant identifier (required for isolation, can come from query or auth)
+    - page: Page number (default: 1)
+    - page_size: Items per page (default: 50, max: 100)
+    
+    Returns:
+    - Paginated list of tool execution records
+    
+    Raises:
+    - HTTPException 401 if authentication required
+    - HTTPException 400 if invalid filter parameters
+    """
+    # Get tenant ID from query parameter or authentication
+    # If tenant_id is provided in query, use it (for UI compatibility)
+    # Otherwise, try to get from authentication
+    if tenant_id:
+        # Use tenant_id from query parameter
+        # Verify it matches authenticated tenant if available (for security)
+        if request and hasattr(request.state, "tenant_id"):
+            authenticated_tenant_id = request.state.tenant_id
+            if authenticated_tenant_id != tenant_id:
+                logger.warning(
+                    f"Tenant mismatch: authenticated={authenticated_tenant_id}, "
+                    f"query={tenant_id} for {request.url.path}"
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Tenant ID mismatch: authenticated tenant '{authenticated_tenant_id}' "
+                    f"does not match query tenant '{tenant_id}'",
+                )
+    else:
+        # Try to get from authentication
+        tenant_id = _get_tenant_id_from_request(request)
+        if not tenant_id:
+            raise HTTPException(
+                status_code=400,
+                detail="tenant_id is required (provide as query parameter or via authentication)",
+            )
+    
+    logger.info(f"Listing tool executions for tenant {tenant_id} (page={page}, page_size={page_size})")
+    
+    # Build filter
+    filters = ToolExecutionFilter()
+    if tool_id is not None:
+        filters.tool_id = tool_id
+    if exception_id is not None:
+        filters.exception_id = exception_id
+    if status is not None:
+        try:
+            filters.status = ToolExecutionStatus(status.lower())
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status: {status}. Must be one of: requested, running, succeeded, failed",
+            )
+    if actor_type is not None:
+        try:
+            filters.actor_type = ActorType(actor_type.lower())
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid actor_type: {actor_type}. Must be one of: user, agent, system",
+            )
+    if actor_id is not None:
+        filters.actor_id = actor_id
+    
+    try:
+        async with get_db_session_context() as session:
+            repo = ToolExecutionRepository(session)
+            
+            # List executions with tenant isolation
+            result = await repo.list_executions(
+                tenant_id=tenant_id,
+                filters=filters if any([tool_id, exception_id, status, actor_type, actor_id]) else None,
+                page=page,
+                page_size=page_size,
+            )
+            
+            # Convert to response
+            items = [
+                ToolExecutionResponse(
+                    executionId=str(execution.id),
+                    tenantId=execution.tenant_id,
+                    toolId=execution.tool_id,
+                    exceptionId=execution.exception_id,
+                    status=execution.status.value,
+                    requestedByActorType=execution.requested_by_actor_type.value,
+                    requestedByActorId=execution.requested_by_actor_id,
+                    inputPayload=execution.input_payload,
+                    outputPayload=execution.output_payload,
+                    errorMessage=execution.error_message,
+                    createdAt=execution.created_at.isoformat() if execution.created_at else "",
+                    updatedAt=execution.updated_at.isoformat() if execution.updated_at else "",
+                )
+                for execution in result.items
+            ]
+            
+            logger.info(f"Listed {len(items)} executions for tenant {tenant_id}")
+            
+            return ToolExecutionListResponse(
+                items=items,
+                total=result.total,
+                page=result.page,
+                pageSize=result.page_size,
+                totalPages=result.total_pages,
+            )
+    
+    except ValueError as e:
+        logger.error(f"Invalid request parameters: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    except HTTPException as e:
+        logger.error(f"HTTPException in list_executions: {e.status_code} - {e.detail}", exc_info=True)
+        raise
+    
+    except Exception as e:
+        logger.error(f"Error listing executions: {e}", exc_info=True)
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: Failed to list executions: {str(e)}",
         )
 
 
@@ -680,49 +875,51 @@ class ToolExecuteRequest(BaseModel):
         populate_by_name = True
 
 
-class ToolExecutionResponse(BaseModel):
-    """Response model for a tool execution."""
-
-    executionId: str = Field(..., alias="execution_id", description="Execution identifier (UUID)")
-    tenantId: str = Field(..., alias="tenant_id", description="Tenant identifier")
-    toolId: int = Field(..., alias="tool_id", description="Tool definition identifier")
-    exceptionId: Optional[str] = Field(None, alias="exception_id", description="Exception identifier (if linked)")
-    status: str = Field(..., description="Execution status: requested, running, succeeded, failed")
-    requestedByActorType: str = Field(..., alias="requested_by_actor_type", description="Actor type who requested execution")
-    requestedByActorId: str = Field(..., alias="requested_by_actor_id", description="Actor identifier who requested execution")
-    inputPayload: dict[str, Any] = Field(..., alias="input_payload", description="Input payload provided to tool")
-    outputPayload: Optional[dict[str, Any]] = Field(None, alias="output_payload", description="Output payload from tool (if succeeded)")
-    errorMessage: Optional[str] = Field(None, alias="error_message", description="Error message (if failed)")
-    createdAt: str = Field(..., alias="created_at", description="Timestamp when execution was created (ISO format)")
-    updatedAt: str = Field(..., alias="updated_at", description="Timestamp when execution was last updated (ISO format)")
-
-    class Config:
-        populate_by_name = True
-
-
-class ToolExecutionListResponse(BaseModel):
-    """Response model for listing tool executions."""
-
-    items: list[ToolExecutionResponse] = Field(..., description="List of execution records")
-    total: int = Field(..., description="Total number of executions matching filters")
-    page: int = Field(..., description="Current page number (1-indexed)")
-    pageSize: int = Field(..., alias="page_size", description="Number of items per page")
-    totalPages: int = Field(..., alias="total_pages", description="Total number of pages")
-
-    class Config:
-        populate_by_name = True
+def get_event_publisher() -> EventPublisherService:
+    """
+    Get the global event publisher service instance.
+    
+    In production, this would be injected via dependency injection.
+    
+    Returns:
+        EventPublisherService instance
+    """
+    # For MVP, create a singleton instance
+    # In production, use dependency injection
+    from src.messaging.broker import get_broker_settings
+    from src.messaging.kafka_broker import KafkaBroker
+    from src.messaging.event_store import DatabaseEventStore
+    
+    # Get broker settings and create broker
+    broker_settings = get_broker_settings()
+    broker = KafkaBroker(
+        bootstrap_servers=broker_settings.bootstrap_servers,
+        client_id=broker_settings.client_id,
+    )
+    
+    # Create event store (database-backed)
+    # Note: In production, this would be injected
+    event_store = DatabaseEventStore()
+    
+    return EventPublisherService(broker=broker, event_store=event_store)
 
 
-@router.post("/{tool_id}/execute", response_model=ToolExecutionResponse)
+@router.post("/{tool_id}/execute", response_model=ToolExecutionResponse, status_code=status.HTTP_202_ACCEPTED)
 async def execute_tool(
+    request: Request,
     tool_id: int = Path(..., ge=1, description="Tool identifier"),
     request_body: ToolExecuteRequest = ...,
-    http_request: Request = None,
 ) -> ToolExecutionResponse:
     """
-    Execute a tool with the given payload.
+    Request tool execution with the given payload.
     
-    POST /api/tools/{tool_id}/execute
+    Phase 9 P9-18: Transformed to async command pattern.
+    - Validates request
+    - Creates tool_execution record in "requested" state
+    - Creates ToolExecutionRequested event
+    - Stores event in EventStore
+    - Publishes to message broker
+    - Returns 202 Accepted with execution_id
     
     Body:
     - payload: Input payload for the tool (must match tool's input_schema)
@@ -731,20 +928,22 @@ async def execute_tool(
     - actorId: Actor identifier (required)
     
     Returns:
-    - Tool execution record with status and results
+    - 202 Accepted
+    - execution_id (generated UUID)
+    - status: "accepted"
     
     Raises:
-    - HTTPException 400 if payload validation fails
+    - HTTPException 400 if payload validation fails or actor_type is invalid
     - HTTPException 401 if authentication required
     - HTTPException 403 if tenant access denied
     - HTTPException 404 if tool not found
-    - HTTPException 500 if execution fails
+    - HTTPException 500 if event publishing fails
     """
     # Get authenticated tenant ID
-    tenant_id = _get_authenticated_tenant_id(http_request)
+    tenant_id = _get_authenticated_tenant_id(request)
     
     logger.info(
-        f"Executing tool {tool_id} for tenant {tenant_id} "
+        f"Requesting tool execution: tool_id={tool_id}, tenant_id={tenant_id} "
         f"(actor: {request_body.actorType}/{request_body.actorId})"
     )
     
@@ -757,180 +956,136 @@ async def execute_tool(
             detail=f"Invalid actor_type: {request_body.actorType}. Must be one of: user, agent, system",
         )
     
+    # Validate tool exists and is accessible
     try:
         async with get_db_session_context() as session:
-            execution_service = _get_execution_service(session)
+            tool_def_repo = ToolDefinitionRepository(session)
+            tool = await tool_def_repo.get_tool(tool_id=tool_id, tenant_id=tenant_id)
             
-            # Execute tool
-            execution = await execution_service.execute_tool(
+            if tool is None:
+                logger.warning(
+                    f"Tool {tool_id} not found or not accessible to tenant {tenant_id}"
+                )
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Tool {tool_id} not found or not accessible",
+                )
+            
+            # Get tool name for event
+            tool_name = tool.name
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error validating tool: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to validate tool: {str(e)}")
+    
+    # Create tool_execution record in "requested" state
+    try:
+        async with get_db_session_context() as session:
+            tool_exec_repo = ToolExecutionRepository(session)
+            
+            execution_data = ToolExecutionCreateDTO(
                 tenant_id=tenant_id,
                 tool_id=tool_id,
-                payload=request_body.payload,
-                actor_type=actor_type,
-                actor_id=request_body.actorId,
                 exception_id=request_body.exceptionId,
+                status=ToolExecutionStatus.REQUESTED,
+                requested_by_actor_type=actor_type,
+                requested_by_actor_id=request_body.actorId,
+                input_payload=request_body.payload,
+                output_payload=None,
+                error_message=None,
             )
             
-            # Convert to response
-            return ToolExecutionResponse(
-                executionId=str(execution.id),
-                tenantId=execution.tenant_id,
-                toolId=execution.tool_id,
-                exceptionId=execution.exception_id,
-                status=execution.status.value,
-                requestedByActorType=execution.requested_by_actor_type.value,
-                requestedByActorId=execution.requested_by_actor_id,
-                inputPayload=execution.input_payload,
-                outputPayload=execution.output_payload,
-                errorMessage=execution.error_message,
-                createdAt=execution.created_at.isoformat() if execution.created_at else "",
-                updatedAt=execution.updated_at.isoformat() if execution.updated_at else "",
+            # Create execution record (ID is generated by database)
+            execution = await tool_exec_repo.create_execution(execution_data)
+            execution_id = str(execution.id)
+            
+            await session.commit()
+            
+            logger.info(
+                f"Created tool execution record: execution_id={execution_id}, "
+                f"tool_id={tool_id}, tenant_id={tenant_id}, status=requested"
             )
-    
-    except ToolExecutionServiceError as e:
-        logger.error(f"Tool execution failed: {e}", exc_info=True)
-        # Check if it's a validation/access error (400) or execution error (500)
-        error_msg = str(e)
-        if "not found" in error_msg.lower() or "not accessible" in error_msg.lower():
-            raise HTTPException(status_code=404, detail=error_msg)
-        elif "validation failed" in error_msg.lower() or "disabled" in error_msg.lower():
-            raise HTTPException(status_code=400, detail=error_msg)
-        else:
-            raise HTTPException(status_code=500, detail=f"Tool execution failed: {error_msg}")
-    
-    except HTTPException:
-        raise
-    
     except Exception as e:
-        logger.error(f"Unexpected error executing tool: {e}", exc_info=True)
+        logger.error(f"Error creating tool execution record: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: Failed to execute tool: {str(e)}",
+            detail=f"Failed to create execution record: {str(e)}",
         )
-
-
-@router.get("/executions", response_model=ToolExecutionListResponse)
-async def list_executions(
-    tool_id: Optional[int] = Query(None, ge=1, description="Filter by tool ID"),
-    exception_id: Optional[str] = Query(None, description="Filter by exception ID"),
-    status: Optional[str] = Query(None, description="Filter by status: requested, running, succeeded, failed"),
-    actor_type: Optional[str] = Query(None, description="Filter by actor type: user, agent, system"),
-    actor_id: Optional[str] = Query(None, description="Filter by actor ID"),
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    page_size: int = Query(50, ge=1, le=100, description="Number of items per page (max 100)"),
-    http_request: Request = None,
-) -> ToolExecutionListResponse:
-    """
-    List tool executions with filtering and pagination.
     
-    GET /api/tools/executions
+    # Get event publisher
+    event_publisher = get_event_publisher()
     
-    Query Parameters:
-    - tool_id: Optional filter by tool ID
-    - exception_id: Optional filter by exception ID
-    - status: Optional filter by status (requested, running, succeeded, failed)
-    - actor_type: Optional filter by actor type (user, agent, system)
-    - actor_id: Optional filter by actor ID
-    - page: Page number (default: 1)
-    - page_size: Items per page (default: 50, max: 100)
-    
-    Returns:
-    - Paginated list of tool execution records
-    
-    Raises:
-    - HTTPException 401 if authentication required
-    - HTTPException 400 if invalid filter parameters
-    """
-    # Get authenticated tenant ID
-    tenant_id = _get_authenticated_tenant_id(http_request)
-    
-    logger.info(f"Listing tool executions for tenant {tenant_id} (page={page}, page_size={page_size})")
-    
-    # Build filter
-    filters = ToolExecutionFilter()
-    if tool_id is not None:
-        filters.tool_id = tool_id
-    if exception_id is not None:
-        filters.exception_id = exception_id
-    if status is not None:
-        try:
-            filters.status = ToolExecutionStatus(status.lower())
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid status: {status}. Must be one of: requested, running, succeeded, failed",
-            )
-    if actor_type is not None:
-        try:
-            filters.actor_type = ActorType(actor_type.lower())
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid actor_type: {actor_type}. Must be one of: user, agent, system",
-            )
-    if actor_id is not None:
-        filters.actor_id = actor_id
-    
+    # Create ToolExecutionRequested event
     try:
-        async with get_db_session_context() as session:
-            repo = ToolExecutionRepository(session)
-            
-            # List executions with tenant isolation
-            result = await repo.list_executions(
-                tenant_id=tenant_id,
-                filters=filters if any([tool_id, exception_id, status, actor_type, actor_id]) else None,
-                page=page,
-                page_size=page_size,
-            )
-            
-            # Convert to response
-            items = [
-                ToolExecutionResponse(
-                    executionId=str(execution.id),
-                    tenantId=execution.tenant_id,
-                    toolId=execution.tool_id,
-                    exceptionId=execution.exception_id,
-                    status=execution.status.value,
-                    requestedByActorType=execution.requested_by_actor_type.value,
-                    requestedByActorId=execution.requested_by_actor_id,
-                    inputPayload=execution.input_payload,
-                    outputPayload=execution.output_payload,
-                    errorMessage=execution.error_message,
-                    createdAt=execution.created_at.isoformat() if execution.created_at else "",
-                    updatedAt=execution.updated_at.isoformat() if execution.updated_at else "",
-                )
-                for execution in result.items
-            ]
-            
-            logger.info(f"Listed {len(items)} executions for tenant {tenant_id}")
-            
-            return ToolExecutionListResponse(
-                items=items,
-                total=result.total,
-                page=result.page,
-                pageSize=result.page_size,
-                totalPages=result.total_pages,
-            )
-    
-    except ValueError as e:
-        logger.error(f"Invalid request parameters: {e}", exc_info=True)
-        raise HTTPException(status_code=400, detail=str(e))
-    
-    except HTTPException:
-        raise
-    
+        # ToolExecutionRequested requires exception_id as str, but it can be empty if not linked
+        exception_id_for_event = request_body.exceptionId if request_body.exceptionId else ""
+        
+        tool_execution_event = ToolExecutionRequested.create(
+            tenant_id=tenant_id,
+            exception_id=exception_id_for_event,
+            tool_id=str(tool_id),
+            tool_name=tool_name,
+            tool_params=request_body.payload,
+            execution_context={
+                "execution_id": execution_id,
+                "actor_type": request_body.actorType,
+                "actor_id": request_body.actorId,
+            },
+        )
     except Exception as e:
-        logger.error(f"Error listing executions: {e}", exc_info=True)
+        logger.error(f"Failed to create ToolExecutionRequested event: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: Failed to list executions: {str(e)}",
+            detail=f"Failed to create event: {str(e)}",
         )
+    
+    # Publish event (this will store in EventStore and publish to broker)
+    try:
+        await event_publisher.publish_event(
+            topic="exceptions",
+            event=tool_execution_event.model_dump(by_alias=True),
+        )
+        
+        logger.info(
+            f"Published ToolExecutionRequested event: execution_id={execution_id}, "
+            f"tool_id={tool_id}, tenant_id={tenant_id}"
+        )
+    except Exception as e:
+        logger.error(
+            f"Failed to publish ToolExecutionRequested event: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to publish event: {str(e)}",
+        )
+    
+    # Return 202 Accepted with minimal response
+    # Note: Full execution details would be available via GET endpoint after async processing
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    return ToolExecutionResponse(
+        executionId=execution_id,
+        tenantId=tenant_id,
+        toolId=tool_id,
+        exceptionId=request_body.exceptionId,
+        status="requested",  # Status is "requested" since it's queued
+        requestedByActorType=request_body.actorType,
+        requestedByActorId=request_body.actorId,
+        inputPayload=request_body.payload,
+        outputPayload=None,
+        errorMessage=None,
+        createdAt=now.isoformat(),
+        updatedAt=now.isoformat(),
+    )
 
 
 @router.get("/executions/{execution_id}", response_model=ToolExecutionResponse)
 async def get_execution(
+    request: Request,
     execution_id: str = Path(..., description="Execution identifier (UUID)"),
-    http_request: Request = None,
 ) -> ToolExecutionResponse:
     """
     Get a single tool execution by ID.
@@ -946,7 +1101,7 @@ async def get_execution(
     - HTTPException 404 if execution not found
     """
     # Get authenticated tenant ID
-    tenant_id = _get_authenticated_tenant_id(http_request)
+    tenant_id = _get_authenticated_tenant_id(request)
     
     logger.info(f"Getting execution {execution_id} for tenant {tenant_id}")
     
@@ -1029,9 +1184,9 @@ class ToolEnablementResponse(BaseModel):
 
 @router.put("/{tool_id}/enablement", response_model=ToolEnablementResponse)
 async def set_tool_enablement(
+    request: Request,
     tool_id: int = Path(..., ge=1, description="Tool identifier"),
     request_body: ToolEnablementRequest = ...,
-    http_request: Request = None,
 ) -> ToolEnablementResponse:
     """
     Enable or disable a tool for the authenticated tenant.
@@ -1050,7 +1205,7 @@ async def set_tool_enablement(
     - HTTPException 404 if tool not found
     """
     # Get authenticated tenant ID
-    tenant_id = _get_authenticated_tenant_id(http_request)
+    tenant_id = _get_authenticated_tenant_id(request)
     
     logger.info(
         f"Setting tool enablement: tool_id={tool_id}, tenant_id={tenant_id}, "
@@ -1103,8 +1258,8 @@ async def set_tool_enablement(
 
 @router.get("/{tool_id}/enablement", response_model=ToolEnablementResponse)
 async def get_tool_enablement(
+    request: Request,
     tool_id: int = Path(..., ge=1, description="Tool identifier"),
-    http_request: Request = None,
 ) -> ToolEnablementResponse:
     """
     Get enablement status for a tool for the authenticated tenant.
@@ -1119,7 +1274,7 @@ async def get_tool_enablement(
     - HTTPException 404 if tool not found
     """
     # Get authenticated tenant ID
-    tenant_id = _get_authenticated_tenant_id(http_request)
+    tenant_id = _get_authenticated_tenant_id(request)
     
     logger.info(f"Getting tool enablement: tool_id={tool_id}, tenant_id={tenant_id}")
     
@@ -1176,8 +1331,8 @@ async def get_tool_enablement(
 
 @router.delete("/{tool_id}/enablement")
 async def delete_tool_enablement(
+    request: Request,
     tool_id: int = Path(..., ge=1, description="Tool identifier"),
-    http_request: Request = None,
 ) -> dict[str, str]:
     """
     Delete enablement record, reverting to default (enabled).
@@ -1192,7 +1347,7 @@ async def delete_tool_enablement(
     - HTTPException 404 if tool not found
     """
     # Get authenticated tenant ID
-    tenant_id = _get_authenticated_tenant_id(http_request)
+    tenant_id = _get_authenticated_tenant_id(request)
     
     logger.info(f"Deleting tool enablement: tool_id={tool_id}, tenant_id={tenant_id}")
     

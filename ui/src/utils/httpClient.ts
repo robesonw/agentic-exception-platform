@@ -144,17 +144,44 @@ axiosInstance.interceptors.request.use(
 
     // Inject tenantId as query parameter if available
     // Backend UI endpoints expect tenant_id as query param
-    if (currentTenantId) {
-      // Ensure config.params exists before spreading
-      config.params = {
-        ...(config.params || {}),
-        tenant_id: currentTenantId,
+    // Check multiple sources in order of priority:
+    // 1. currentTenantId (module-level, set by setTenantIdForHttpClient)
+    // 2. localStorage (fallback, in case React state hasn't updated yet)
+    const tenantIdFromStorage = typeof window !== 'undefined' ? localStorage.getItem('tenantId') : null
+    const tenantIdToUse = currentTenantId || tenantIdFromStorage
+    
+    // Only add if it's a valid non-empty string
+    if (tenantIdToUse && typeof tenantIdToUse === 'string' && tenantIdToUse.trim() !== '') {
+      const trimmedTenantId = tenantIdToUse.trim()
+      // Merge with existing params - explicitly passed params will override interceptor's tenant_id if provided
+      // Ensure config.params is an object
+      if (!config.params) {
+        config.params = {}
       }
-    }
-
-    // Also add tenantId as header (some endpoints might use this)
-    if (currentTenantId && config.headers) {
-      config.headers['X-Tenant-Id'] = currentTenantId
+      // Only set tenant_id if not already explicitly provided
+      if (!config.params.tenant_id) {
+        config.params.tenant_id = trimmedTenantId
+      }
+      if (import.meta.env.DEV) {
+        console.log('[httpClient] ✅ Added tenant_id to params:', config.params.tenant_id, 'URL:', config.url, 'Source:', currentTenantId ? 'currentTenantId' : 'localStorage')
+      }
+      
+      // Also add tenantId as header (some endpoints might use this)
+      if (config.headers) {
+        config.headers['X-Tenant-Id'] = trimmedTenantId
+      }
+    } else {
+      // Always log error when tenantId is missing for UI endpoints (even in production, this is critical)
+      if (config.url && config.url.startsWith('/ui/')) {
+        console.error('[httpClient] ❌ No tenantId found for UI endpoint! Request will fail with 422.')
+        console.error('[httpClient] Debug info:', { 
+          currentTenantId: currentTenantId ? currentTenantId.substring(0, 10) + '...' : null, 
+          localStorage: tenantIdFromStorage ? tenantIdFromStorage.substring(0, 10) + '...' : null,
+          url: config.url || config.baseURL,
+          method: config.method,
+          allLocalStorageKeys: typeof window !== 'undefined' ? Object.keys(localStorage) : []
+        })
+      }
     }
 
     return config

@@ -35,3 +35,13 @@ requests
 prometheus-client
 # testing
 faker
+
+# Phase 9 Dependencies - Message Broker
+confluent-kafka>=2.3.0  # Preferred Kafka client library
+kafka-python>=2.0.2     # Fallback Kafka client library
+
+# Authentication
+PyJWT>=2.8.0  # JWT token encoding/decoding
+
+# FastAPI form data support
+python-multipart>=0.0.6  # Required for FastAPI form data handling

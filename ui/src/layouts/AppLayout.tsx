@@ -32,6 +32,7 @@ import SearchIcon from '@mui/icons-material/Search'
 import NotificationsIcon from '@mui/icons-material/Notifications'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import MemoryIcon from '@mui/icons-material/Memory'
+import BugReportIcon from '@mui/icons-material/BugReport'
 import { useTenant } from '../hooks/useTenant.tsx'
 import { themeColors } from '../theme/theme.ts'
 import { AICopilotDock } from '../components/copilot'
@@ -48,28 +49,42 @@ interface NavItem {
   icon: React.ReactElement
 }
 
-const navItems: NavItem[] = [
-  {
-    label: 'Exceptions',
-    to: '/exceptions',
-    icon: <DashboardIcon />,
-  },
-  {
-    label: 'Supervisor',
-    to: '/supervisor',
-    icon: <SupervisorAccountIcon />,
-  },
-  {
-    label: 'Tools',
-    to: '/tools',
-    icon: <BuildIcon />,
-  },
-  {
-    label: 'Config',
-    to: '/config',
-    icon: <SettingsIcon />,
-  },
-]
+// Build nav items conditionally based on environment flags
+const getNavItems = (): NavItem[] => {
+  const items: NavItem[] = [
+    {
+      label: 'Exceptions',
+      to: '/exceptions',
+      icon: <DashboardIcon />,
+    },
+    {
+      label: 'Supervisor',
+      to: '/supervisor',
+      icon: <SupervisorAccountIcon />,
+    },
+    {
+      label: 'Tools',
+      to: '/tools',
+      icon: <BuildIcon />,
+    },
+    {
+      label: 'Config',
+      to: '/config',
+      icon: <SettingsIcon />,
+    },
+  ]
+  
+  // Add Ops page if enabled via environment variable
+  if (import.meta.env.VITE_ENABLE_OPS_PAGE === 'true') {
+    items.push({
+      label: 'Ops',
+      to: '/ops',
+      icon: <BugReportIcon />,
+    })
+  }
+  
+  return items
+}
 
 // Sample tenant/domain options for demo (can be replaced with API call later)
 const SAMPLE_TENANTS = ['tenant_001', 'tenant_002', 'TENANT_A', 'TENANT_FINANCE_001']
@@ -153,7 +168,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
           px: 1,
         }}
       >
-        {navItems.map((item) => {
+        {getNavItems().map((item) => {
           const isActive =
             location.pathname === item.to || location.pathname.startsWith(item.to + '/')
           return (

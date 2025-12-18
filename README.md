@@ -127,8 +127,48 @@ pip install -e ".[dev]"
    See `docs/database-migrations.md` for detailed migration instructions.
 
    **Option C: Full Stack with Docker Compose (Recommended for Quick Start)**
+   
+   **Quick Start Scripts:**
+   
+   **Linux/Mac:**
    ```bash
-   # Start all services (PostgreSQL, Backend API, UI)
+   # Start all services (infrastructure + backend + UI)
+   ./scripts/start-all.sh
+   
+   # Start workers (in separate terminals or background)
+   ./scripts/start-workers.sh
+   
+   # Check status
+   ./scripts/status.sh
+   
+   # Stop all services
+   ./scripts/stop-all.sh
+   
+   # Restart all services
+   ./scripts/restart-all.sh
+   ```
+   
+   **Windows (PowerShell):**
+   ```powershell
+   # Start all services (infrastructure + backend + UI)
+   .\scripts\start-all.ps1
+   
+   # Start workers (in separate terminals or background)
+   .\scripts\start-workers.ps1
+   
+   # Check status
+   .\scripts\status.ps1
+   
+   # Stop all services
+   .\scripts\stop-all.ps1
+   
+   # Restart all services
+   .\scripts\restart-all.ps1
+   ```
+   
+   **Manual Docker Compose:**
+   ```bash
+   # Start all services (PostgreSQL, Kafka, Backend API, UI)
    docker compose up --build
    
    # Or run in detached mode
@@ -171,6 +211,41 @@ The API will be available at:
 ```bash
 curl http://localhost:8000/health
 ```
+
+### Starting Workers (Required for Processing Exceptions)
+
+**IMPORTANT**: The platform uses an event-driven architecture. After starting the API server, you **must** also start workers to process exceptions through the pipeline.
+
+Workers consume events from Kafka and process exceptions through the agent pipeline:
+- `IntakeWorker` → Normalizes exceptions
+- `TriageWorker` → Classifies exceptions  
+- `PolicyWorker` → Evaluates policies
+- `PlaybookWorker` → Matches playbooks
+- `ToolWorker` → Executes tools
+- `FeedbackWorker` → Captures feedback
+
+**Quick Start:**
+```bash
+# Terminal 1: Intake Worker
+WORKER_TYPE=intake CONCURRENCY=1 GROUP_ID=intake-workers python -m src.workers
+
+# Terminal 2: Triage Worker
+WORKER_TYPE=triage CONCURRENCY=1 GROUP_ID=triage-workers python -m src.workers
+
+# Terminal 3: Policy Worker
+WORKER_TYPE=policy CONCURRENCY=1 GROUP_ID=policy-workers python -m src.workers
+
+# Terminal 4: Playbook Worker
+WORKER_TYPE=playbook CONCURRENCY=1 GROUP_ID=playbook-workers python -m src.workers
+```
+
+**See `docs/WORKERS_QUICK_START.md` for detailed instructions.**
+
+**Note**: If exceptions are ingested but not processed, check that:
+1. Kafka is running
+2. Workers are running
+3. Database is accessible
+4. Environment variables are set correctly
 
 ## Development
 

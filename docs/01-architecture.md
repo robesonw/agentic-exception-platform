@@ -1,36 +1,107 @@
 # End-to-End Architecture Document
 
 ## High-Level Architecture
-The Domain-Abstracted Agentic AI Platform is designed as a modular, scalable, and secure system for handling enterprise exception processing across multiple tenants and domains. At its core, the platform employs a multi-agent orchestration model that processes exceptions through a pipeline of specialized agents: IntakeAgent, TriageAgent, PolicyAgent, ResolutionAgent, and FeedbackAgent, with an optional SupervisorAgent for oversight. The architecture ensures domain abstraction by loading configurations dynamically from Domain Packs and Tenant Policy Packs, allowing plug-and-play adaptability without code changes.
+The Domain-Abstracted Agentic AI Platform is designed as a modular, scalable, and secure system for handling enterprise exception processing across multiple tenants and domains. At its core, the platform employs a **multi-agent orchestration model** that processes exceptions through a pipeline of specialized agents: IntakeAgent, TriageAgent, PolicyAgent, ResolutionAgent, and FeedbackAgent, with an optional SupervisorAgent for oversight. The architecture ensures domain abstraction by loading configurations dynamically from Domain Packs and Tenant Policy Packs, allowing plug-and-play adaptability without code changes.
+
+**Phase 9 Enhancement**: The platform has been transformed into an **event-driven, asynchronous architecture** using message brokers (Kafka) for high-throughput, resilient processing. APIs publish events (commands) and return `202 Accepted`, while independent worker services consume and process events asynchronously.
 
 Key principles:
 - **Domain Abstraction**: No hardcoding of domain-specific logic; all ontology, rules, playbooks, and tools are loaded from configurable packs.
 - **Multi-Tenancy**: Strict isolation of data, memory, tools, and configurations per tenant to ensure compliance and security.
-- **Agentic Orchestration**: Agents communicate via standardized contracts, with decisions audited and explainable.
+- **Event-Driven Architecture**: APIs publish events to message broker; workers consume events asynchronously. No direct API-to-agent calls.
+- **Agentic Orchestration**: Agents communicate via standardized event contracts, with decisions audited and explainable.
 - **Safety-First**: Guardrails, allow-lists, and human-in-loop mechanisms prevent unauthorized actions.
-- **Observability**: Integrated logging, metrics, and dashboards for real-time monitoring.
+- **Observability**: Integrated logging, metrics (Prometheus), distributed tracing, and dashboards for real-time monitoring.
+- **Horizontal Scalability**: Stateless workers can scale independently based on load.
 
 The system supports batch and streaming ingestion, resolution via registered tools, and continuous learning from feedback.
 
 ## Component Diagrams (Text-Based)
-### Overall System Diagram
+### Overall System Diagram (Phase 9: Event-Driven)
 
 [External Sources: Logs, DBs, APIs, Queues, Files] --> [Gateway / Tenant Router]
---> [Exception Ingestion Service] --> [Agent Orchestrator]
-Agent Orchestrator orchestrates:
+--> [Exception Ingestion API] --> [Message Broker (Kafka)] --> [Agent Workers]
 
-IntakeAgent
-TriageAgent --> PolicyAgent --> ResolutionAgent --> FeedbackAgent
-(Optional: SupervisorAgent oversees all)
-Supporting Layers:
-Skill/Tool Registry (per-tenant)
-Memory Layer (per-tenant RAG index)
-LLM Routing Layer (Phase 5: domain/tenant-aware provider selection)
-Playbook Matching Service (Phase 7: condition-based playbook selection)
-Playbook Execution Service (Phase 7: step-by-step execution)
-Audit & Observability System
-Admin UI / API
-Output: Resolved Exceptions, Dashboards, Audit Trails, Playbook Execution Events
+**Event-Driven Flow (Phase 9):**
+1. **API Layer**: Receives requests, publishes events, returns `202 Accepted`
+2. **Message Broker**: Kafka topics for event distribution
+3. **Worker Layer**: Independent, scalable workers consume events:
+   - IntakeWorker (subscribes to "exceptions" topic)
+   - TriageWorker (subscribes to "exceptions" topic)
+   - PolicyWorker (subscribes to "exceptions" topic)
+   - PlaybookWorker (subscribes to "exceptions" topic)
+   - ToolWorker (subscribes to "exceptions" topic)
+   - FeedbackWorker (subscribes to "exceptions" topic)
+   - SLAMonitorWorker (subscribes to "sla" topic)
+
+**Supporting Layers:**
+- Event Store (Database-backed, append-only)
+- Event Processing Repository (Idempotency tracking)
+- Dead Letter Queue (Failed event handling)
+- Retry Scheduler (Exponential backoff retries)
+- Skill/Tool Registry (per-tenant)
+- Memory Layer (per-tenant RAG index)
+- LLM Routing Layer (Phase 5: domain/tenant-aware provider selection)
+- Playbook Matching Service (Phase 7: condition-based playbook selection)
+- Playbook Execution Service (Phase 7: step-by-step execution)
+- Audit & Observability System (Prometheus metrics, distributed tracing)
+- Admin UI / API
+
+**Output**: Resolved Exceptions, Dashboards, Audit Trails, Playbook Execution Events
+
+### Event-Driven Architecture Flow (Phase 9)
+
+```
+Exception Ingestion Flow:
+  POST /exceptions/{tenant_id}
+    ↓
+  [API] Validate request, redact PII
+    ↓
+  [API] Create ExceptionIngested event
+    ↓
+  [EventPublisher] Store event in EventStore (append-only)
+    ↓
+  [EventPublisher] Publish to Kafka topic "exceptions"
+    ↓
+  [API] Return 202 Accepted with exceptionId
+    ↓
+  [IntakeWorker] Consume ExceptionIngested event
+    ↓
+  [IntakeWorker] Normalize exception
+    ↓
+  [IntakeWorker] Publish ExceptionNormalized event
+    ↓
+  [TriageWorker] Consume ExceptionNormalized event
+    ↓
+  [TriageWorker] Classify and triage
+    ↓
+  [TriageWorker] Publish TriageCompleted event
+    ↓
+  [PolicyWorker] Consume TriageCompleted event
+    ↓
+  [PolicyWorker] Evaluate policies, match playbooks
+    ↓
+  [PolicyWorker] Publish PlaybookMatched event
+    ↓
+  [PlaybookWorker] Consume PlaybookMatched event
+    ↓
+  [PlaybookWorker] Execute playbook steps
+    ↓
+  [ToolWorker] Consume ToolExecutionRequested events
+    ↓
+  [ToolWorker] Execute tools
+    ↓
+  [FeedbackWorker] Consume resolution events
+    ↓
+  [FeedbackWorker] Update memory, compute metrics
+```
+
+**Key Characteristics:**
+- **Asynchronous**: APIs don't wait for processing
+- **Decoupled**: Workers are independent services
+- **Scalable**: Workers can scale horizontally
+- **Resilient**: Retries and DLQ for failures
+- **Traceable**: All events have correlation_id for distributed tracing
 
 
 ### Agent Orchestration Workflow Diagram
@@ -106,7 +177,23 @@ Playbook Metrics Flow:
 5. **Feedback**: Log outcomes; update RAG and playbooks if patterns detected. **Phase 7**: Computes playbook execution metrics (steps completed, duration, success rate).
 6. **Escalation/Loop**: If confidence low or policy blocks, escalate to human or SupervisorAgent.
 
-This workflow is event-driven, using message queues (e.g., Kafka) for asynchronous processing.
+**Phase 9: Event-Driven Workflow**
+
+This workflow is fully event-driven, using Kafka message broker for asynchronous processing:
+
+1. **Intake**: API receives exception, publishes `ExceptionIngested` event, returns `202 Accepted`. IntakeWorker consumes event, normalizes, publishes `ExceptionNormalized` event.
+2. **Triage**: TriageWorker consumes `ExceptionNormalized`, classifies and prioritizes, publishes `TriageCompleted` event. **Phase 7**: Suggests playbooks via Playbook Matching Service.
+3. **Policy Check**: PolicyWorker consumes `TriageCompleted`, evaluates guardrails, publishes `PolicyEvaluationCompleted` and `PlaybookMatched` events. **Phase 7**: Approves and assigns playbooks.
+4. **Resolution**: PlaybookWorker consumes `PlaybookMatched`, executes steps. ToolWorker consumes `ToolExecutionRequested` events, executes tools. All steps emit events.
+5. **Feedback**: FeedbackWorker consumes resolution events, logs outcomes, updates RAG, publishes `FeedbackCaptured` event with metrics. **Phase 7**: Computes playbook execution metrics.
+6. **Escalation/Loop**: If confidence low or policy blocks, escalate to human or SupervisorAgent (via events).
+
+**Event Flow Guarantees:**
+- **Ordering**: Events for same exception processed in order (via partition key)
+- **Idempotency**: Duplicate events detected and skipped (via EventProcessingRepository)
+- **Retries**: Failed events retried with exponential backoff
+- **DLQ**: Events that fail after max retries moved to Dead Letter Queue
+- **Tenant Isolation**: All events include tenant_id, validated at worker level
 
 ### Data Flow References
 

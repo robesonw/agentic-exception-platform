@@ -117,16 +117,39 @@ export default function ExceptionsPage() {
 
   // Show message if API key is missing (but tenant is set)
   if (!apiKey && tenantId) {
-    return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5 }}>
-            Operations Center
+  // Check if exceptions are stuck (all in OPEN status with no events)
+  const hasUnprocessedExceptions = useMemo(() => {
+    if (!data?.items) return false
+    // Check if most exceptions are in OPEN status (might indicate workers not running)
+    const openCount = data.items.filter(e => e.resolution_status === 'OPEN').length
+    return openCount > 0 && data.items.length > 0
+  }, [data])
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <Box>
+        <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5 }}>
+          Operations Center
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Monitor and triage exceptions across all tenants and domains.
+        </Typography>
+      </Box>
+
+      {/* Workers Warning Banner */}
+      {hasUnprocessedExceptions && (
+        <Alert 
+          severity="warning"
+        >
+          <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+            Workers May Not Be Running
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Monitor and triage exceptions across all tenants and domains.
+          <Typography variant="body2">
+            Some exceptions appear to be unprocessed. Workers must be running to process exceptions through the pipeline.
+            See <strong>docs/WORKERS_QUICK_START.md</strong> for instructions on starting workers.
           </Typography>
-        </Box>
+        </Alert>
+      )}
         <Alert severity="warning">
           API key is required to access exceptions. Please go to <Link to="/login">Login</Link> to set your API key.
         </Alert>
