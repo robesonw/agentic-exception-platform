@@ -8,9 +8,19 @@ import {
   TableSortLabel,
   TablePagination,
   Paper,
+  IconButton,
+  Tooltip,
+  Menu,
+  MenuItem,
+  Checkbox,
+  Box,
+  Button,
 } from '@mui/material'
+import DownloadIcon from '@mui/icons-material/Download'
+import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import TableSkeleton from './TableSkeleton'
 import EmptyState from './EmptyState'
+import { useState } from 'react'
 
 export interface DataTableColumn<TRow> {
   id: string
@@ -36,6 +46,10 @@ export interface DataTableProps<TRow> {
   emptyMessage?: string
   emptyTitle?: string
   emptyAction?: React.ReactNode
+  exportEnabled?: boolean
+  onExport?: (format: 'csv' | 'json') => void
+  columnVisibility?: Record<string, boolean>
+  onColumnVisibilityChange?: (columnId: string, visible: boolean) => void
 }
 
 export default function DataTable<TRow extends Record<string, unknown>>({
@@ -53,7 +67,12 @@ export default function DataTable<TRow extends Record<string, unknown>>({
   emptyMessage = 'No records found.',
   emptyTitle,
   emptyAction,
+  exportEnabled = false,
+  onExport,
+  columnVisibility,
+  onColumnVisibilityChange,
 }: DataTableProps<TRow>) {
+  const [columnMenuAnchor, setColumnMenuAnchor] = useState<null | HTMLElement>(null)
   const handleSort = (columnId: string) => {
     if (!onSortChange) return
 
@@ -86,13 +105,104 @@ export default function DataTable<TRow extends Record<string, unknown>>({
     return String(value)
   }
 
+  const visibleColumns = columns.filter(
+    (col) => columnVisibility === undefined || columnVisibility[col.id] !== false
+  )
+
+  const handleExport = (format: 'csv' | 'json') => {
+    if (onExport) {
+      onExport(format)
+    } else {
+      // Default export implementation
+      if (format === 'csv') {
+        const headers = visibleColumns.map((col) => col.label).join(',')
+        const csvRows = rows.map((row) =>
+          visibleColumns
+            .map((col) => {
+              const value = col.accessor ? col.accessor(row) : (row as Record<string, unknown>)[col.id]
+              return typeof value === 'string' ? `"${value.replace(/"/g, '""')}"` : value ?? ''
+            })
+            .join(',')
+        )
+        const csv = [headers, ...csvRows].join('\n')
+        const blob = new Blob([csv], { type: 'text/csv' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `export-${new Date().toISOString()}.csv`
+        a.click()
+        URL.revokeObjectURL(url)
+      } else {
+        const json = JSON.stringify(rows, null, 2)
+        const blob = new Blob([json], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `export-${new Date().toISOString()}.json`
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+    }
+  }
+
   return (
     <Paper sx={{ width: '100%', overflow: 'hidden' }}>
+      {/* Toolbar */}
+      {(exportEnabled || onColumnVisibilityChange) && (
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 1,
+            p: 1,
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          {onColumnVisibilityChange && (
+            <>
+              <Tooltip title="Column visibility">
+                <IconButton
+                  size="small"
+                  onClick={(e) => setColumnMenuAnchor(e.currentTarget)}
+                >
+                  <ViewColumnIcon />
+                </IconButton>
+              </Tooltip>
+              <Menu
+                anchorEl={columnMenuAnchor}
+                open={Boolean(columnMenuAnchor)}
+                onClose={() => setColumnMenuAnchor(null)}
+              >
+                {columns.map((column) => (
+                  <MenuItem key={column.id} dense>
+                    <Checkbox
+                      checked={columnVisibility?.[column.id] !== false}
+                      onChange={(e) =>
+                        onColumnVisibilityChange(column.id, e.target.checked)
+                      }
+                      size="small"
+                    />
+                    {column.label}
+                  </MenuItem>
+                ))}
+              </Menu>
+            </>
+          )}
+          {exportEnabled && (
+            <Tooltip title="Export data">
+              <IconButton size="small" onClick={() => handleExport('csv')}>
+                <DownloadIcon />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
+      )}
       <TableContainer sx={{ maxHeight: 'calc(100vh - 300px)', overflowX: 'auto' }}>
         <Table stickyHeader size="small" aria-label="data table">
           <TableHead>
             <TableRow>
-              {columns.map((column) => (
+              {visibleColumns.map((column) => (
                 <TableCell
                   key={column.id}
                   align={column.numeric ? 'right' : 'left'}
@@ -128,7 +238,7 @@ export default function DataTable<TRow extends Record<string, unknown>>({
               {rows.length === 0 ? (
                 // Empty state
                 <TableRow>
-                  <TableCell colSpan={columns.length} sx={{ p: 0, border: 0 }}>
+                  <TableCell colSpan={visibleColumns.length} sx={{ p: 0, border: 0 }}>
                     <EmptyState
                       title={emptyTitle || 'No records found'}
                       description={emptyMessage}

@@ -107,14 +107,11 @@ class AuditReportRepository(AbstractBaseRepository[AuditReport]):
         result = await self.session.execute(query)
         items = list(result.scalars().all())
 
-        total_pages = (total + page_size - 1) // page_size if page_size > 0 else 0
-
         return PaginatedResult(
             items=items,
             total=total,
             page=page,
             page_size=page_size,
-            total_pages=total_pages,
         )
 
     async def create_report(

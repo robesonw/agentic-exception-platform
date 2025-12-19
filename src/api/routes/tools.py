@@ -1329,6 +1329,24 @@ async def get_tool_enablement(
         )
 
 
+@router.post("/{tool_id}/enable")
+async def enable_tool_for_tenant(
+    request: Request,
+    tool_id: int = Path(..., ge=1, description="Tool identifier"),
+    request_body: ToolEnablementRequest = ...,
+) -> ToolEnablementResponse:
+    """
+    Enable or disable a tool for the authenticated tenant (convenience endpoint).
+    
+    This is a convenience POST endpoint that maps to PUT /{tool_id}/enablement
+    for backward compatibility with UI clients.
+    
+    POST /api/tools/{tool_id}/enable
+    """
+    # Delegate to PUT endpoint
+    return await set_tool_enablement(request, tool_id, request_body)
+
+
 @router.delete("/{tool_id}/enablement")
 async def delete_tool_enablement(
     request: Request,

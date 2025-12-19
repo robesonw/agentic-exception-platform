@@ -82,6 +82,7 @@ class ConfigChangeRepository(AbstractBaseRepository[ConfigChangeRequest]):
         if not tenant_id or not tenant_id.strip():
             raise ValueError("tenant_id is required for tenant isolation")
 
+        # Build base query with filters
         query = select(ConfigChangeRequest).where(
             ConfigChangeRequest.tenant_id == tenant_id
         )
@@ -98,29 +99,36 @@ class ConfigChangeRepository(AbstractBaseRepository[ConfigChangeRequest]):
                 ConfigChangeRequest.requested_by == filters["requested_by"]
             )
 
-        # Order by requested_at descending (newest first)
-        query = query.order_by(desc(ConfigChangeRequest.requested_at))
-
-        # Get total count
-        count_query = select(func.count()).select_from(query.subquery())
+        # Get total count (build separate count query without ordering/pagination)
+        count_query = select(func.count(ConfigChangeRequest.id)).where(
+            ConfigChangeRequest.tenant_id == tenant_id
+        )
+        if filters.get("status"):
+            count_query = count_query.where(ConfigChangeRequest.status == filters["status"])
+        if filters.get("change_type"):
+            count_query = count_query.where(
+                ConfigChangeRequest.change_type == filters["change_type"]
+            )
+        if filters.get("requested_by"):
+            count_query = count_query.where(
+                ConfigChangeRequest.requested_by == filters["requested_by"]
+            )
         count_result = await self.session.execute(count_query)
         total = count_result.scalar() or 0
 
-        # Apply pagination
+        # Apply ordering and pagination to main query
+        query = query.order_by(desc(ConfigChangeRequest.requested_at))
         offset = (page - 1) * page_size
         query = query.offset(offset).limit(page_size)
 
         result = await self.session.execute(query)
         items = list(result.scalars().all())
 
-        total_pages = (total + page_size - 1) // page_size if page_size > 0 else 0
-
         return PaginatedResult(
             items=items,
             total=total,
             page=page,
             page_size=page_size,
-            total_pages=total_pages,
         )
 
     async def create_change_request(

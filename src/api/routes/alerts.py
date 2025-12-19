@@ -15,6 +15,7 @@ from fastapi import status as http_status
 from pydantic import BaseModel, Field
 
 from src.infrastructure.db.session import get_db_session_context
+from src.infrastructure.db.models import AlertConfig
 from src.infrastructure.repositories.alert_repository import (
     AlertConfigRepository,
     AlertHistoryRepository,
@@ -39,11 +40,15 @@ class ChannelConfig(BaseModel):
 
 class AlertConfigRequest(BaseModel):
     """Request body for creating/updating alert config."""
-    alert_type: str = Field(..., description="Alert type (sla_breach, dlq_growth, etc.)")
+    alert_type: Optional[str] = Field(None, description="Alert type (sla_breach, dlq_growth, etc.)")
+    alertType: Optional[str] = Field(None, description="Alert type (camelCase for frontend)")
+    name: Optional[str] = Field(None, description="Alert name")
     enabled: bool = Field(True, description="Whether alert is enabled")
     threshold: Optional[float] = Field(None, description="Alert threshold value")
+    thresholdValue: Optional[float] = Field(None, description="Alert threshold value (camelCase)")
     threshold_unit: Optional[str] = Field(None, description="Threshold unit")
-    channels: list[ChannelConfig] = Field(default_factory=list, description="Notification channels")
+    thresholdUnit: Optional[str] = Field(None, description="Threshold unit (camelCase)")
+    channels: Optional[list] = Field(default_factory=list, description="Notification channels (can be ChannelConfig, dict, or string)")
     quiet_hours_start: Optional[str] = Field(None, description="Quiet hours start (HH:MM)")
     quiet_hours_end: Optional[str] = Field(None, description="Quiet hours end (HH:MM)")
     escalation_minutes: Optional[int] = Field(None, description="Escalation timeout in minutes")
@@ -51,9 +56,10 @@ class AlertConfigRequest(BaseModel):
 
 class AlertConfigResponse(BaseModel):
     """Response model for alert configuration."""
-    id: int = Field(..., description="Configuration ID")
+    id: str = Field(..., description="Configuration ID (as string for frontend compatibility)")
     tenant_id: str = Field(..., description="Tenant identifier")
     alert_type: str = Field(..., description="Alert type")
+    name: Optional[str] = Field(None, description="Alert name (from metadata)")
     enabled: bool = Field(..., description="Whether enabled")
     threshold: Optional[float] = Field(None, description="Threshold value")
     threshold_unit: Optional[str] = Field(None, description="Threshold unit")
@@ -93,9 +99,10 @@ async def list_alert_configs(
 
             items = [
                 AlertConfigResponse(
-                    id=c.id,
+                    id=str(c.id),
                     tenant_id=c.tenant_id,
                     alert_type=c.alert_type,
+                    name=(c.config_metadata or {}).get("name") if c.config_metadata else None,
                     enabled=c.enabled,
                     threshold=float(c.threshold) if c.threshold else None,
                     threshold_unit=c.threshold_unit,
@@ -145,9 +152,10 @@ async def get_alert_config(
                 )
 
             return AlertConfigResponse(
-                id=config.id,
+                id=str(config.id),
                 tenant_id=config.tenant_id,
                 alert_type=config.alert_type,
+                name=(config.config_metadata or {}).get("name") if config.config_metadata else None,
                 enabled=config.enabled,
                 threshold=float(config.threshold) if config.threshold else None,
                 threshold_unit=config.threshold_unit,
@@ -173,38 +181,104 @@ async def get_alert_config(
         )
 
 
-@router.put("/config/{alert_type}", response_model=AlertConfigResponse)
-async def create_or_update_alert_config(
-    alert_type: str,
+def _normalize_alert_config_request(body: dict | AlertConfigRequest) -> dict:
+    """Normalize frontend request to backend format."""
+    # Handle both dict (from FastAPI) and AlertConfigRequest
+    if isinstance(body, dict):
+        alert_type = body.get("alert_type") or body.get("alertType")
+        threshold = body.get("threshold") or body.get("thresholdValue")
+        threshold_unit = body.get("threshold_unit") or body.get("thresholdUnit")
+        enabled = body.get("enabled", True)
+        channels = body.get("channels", [])
+        name = body.get("name")
+        quiet_hours_start = body.get("quiet_hours_start")
+        quiet_hours_end = body.get("quiet_hours_end")
+        escalation_minutes = body.get("escalation_minutes")
+    else:
+        # AlertConfigRequest object
+        alert_type = body.alert_type or body.alertType
+        threshold = body.threshold or body.thresholdValue
+        threshold_unit = body.threshold_unit or body.thresholdUnit
+        enabled = body.enabled
+        channels = body.channels or []
+        name = body.name
+        quiet_hours_start = body.quiet_hours_start
+        quiet_hours_end = body.quiet_hours_end
+        escalation_minutes = body.escalation_minutes
+    
+    if not alert_type:
+        raise ValueError("alert_type or alertType is required")
+    
+    # Convert to lowercase with underscores for backend
+    alert_type = alert_type.lower().replace("-", "_")
+    
+    # Normalize channels - convert string[] to ChannelConfig objects
+    normalized_channels = []
+    if channels:
+        for ch in channels:
+            if isinstance(ch, str):
+                # Frontend sends string[], convert to dict
+                normalized_channels.append({"type": ch})
+            elif isinstance(ch, dict):
+                normalized_channels.append(ch)
+            elif hasattr(ch, "model_dump"):
+                normalized_channels.append(ch.model_dump())
+            else:
+                normalized_channels.append(ch)
+    
+    # Build metadata with name if provided
+    metadata = {}
+    if name:
+        metadata["name"] = name
+    
+    return {
+        "alert_type": alert_type,
+        "enabled": enabled,
+        "threshold": threshold,
+        "threshold_unit": threshold_unit,
+        "channels": normalized_channels,
+        "quiet_hours_start": quiet_hours_start,
+        "quiet_hours_end": quiet_hours_end,
+        "escalation_minutes": escalation_minutes,
+        "metadata": metadata if metadata else None,
+    }
+
+
+@router.post("/config", response_model=AlertConfigResponse)
+async def create_alert_config(
     tenant_id: str = Query(..., description="Tenant identifier"),
-    body: AlertConfigRequest = ...,
+    body: dict = ...,  # Accept dict to handle frontend format flexibly
 ) -> AlertConfigResponse:
     """
-    Create or update alert configuration.
+    Create a new alert configuration.
 
-    PUT /alerts/config/{alert_type}?tenant_id=...
+    POST /alerts/config?tenant_id=...
     """
     try:
+        normalized = _normalize_alert_config_request(body)
+        
         async with get_db_session_context() as session:
             repo = AlertConfigRepository(session)
             config = await repo.create_or_update_config(
                 tenant_id=tenant_id,
-                alert_type=alert_type,
-                enabled=body.enabled,
-                threshold=body.threshold,
-                threshold_unit=body.threshold_unit,
-                channels=[c.model_dump() for c in body.channels],
-                quiet_hours_start=body.quiet_hours_start,
-                quiet_hours_end=body.quiet_hours_end,
-                escalation_minutes=body.escalation_minutes,
+                alert_type=normalized["alert_type"],
+                enabled=normalized["enabled"],
+                threshold=normalized["threshold"],
+                threshold_unit=normalized["threshold_unit"],
+                channels=normalized["channels"],
+                quiet_hours_start=normalized["quiet_hours_start"],
+                quiet_hours_end=normalized["quiet_hours_end"],
+                escalation_minutes=normalized["escalation_minutes"],
+                metadata=normalized["metadata"],
             )
 
             await session.commit()
 
             return AlertConfigResponse(
-                id=config.id,
+                id=str(config.id),
                 tenant_id=config.tenant_id,
                 alert_type=config.alert_type,
+                name=(config.config_metadata or {}).get("name") if config.config_metadata else None,
                 enabled=config.enabled,
                 threshold=float(config.threshold) if config.threshold else None,
                 threshold_unit=config.threshold_unit,
@@ -221,6 +295,93 @@ async def create_or_update_alert_config(
             detail=str(e),
         )
     except Exception as e:
+        logger.error(f"Failed to create alert config: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create alert configuration: {str(e)}",
+        )
+
+
+@router.put("/config/{alert_type_or_id}", response_model=AlertConfigResponse)
+async def create_or_update_alert_config(
+    alert_type_or_id: str,
+    tenant_id: str = Query(..., description="Tenant identifier"),
+    body: dict = ...,  # Accept dict to handle frontend format flexibly
+) -> AlertConfigResponse:
+    """
+    Create or update alert configuration.
+
+    PUT /alerts/config/{alert_type}?tenant_id=... (uses alert_type from path)
+    PUT /alerts/config/{id}?tenant_id=... (uses id from path, alert_type from body)
+    """
+    try:
+        # Determine if alert_type_or_id is an ID (numeric) or alert_type (string)
+        is_id = False
+        try:
+            int(alert_type_or_id)
+            is_id = True
+        except ValueError:
+            pass
+        
+        normalized = _normalize_alert_config_request(body)
+        
+        if is_id:
+            # ID-based update - get existing config first
+            async with get_db_session_context() as session:
+                repo = AlertConfigRepository(session)
+                existing = await repo.get_by_id(alert_type_or_id, tenant_id)
+                if not existing:
+                    raise HTTPException(
+                        status_code=http_status.HTTP_404_NOT_FOUND,
+                        detail=f"Alert config not found: {alert_type_or_id}",
+                    )
+                alert_type = existing.alert_type
+        else:
+            # Use alert_type from path, but override if provided in body
+            alert_type = alert_type_or_id.lower().replace("-", "_")
+            if normalized["alert_type"]:
+                alert_type = normalized["alert_type"]
+        
+        async with get_db_session_context() as session:
+            repo = AlertConfigRepository(session)
+            config = await repo.create_or_update_config(
+                tenant_id=tenant_id,
+                alert_type=alert_type,
+                enabled=normalized["enabled"],
+                threshold=normalized["threshold"],
+                threshold_unit=normalized["threshold_unit"],
+                channels=normalized["channels"],
+                quiet_hours_start=normalized["quiet_hours_start"],
+                quiet_hours_end=normalized["quiet_hours_end"],
+                escalation_minutes=normalized["escalation_minutes"],
+                metadata=normalized["metadata"],
+            )
+
+            await session.commit()
+
+            return AlertConfigResponse(
+                id=str(config.id),
+                tenant_id=config.tenant_id,
+                alert_type=config.alert_type,
+                name=(config.config_metadata or {}).get("name") if config.config_metadata else None,
+                enabled=config.enabled,
+                threshold=float(config.threshold) if config.threshold else None,
+                threshold_unit=config.threshold_unit,
+                channels=config.channels or [],
+                quiet_hours_start=config.quiet_hours_start.strftime("%H:%M") if config.quiet_hours_start else None,
+                quiet_hours_end=config.quiet_hours_end.strftime("%H:%M") if config.quiet_hours_end else None,
+                escalation_minutes=config.escalation_minutes,
+                created_at=config.created_at.isoformat() if config.created_at else "",
+                updated_at=config.updated_at.isoformat() if config.updated_at else "",
+            )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
         logger.error(f"Failed to create/update alert config: {e}", exc_info=True)
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -228,30 +389,60 @@ async def create_or_update_alert_config(
         )
 
 
-@router.delete("/config/{alert_type}")
+@router.delete("/config/{alert_type_or_id}")
 async def delete_alert_config(
-    alert_type: str,
+    alert_type_or_id: str,
     tenant_id: str = Query(..., description="Tenant identifier"),
 ) -> dict:
     """
     Delete alert configuration.
 
-    DELETE /alerts/config/{alert_type}?tenant_id=...
+    DELETE /alerts/config/{alert_type}?tenant_id=... (uses alert_type from path)
+    DELETE /alerts/config/{id}?tenant_id=... (uses id from path)
     """
     try:
+        # Determine if alert_type_or_id is an ID (numeric) or alert_type (string)
+        is_id = False
+        try:
+            config_id = int(alert_type_or_id)
+            is_id = True
+        except ValueError:
+            pass
+        
         async with get_db_session_context() as session:
             repo = AlertConfigRepository(session)
-            deleted = await repo.delete_config(tenant_id, alert_type)
+            
+            if is_id:
+                # ID-based delete
+                existing = await repo.get_by_id(alert_type_or_id, tenant_id)
+                if not existing:
+                    raise HTTPException(
+                        status_code=http_status.HTTP_404_NOT_FOUND,
+                        detail=f"Alert config not found: {alert_type_or_id}",
+                    )
+                alert_type = existing.alert_type
+                # Delete by ID
+                from sqlalchemy import delete
+                stmt = delete(AlertConfig).where(
+                    AlertConfig.id == config_id,
+                    AlertConfig.tenant_id == tenant_id
+                )
+                await session.execute(stmt)
+                deleted = True
+            else:
+                # Alert type-based delete
+                alert_type = alert_type_or_id.lower().replace("-", "_")
+                deleted = await repo.delete_config(tenant_id, alert_type)
 
             if not deleted:
                 raise HTTPException(
                     status_code=http_status.HTTP_404_NOT_FOUND,
-                    detail=f"Alert config not found: {alert_type}",
+                    detail=f"Alert config not found: {alert_type_or_id}",
                 )
 
             await session.commit()
 
-            return {"deleted": True, "alert_type": alert_type}
+            return {"deleted": True, "alert_type": alert_type if not is_id else None, "id": alert_type_or_id if is_id else None}
     except HTTPException:
         raise
     except ValueError as e:
@@ -383,6 +574,16 @@ async def list_alert_history(
             detail=str(e),
         )
     except Exception as e:
+        # Check if it's a table doesn't exist error
+        error_msg = str(e).lower()
+        if "does not exist" in error_msg or "no such table" in error_msg or "relation" in error_msg:
+            logger.warning(f"Alert history table may not exist yet: {e}. Returning empty results.")
+            return AlertHistoryListResponse(
+                items=[],
+                total=0,
+                page=page,
+                page_size=page_size,
+            )
         logger.error(f"Failed to list alert history: {e}", exc_info=True)
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -638,3 +839,129 @@ async def get_alert_counts(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get alert counts: {str(e)}",
         )
+
+
+# =============================================================================
+# Alert Channels Endpoints (for UI compatibility)
+# =============================================================================
+
+
+class AlertChannelResponse(BaseModel):
+    """Response model for alert channel."""
+    id: str = Field(..., description="Channel identifier")
+    tenant_id: str = Field(..., description="Tenant identifier")
+    channel_type: str = Field(..., description="Channel type (webhook, email)")
+    config: dict = Field(..., description="Channel configuration")
+    verified: bool = Field(False, description="Whether channel is verified")
+    created_at: Optional[str] = Field(None, description="Created timestamp")
+
+
+class AlertChannelListResponse(BaseModel):
+    """Response model for alert channel list."""
+    items: list[AlertChannelResponse] = Field(..., description="Alert channels")
+
+
+@router.get("/channels", response_model=AlertChannelListResponse)
+async def list_alert_channels(
+    tenant_id: str = Query(..., description="Tenant identifier"),
+) -> AlertChannelListResponse:
+    """
+    List alert channels for a tenant.
+
+    GET /alerts/channels?tenant_id=...
+    
+    Note: Channels are currently stored as part of alert configurations.
+    This endpoint extracts unique channels from all alert configs.
+    """
+    try:
+        async with get_db_session_context() as session:
+            repo = AlertConfigRepository(session)
+            result = await repo.list_by_tenant(
+                tenant_id=tenant_id,
+                page=1,
+                page_size=1000,  # Get all configs to extract channels
+            )
+            
+            # Extract unique channels from all alert configs
+            channels_map: dict[str, AlertChannelResponse] = {}
+            for config in result.items:
+                if config.channels:
+                    for idx, channel_data in enumerate(config.channels):
+                        if isinstance(channel_data, dict):
+                            channel_type = channel_data.get("type", "webhook")
+                            # Create a unique ID for this channel (config_id + index)
+                            channel_id = f"{config.id}-{idx}"
+                            if channel_id not in channels_map:
+                                channels_map[channel_id] = AlertChannelResponse(
+                                    id=channel_id,
+                                    tenant_id=tenant_id,
+                                    channel_type=channel_type,
+                                    config=channel_data,
+                                    verified=False,  # TODO: Implement verification status
+                                    created_at=config.created_at.isoformat() if config.created_at else None,
+                                )
+            
+            return AlertChannelListResponse(items=list(channels_map.values()))
+    except Exception as e:
+        # Check if it's a table doesn't exist error
+        error_msg = str(e).lower()
+        if "does not exist" in error_msg or "no such table" in error_msg or "relation" in error_msg:
+            logger.warning(f"Alert config table may not exist yet: {e}. Returning empty results.")
+            return AlertChannelListResponse(items=[])
+        logger.error(f"Failed to list alert channels: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list alert channels: {str(e)}",
+        )
+
+
+@router.post("/channels", response_model=AlertChannelResponse)
+async def create_alert_channel(
+    tenant_id: str = Query(..., description="Tenant identifier"),
+    body: dict = ...,  # Accept flexible body for channel creation
+) -> AlertChannelResponse:
+    """
+    Create a new alert channel.
+
+    POST /alerts/channels?tenant_id=...
+    
+    Note: This is a stub implementation. Channels are managed as part of alert configurations.
+    """
+    raise HTTPException(
+        status_code=http_status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Direct channel creation is not yet supported. Channels are managed via alert configurations.",
+    )
+
+
+@router.post("/channels/{channel_id}/verify")
+async def verify_alert_channel(
+    channel_id: str,
+    tenant_id: str = Query(..., description="Tenant identifier"),
+) -> dict:
+    """
+    Verify an alert channel.
+
+    POST /alerts/channels/{channel_id}/verify?tenant_id=...
+    """
+    raise HTTPException(
+        status_code=http_status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Channel verification is not yet implemented.",
+    )
+
+
+@router.delete("/channels/{channel_id}")
+async def delete_alert_channel(
+    channel_id: str,
+    tenant_id: str = Query(..., description="Tenant identifier"),
+) -> dict:
+    """
+    Delete an alert channel.
+
+    DELETE /alerts/channels/{channel_id}?tenant_id=...
+    
+    Note: This is a stub implementation. Channels are managed as part of alert configurations.
+    """
+    raise HTTPException(
+        status_code=http_status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Direct channel deletion is not yet supported. Channels are managed via alert configurations.",
+    )

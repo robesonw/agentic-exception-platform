@@ -252,11 +252,15 @@ class DeadLetterEventRepository(AbstractBaseRepository[DeadLetterEvent]):
         result = await self.session.execute(query)
         items = list(result.scalars().all())
         
+        # Convert limit/offset to page/page_size for PaginatedResult
+        page = (offset // limit) + 1 if limit > 0 else 1
+        page_size = limit
+        
         return PaginatedResult(
             items=items,
             total=total,
-            limit=limit,
-            offset=offset,
+            page=page,
+            page_size=page_size,
         )
 
     async def get_dlq_entries_by_exception(
@@ -544,11 +548,15 @@ class DeadLetterEventRepository(AbstractBaseRepository[DeadLetterEvent]):
 
         result = await self.session.execute(query)
         items = list(result.scalars().all())
-
+        
+        # Convert limit/offset to page/page_size for PaginatedResult
+        page = (offset // limit) + 1 if limit > 0 else 1
+        page_size = limit
+        
         return PaginatedResult(
             items=items,
             total=total,
-            limit=limit,
-            offset=offset,
+            page=page,
+            page_size=page_size,
         )
 

@@ -111,6 +111,10 @@ services:
     container_name: sentinai-ui
     environment:
       VITE_API_BASE_URL: http://localhost:8000
+      # Vite environment variables can be passed here or loaded from .env file
+      # These will be available at build/start time
+      VITE_OPS_ENABLED: ${VITE_OPS_ENABLED:-false}
+      VITE_ADMIN_ENABLED: ${VITE_ADMIN_ENABLED:-false}
     ports:
       - "3000:3000"
     depends_on:
@@ -124,6 +128,8 @@ services:
       - ./ui/vite.config.ts:/app/vite.config.ts
       - ./ui/tsconfig.json:/app/tsconfig.json
       - ./ui/tsconfig.node.json:/app/tsconfig.node.json
+      # Mount .env file so Vite can read it (if it exists)
+      - ./ui/.env:/app/.env:ro
 
 volumes:
   postgres_data:

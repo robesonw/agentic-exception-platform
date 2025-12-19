@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '007'
-down_revision = '006_add_pii_redaction_metadata_table'
+down_revision = '006_add_pii_redaction_metadata'
 branch_labels = None
 depends_on = None
 

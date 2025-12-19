@@ -12,7 +12,8 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    open: true,
+    host: '0.0.0.0', // Allow external connections in Docker
+    open: false, // Don't auto-open browser in Docker
   },
   // Environment variables prefixed with VITE_ are exposed to the client
   // VITE_API_BASE_URL will be available via import.meta.env.VITE_API_BASE_URL

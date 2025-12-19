@@ -142,7 +142,7 @@ def get_rate_limiter() -> RateLimiter:
     if _rate_limiter is None:
         _rate_limiter = RateLimiter(
             default_requests_per_minute=100,
-            endpoint_limits={"/admin": 10, "/metrics": 50},
+            endpoint_limits={"/admin": 100, "/metrics": 50},  # Increased /admin limit from 10 to 100 for better UX
             role_limits={"viewer": 50, "operator": 200, "admin": 500},
         )
     return _rate_limiter

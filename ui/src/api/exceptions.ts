@@ -96,8 +96,8 @@ export async function listExceptions(
     items,
     total: response.total || 0,
     page: response.page || 1,
-    pageSize: response.page_size || response.pageSize || 50,
-    totalPages: response.total_pages || response.totalPages || 1,
+    pageSize: response.page_size ?? 50,
+    totalPages: response.total_pages ?? 1,
   }
 }
 
@@ -348,8 +348,8 @@ export async function fetchExceptionEvents(
     items,
     total: response.total || 0,
     page: response.page || 1,
-    pageSize: response.page_size || response.pageSize || 50,
-    totalPages: response.total_pages || response.totalPages || 1,
+    pageSize: response.page_size ?? 50,
+    totalPages: response.total_pages ?? 1,
   }
 }
 

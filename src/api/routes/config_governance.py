@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.infrastructure.db.session import get_db_session_context
 from src.infrastructure.repositories.config_change_repository import (
@@ -56,6 +56,8 @@ class ConfigChangeApplyRequest(BaseModel):
 
 class ConfigChangeResponse(BaseModel):
     """Response for a config change request."""
+    model_config = ConfigDict(from_attributes=True)
+    
     id: str
     tenant_id: str
     change_type: str
@@ -72,18 +74,14 @@ class ConfigChangeResponse(BaseModel):
     diff_summary: Optional[str]
     change_reason: Optional[str]
 
-    class Config:
-        from_attributes = True
-
 
 class ConfigChangeDetailResponse(ConfigChangeResponse):
     """Detailed response including config data."""
+    model_config = ConfigDict(from_attributes=True)
+    
     current_config: Optional[dict]
     proposed_config: dict
     rollback_config: Optional[dict]
-
-    class Config:
-        from_attributes = True
 
 
 class ConfigChangeStatsResponse(BaseModel):
@@ -113,14 +111,15 @@ class PaginatedConfigChangeResponse(BaseModel):
 
 def _to_response(change) -> ConfigChangeResponse:
     """Convert model to response."""
+    # Manually construct to ensure proper type handling
     return ConfigChangeResponse(
-        id=change.id,
-        tenant_id=change.tenant_id,
-        change_type=change.change_type,
-        resource_id=change.resource_id,
+        id=str(change.id),
+        tenant_id=str(change.tenant_id),
+        change_type=str(change.change_type),
+        resource_id=str(change.resource_id),
         resource_name=change.resource_name,
-        status=change.status,
-        requested_by=change.requested_by,
+        status=str(change.status),
+        requested_by=str(change.requested_by),
         requested_at=change.requested_at,
         reviewed_by=change.reviewed_by,
         reviewed_at=change.reviewed_at,
@@ -134,14 +133,15 @@ def _to_response(change) -> ConfigChangeResponse:
 
 def _to_detail_response(change) -> ConfigChangeDetailResponse:
     """Convert model to detailed response."""
+    # Manually construct to ensure proper type handling
     return ConfigChangeDetailResponse(
-        id=change.id,
-        tenant_id=change.tenant_id,
-        change_type=change.change_type,
-        resource_id=change.resource_id,
+        id=str(change.id),
+        tenant_id=str(change.tenant_id),
+        change_type=str(change.change_type),
+        resource_id=str(change.resource_id),
         resource_name=change.resource_name,
-        status=change.status,
-        requested_by=change.requested_by,
+        status=str(change.status),
+        requested_by=str(change.requested_by),
         requested_at=change.requested_at,
         reviewed_by=change.reviewed_by,
         reviewed_at=change.reviewed_at,
@@ -151,7 +151,7 @@ def _to_detail_response(change) -> ConfigChangeDetailResponse:
         diff_summary=change.diff_summary,
         change_reason=change.change_reason,
         current_config=change.current_config,
-        proposed_config=change.proposed_config,
+        proposed_config=change.proposed_config or {},
         rollback_config=change.rollback_config,
     )
 
@@ -227,28 +227,72 @@ async def list_config_changes(
 
     Supports filtering by status and change type.
     """
-    async with get_db_session_context() as session:
-        repo = ConfigChangeRepository(session)
+    try:
+        async with get_db_session_context() as session:
+            repo = ConfigChangeRepository(session)
 
-        filters = {}
-        if status:
-            filters["status"] = status
-        if change_type:
-            filters["change_type"] = change_type
+            filters = {}
+            if status:
+                filters["status"] = status
+            if change_type:
+                filters["change_type"] = change_type
 
-        result = await repo.list_by_tenant(
-            tenant_id=tenant_id,
-            page=page,
-            page_size=page_size,
-            **filters,
+            logger.debug(
+                f"Listing config changes for tenant {tenant_id}, "
+                f"page={page}, page_size={page_size}, filters={filters}"
+            )
+
+            result = await repo.list_by_tenant(
+                tenant_id=tenant_id,
+                page=page,
+                page_size=page_size,
+                **filters,
+            )
+
+            logger.debug(
+                f"Found {result.total} total config changes, "
+                f"{len(result.items)} items in this page"
+            )
+
+            # Convert items to response models
+            items = []
+            for change in result.items:
+                try:
+                    items.append(_to_response(change))
+                except Exception as item_error:
+                    logger.error(
+                        f"Error converting config change {change.id} to response: {item_error}",
+                        exc_info=True,
+                    )
+                    # Skip this item but continue with others
+                    continue
+
+            return PaginatedConfigChangeResponse(
+                items=items,
+                total=result.total,
+                page=result.page,
+                page_size=result.page_size,
+                total_pages=result.total_pages,
+            )
+    except ValueError as e:
+        # Validation errors from repository
+        logger.warning(f"Validation error listing config changes: {e}")
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid request: {str(e)}",
         )
-
-        return PaginatedConfigChangeResponse(
-            items=[_to_response(c) for c in result.items],
-            total=result.total,
-            page=result.page,
-            page_size=result.page_size,
-            total_pages=result.total_pages,
+    except Exception as e:
+        logger.error(
+            f"Error listing config changes for tenant {tenant_id}: {e}",
+            exc_info=True,
+        )
+        # Return more detailed error in development
+        error_detail = str(e)
+        if hasattr(e, "__cause__") and e.__cause__:
+            error_detail = f"{error_detail} (caused by: {e.__cause__})"
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list config changes: {error_detail}",
         )
 
 
@@ -349,6 +393,61 @@ async def get_config_change(
             )
 
         return _to_detail_response(change)
+
+
+class ConfigChangeDiffResponse(BaseModel):
+    """Response model for config change diff."""
+
+    additions: dict = Field(..., description="Fields added in proposed config")
+    deletions: dict = Field(..., description="Fields removed from current config")
+    changes: dict = Field(..., description="Fields changed (key: {old: value, new: value})")
+
+
+@router.get(
+    "/{change_id}/diff",
+    response_model=ConfigChangeDiffResponse,
+    summary="Get configuration change diff",
+)
+async def get_config_change_diff(
+    change_id: str,
+    tenant_id: str = Query(..., description="Tenant ID"),
+):
+    """Get diff between current and proposed configuration."""
+    async with get_db_session_context() as session:
+        repo = ConfigChangeRepository(session)
+        change = await repo.get_by_id(change_id, tenant_id)
+
+        if not change:
+            raise HTTPException(
+                status_code=http_status.HTTP_404_NOT_FOUND,
+                detail=f"Config change request not found: {change_id}",
+            )
+
+        current = change.current_config or {}
+        proposed = change.proposed_config or {}
+
+        # Calculate diff
+        additions = {}
+        deletions = {}
+        changes = {}
+
+        # Find additions and changes
+        for key, new_value in proposed.items():
+            if key not in current:
+                additions[key] = new_value
+            elif current[key] != new_value:
+                changes[key] = {"old": current[key], "new": new_value}
+
+        # Find deletions
+        for key, old_value in current.items():
+            if key not in proposed:
+                deletions[key] = old_value
+
+        return ConfigChangeDiffResponse(
+            additions=additions,
+            deletions=deletions,
+            changes=changes,
+        )
 
 
 @router.post(

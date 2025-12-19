@@ -130,6 +130,28 @@ Write-Host "Backend API is starting" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "Step 4: Starting UI..." -ForegroundColor Green
+
+# Load UI environment variables from ui/.env
+$uiEnvPath = Join-Path $ProjectRoot "ui\.env"
+if (Test-Path $uiEnvPath) {
+    Write-Host "Loading UI environment variables from ui/.env..." -ForegroundColor Cyan
+    Get-Content $uiEnvPath | ForEach-Object {
+        if ($_ -match '^([^#][^=]+)=(.*)$') {
+            $name = $matches[1].Trim()
+            $value = $matches[2].Trim()
+            # Set in process environment so docker-compose can use them
+            [Environment]::SetEnvironmentVariable($name, $value, "Process")
+            if ($name -like "VITE_*") {
+                Write-Host "  Loaded: $name" -ForegroundColor Gray
+            }
+        }
+    }
+    Write-Host "UI environment variables loaded" -ForegroundColor Green
+} else {
+    Write-Host "Warning: ui/.env file not found. UI will use default environment variables." -ForegroundColor Yellow
+    Write-Host "  Create ui/.env with VITE_OPS_ENABLED, VITE_ADMIN_ENABLED, etc. if needed." -ForegroundColor Yellow
+}
+
 docker-compose up -d ui
 
 Write-Host ""
