@@ -29,14 +29,19 @@ from src.api.routes import (
     admin_domainpacks,
     admin_tenantpolicies,
     admin_tools,
+    alerts,
     approvals,
     approval_ui,
     audit,
+    audit_reports,
+    config_governance,
     dashboards,
     exceptions,
     metrics,
     ops,
+    ops_dashboard,
     playbooks,
+    rate_limits,
     run,
     router_config_view,
     router_copilot,
@@ -48,6 +53,7 @@ from src.api.routes import (
     router_supervisor_dashboard,
     tools,
     ui_status,
+    usage,
 )
 
 @asynccontextmanager
@@ -118,7 +124,14 @@ app.include_router(router_guardrail_recommendations.router)  # Phase 3: Guardrai
 app.include_router(router_copilot.router)  # Phase 5: Copilot Chat API (P5-9)
 app.include_router(playbooks.router)  # Phase 6: Playbook API (P6-24)
 app.include_router(audit.router)  # Phase 9: Audit Trail API (P9-25)
-app.include_router(ops.router)  # Operations API (DLQ monitoring)
+app.include_router(ops.router)  # Phase 10: Operations API (DLQ monitoring)
+app.include_router(alerts.router)  # Phase 10: Alerting API (P10-6, P10-9)
+app.include_router(config_governance.router)  # Phase 10: Config Change Governance (P10-10)
+app.include_router(audit_reports.router)  # Phase 10: Audit Reports API (P10-11 to P10-14)
+app.include_router(rate_limits.router)  # Phase 10: Rate Limits Admin API (P10-15 to P10-17)
+app.include_router(rate_limits.usage_router)  # Phase 10: Rate Limits Usage API (P10-15 to P10-17)
+app.include_router(usage.router)  # Phase 10: Usage Metering API (P10-18 to P10-20)
+app.include_router(ops_dashboard.router)  # Phase 10: Ops Dashboard API (P10-21 to P10-28)
 
 
 @app.get("/health")

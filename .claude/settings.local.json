@@ -12,7 +12,8 @@
       "Bash(docker exec:*)",
       "Bash(docker restart:*)",
       "Bash(cat:*)",
-      "Bash(iconv:*)"
+      "Bash(iconv:*)",
+      "Bash(pip install:*)"
     ],
     "deny": [],
     "ask": []
