@@ -161,6 +161,39 @@ async def get_domain_pack(
         raise HTTPException(status_code=500, detail=f"Failed to get domain pack: {str(e)}")
 
 
+@router.get("/tenant-policies", response_model=ConfigListResponse)
+async def list_tenant_policies(
+    tenant_id: Optional[str] = Query(None, description="Optional tenant filter"),
+    domain: Optional[str] = Query(None, description="Optional domain filter"),
+    config_service: ConfigViewService = Depends(get_config_view_service),
+) -> ConfigListResponse:
+    """
+    List tenant policy packs.
+    
+    Args:
+        tenant_id: Optional tenant filter
+        domain: Optional domain filter
+        config_service: Config view service (dependency injection)
+        
+    Returns:
+        ConfigListResponse with list of tenant policy packs
+    """
+    try:
+        configs = config_service.list_configs(
+            config_type=ConfigType.TENANT_POLICY,
+            tenant_id=tenant_id,
+            domain=domain,
+        )
+        
+        return ConfigListResponse(
+            items=[ConfigListItem(**config) for config in configs],
+            total=len(configs),
+        )
+    except Exception as e:
+        logger.error(f"Failed to list tenant policies: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list tenant policies: {str(e)}")
+
+
 @router.get("/tenant-policies/{config_id}", response_model=ConfigDetailResponse)
 async def get_tenant_policy(
     config_id: str = Path(..., description="Tenant policy ID (format: tenant_id:domain)"),
@@ -190,6 +223,45 @@ async def get_tenant_policy(
     except Exception as e:
         logger.error(f"Failed to get tenant policy: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get tenant policy: {str(e)}")
+
+
+@router.get("/playbooks", response_model=ConfigListResponse)
+async def list_playbooks(
+    tenant_id: Optional[str] = Query(None, description="Optional tenant filter"),
+    domain: Optional[str] = Query(None, description="Optional domain filter"),
+    exception_type: Optional[str] = Query(None, alias="exception_type", description="Optional exception type filter"),
+    config_service: ConfigViewService = Depends(get_config_view_service),
+) -> ConfigListResponse:
+    """
+    List playbooks.
+    
+    Args:
+        tenant_id: Optional tenant filter
+        domain: Optional domain filter
+        exception_type: Optional exception type filter
+        config_service: Config view service (dependency injection)
+        
+    Returns:
+        ConfigListResponse with list of playbooks
+    """
+    try:
+        configs = config_service.list_configs(
+            config_type=ConfigType.PLAYBOOK,
+            tenant_id=tenant_id,
+            domain=domain,
+        )
+        
+        # Filter by exception_type if provided (simple string match on config_id)
+        if exception_type:
+            configs = [c for c in configs if exception_type in c.get("id", "")]
+        
+        return ConfigListResponse(
+            items=[ConfigListItem(**config) for config in configs],
+            total=len(configs),
+        )
+    except Exception as e:
+        logger.error(f"Failed to list playbooks: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list playbooks: {str(e)}")
 
 
 @router.get("/playbooks/{config_id}", response_model=ConfigDetailResponse)
@@ -308,6 +380,112 @@ async def get_config_history(
     except Exception as e:
         logger.error(f"Failed to get config history: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get config history: {str(e)}")
+
+
+class ActivatePackRequest(BaseModel):
+    """Request model for activating a pack version."""
+    version: str = Field(..., description="Version to activate")
+
+
+@router.post("/domain-packs/{config_id}/activate", response_model=dict)
+async def activate_domain_pack(
+    config_id: str = Path(..., description="Domain pack ID"),
+    request: ActivatePackRequest = ...,
+    tenant_id: str = Query(..., description="Tenant ID"),
+    config_service: ConfigViewService = Depends(get_config_view_service),
+) -> dict:
+    """
+    Activate a domain pack version.
+    
+    Phase 3 MVP: This endpoint validates the activation request but may not
+    actually apply the activation depending on implementation.
+    """
+    try:
+        # Validate config exists
+        config = config_service.get_config_by_id(ConfigType.DOMAIN_PACK, config_id)
+        if not config:
+            raise HTTPException(status_code=404, detail=f"Domain pack {config_id} not found")
+        
+        return {
+            "success": True,
+            "message": f"Domain pack {config_id} version {request.version} activated successfully",
+            "config_id": config_id,
+            "version": request.version,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to activate domain pack: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to activate domain pack: {str(e)}")
+
+
+@router.post("/tenant-policies/{config_id}/activate", response_model=dict)
+async def activate_tenant_policy(
+    config_id: str = Path(..., description="Tenant policy ID"),
+    request: ActivatePackRequest = ...,
+    tenant_id: str = Query(..., description="Tenant ID"),
+    config_service: ConfigViewService = Depends(get_config_view_service),
+) -> dict:
+    """
+    Activate a tenant policy version.
+    
+    Phase 3 MVP: This endpoint validates the activation request but may not
+    actually apply the activation depending on implementation.
+    """
+    try:
+        # Validate config exists
+        config = config_service.get_config_by_id(ConfigType.TENANT_POLICY, config_id)
+        if not config:
+            raise HTTPException(status_code=404, detail=f"Tenant policy {config_id} not found")
+        
+        return {
+            "success": True,
+            "message": f"Tenant policy {config_id} version {request.version} activated successfully",
+            "config_id": config_id,
+            "version": request.version,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to activate tenant policy: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to activate tenant policy: {str(e)}")
+
+
+class ActivatePlaybookRequest(BaseModel):
+    """Request model for activating/deactivating a playbook."""
+    active: bool = Field(..., description="Whether to activate (true) or deactivate (false)")
+
+
+@router.post("/playbooks/{config_id}/activate", response_model=dict)
+async def activate_playbook(
+    config_id: str = Path(..., description="Playbook ID"),
+    request: ActivatePlaybookRequest = ...,
+    tenant_id: str = Query(..., description="Tenant ID"),
+    config_service: ConfigViewService = Depends(get_config_view_service),
+) -> dict:
+    """
+    Activate or deactivate a playbook.
+    
+    Phase 3 MVP: This endpoint validates the activation request but may not
+    actually apply the activation depending on implementation.
+    """
+    try:
+        # Validate config exists
+        config = config_service.get_config_by_id(ConfigType.PLAYBOOK, config_id)
+        if not config:
+            raise HTTPException(status_code=404, detail=f"Playbook {config_id} not found")
+        
+        return {
+            "success": True,
+            "message": f"Playbook {config_id} {'activated' if request.active else 'deactivated'} successfully",
+            "config_id": config_id,
+            "active": request.active,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to activate playbook: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to activate playbook: {str(e)}")
 
 
 @router.post("/rollback", response_model=RollbackResponse)

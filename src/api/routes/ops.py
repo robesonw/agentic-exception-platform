@@ -649,8 +649,8 @@ async def list_dlq_entries(
             return DLQListResponse(
                 items=items,
                 total=result.total,
-                limit=result.limit,
-                offset=result.offset,
+                limit=limit,
+                offset=offset,
             )
     
     except ValueError as e:
@@ -659,6 +659,16 @@ async def list_dlq_entries(
             detail=str(e),
         )
     except Exception as e:
+        # Check if it's a table doesn't exist error
+        error_msg = str(e).lower()
+        if "does not exist" in error_msg or "no such table" in error_msg or "relation" in error_msg:
+            logger.warning(f"DLQ table may not exist yet: {e}. Returning empty results.")
+            return DLQListResponse(
+                items=[],
+                total=0,
+                limit=limit,
+                offset=offset,
+            )
         logger.error(f"Failed to list DLQ entries: {e}", exc_info=True)
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,

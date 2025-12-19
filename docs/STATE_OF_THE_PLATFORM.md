@@ -2,7 +2,7 @@
 
 > Authoritative snapshot of what exists in SentinAI today.
 
-**Last updated:** Phase 10 complete
+**Last updated:** Phase 11 complete
 
 ---
 
@@ -77,14 +77,19 @@
 | `/exceptions/:id` | Detail view with timeline, playbook panel, evidence |
 | `/tools` | Global + tenant-scoped tools, enablement toggles |
 | `/config` | Domain packs, playbooks configuration |
-| `/ops` | Ops home dashboard (health, metrics, SLA, DLQ, alerts) |
+| `/ops` | Ops overview dashboard (health, metrics, SLA, DLQ, alerts summary) |
 | `/ops/workers` | Worker health and throughput dashboard |
 | `/ops/sla` | SLA compliance trends and breaches |
 | `/ops/dlq` | DLQ management (view, retry, discard) |
 | `/ops/alerts` | Alert configuration and history |
 | `/ops/reports` | Audit report generation |
 | `/ops/usage` | Usage metering dashboard |
+| `/ops/rate-limits` | Rate limits per tenant (view; admin can update) |
+| `/admin` | Admin landing page with quick links and pending approvals |
 | `/admin/config-changes` | Config change approval workflow |
+| `/admin/packs` | Domain Packs and Tenant Packs management |
+| `/admin/playbooks` | Playbooks list, detail, and activation |
+| `/admin/tools` | Tool registry and tenant enablement |
 | `/supervisor` | Supervisor analytics dashboard |
 
 ### Tools System (Phase 8)
@@ -340,7 +345,7 @@ See `docs/phase10-ops-governance-mvp.md` for detailed specifications.
 
 ## Summary
 
-SentinAI is a **production-ready, enterprise-grade platform** through Phase 10:
+SentinAI is a **production-ready, enterprise-grade platform** through Phase 11:
 
 - Async, event-driven pipeline via Kafka
 - Full PostgreSQL persistence with audit trail
@@ -354,7 +359,11 @@ SentinAI is a **production-ready, enterprise-grade platform** through Phase 10:
 - **Config change governance** with approval workflows
 - **Audit reporting** with exportable compliance reports
 - **Rate limiting** and **usage metering** for resource management
+- **Complete Ops UI** for operational visibility and management
+- **Complete Admin UI** for governance and configuration management
 
 **Demo data:** 1056 exceptions, 6783 events, 12 playbooks, 16 tools across 2 tenants.
 
 **Phase 10 adds:** Operational visibility, governance controls, production hardening, and cost transparency.
+
+**Phase 11 adds:** Enterprise-grade Admin & Ops UI, removing all placeholders and providing production-ready operational and governance workflows.

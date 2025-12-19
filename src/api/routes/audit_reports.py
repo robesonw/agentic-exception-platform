@@ -11,6 +11,7 @@ Reference: docs/phase10-ops-governance-mvp.md Section 8
 
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, status as http_status
@@ -39,21 +40,30 @@ router = APIRouter(prefix="/audit/reports", tags=["audit-reports"])
 
 class ReportGenerateRequest(BaseModel):
     """Request to generate a new report."""
-    report_type: str = Field(
-        ...,
+    report_type: Optional[str] = Field(
+        None,
         description="Type: exception_activity, tool_execution, policy_decisions, config_changes, sla_compliance",
     )
-    title: str = Field(..., description="Human-readable report title")
+    reportType: Optional[str] = Field(
+        None,
+        description="Type (camelCase for frontend): exception_activity, tool_execution, policy_decisions, config_changes, sla_compliance",
+    )
+    title: Optional[str] = Field(None, description="Human-readable report title")
     format: str = Field("json", description="Output format: json, csv, pdf")
     parameters: Optional[dict] = Field(
         None,
         description="Report parameters (from_date, to_date, filters)",
     )
+    # Frontend fields
+    domain: Optional[str] = Field(None, description="Domain filter (optional)")
+    dateFrom: Optional[str] = Field(None, description="Start date (YYYY-MM-DD)")
+    dateTo: Optional[str] = Field(None, description="End date (YYYY-MM-DD)")
 
 
 class ReportResponse(BaseModel):
     """Response for a report."""
     id: str
+    reportId: Optional[str] = Field(None, description="Report ID (same as id, for frontend compatibility)")
     tenant_id: str
     report_type: str
     title: str
@@ -72,6 +82,7 @@ class ReportResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        populate_by_name = True  # Allow both id and reportId
 
 
 class ReportStatsResponse(BaseModel):
@@ -103,6 +114,7 @@ def _to_response(report) -> ReportResponse:
     """Convert model to response."""
     return ReportResponse(
         id=report.id,
+        reportId=report.id,  # Also set reportId explicitly for frontend
         tenant_id=report.tenant_id,
         report_type=report.report_type,
         title=report.title,
@@ -126,6 +138,51 @@ def _to_response(report) -> ReportResponse:
 # =============================================================================
 
 
+def _normalize_report_request(request: ReportGenerateRequest) -> dict:
+    """Normalize frontend request to backend format."""
+    # Get report_type from either field
+    report_type = request.report_type or request.reportType
+    if not report_type:
+        raise ValueError("report_type or reportType is required")
+    
+    # Build parameters dict from frontend fields
+    parameters = request.parameters or {}
+    if request.dateFrom:
+        parameters["from_date"] = request.dateFrom
+    if request.dateTo:
+        parameters["to_date"] = request.dateTo
+    if request.domain:
+        parameters["domain"] = request.domain
+    
+    # Generate title if not provided
+    title = request.title
+    if not title:
+        # Create a title from report type
+        type_titles = {
+            "exception_activity": "Exception Activity Report",
+            "tool_execution": "Tool Execution Report",
+            "policy_decisions": "Policy Decisions Report",
+            "config_changes": "Config Changes Report",
+            "sla_compliance": "SLA Compliance Report",
+        }
+        title = type_titles.get(report_type, f"{report_type.replace('_', ' ').title()} Report")
+        if request.dateFrom or request.dateTo:
+            date_range = []
+            if request.dateFrom:
+                date_range.append(f"From {request.dateFrom}")
+            if request.dateTo:
+                date_range.append(f"To {request.dateTo}")
+            if date_range:
+                title += f" ({', '.join(date_range)})"
+    
+    return {
+        "report_type": report_type,
+        "title": title,
+        "format": request.format,
+        "parameters": parameters if parameters else None,
+    }
+
+
 @router.post(
     "",
     response_model=ReportResponse,
@@ -135,7 +192,7 @@ def _to_response(report) -> ReportResponse:
 async def generate_report(
     request: ReportGenerateRequest,
     tenant_id: str = Query(..., description="Tenant ID"),
-    requested_by: str = Query(..., description="User requesting the report"),
+    requested_by: str = Query("system", description="User requesting the report"),
 ):
     """
     Generate a new audit report (async).
@@ -150,10 +207,19 @@ async def generate_report(
     - config_changes: All config change requests and outcomes
     - sla_compliance: SLA metrics summary
 
-    Parameters (in request.parameters):
+    Parameters (in request.parameters or via dateFrom/dateTo):
     - from_date: Start date (ISO format or YYYY-MM-DD)
     - to_date: End date (ISO format or YYYY-MM-DD)
+    - domain: Domain filter (optional)
     """
+    try:
+        normalized = _normalize_report_request(request)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    
     # Validate report type
     valid_types = [
         "exception_activity",
@@ -162,7 +228,7 @@ async def generate_report(
         "config_changes",
         "sla_compliance",
     ]
-    if request.report_type not in valid_types:
+    if normalized["report_type"] not in valid_types:
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid report_type. Must be one of: {valid_types}",
@@ -170,7 +236,7 @@ async def generate_report(
 
     # Validate format
     valid_formats = ["json", "csv", "pdf"]
-    if request.format not in valid_formats:
+    if normalized["format"] not in valid_formats:
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid format. Must be one of: {valid_formats}",
@@ -183,11 +249,11 @@ async def generate_report(
         # Create the report record
         report = await repo.create_report(
             tenant_id=tenant_id,
-            report_type=request.report_type,
-            title=request.title,
+            report_type=normalized["report_type"],
+            title=normalized["title"],
             requested_by=requested_by,
-            format=request.format,
-            parameters=request.parameters,
+            format=normalized["format"],
+            parameters=normalized["parameters"],
         )
 
         await session.commit()
@@ -222,7 +288,7 @@ async def generate_report(
 
         logger.info(
             f"Report generation {'completed' if result.success else 'failed'}: "
-            f"id={report.id}, type={request.report_type}"
+            f"id={report.id}, type={normalized['report_type']}"
         )
 
         return _to_response(report)
@@ -237,32 +303,62 @@ async def list_reports(
     tenant_id: str = Query(..., description="Tenant ID"),
     status: Optional[str] = Query(None, description="Filter by status"),
     report_type: Optional[str] = Query(None, description="Filter by report type"),
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(50, ge=1, le=100, description="Items per page"),
+    page: Optional[int] = Query(None, ge=1, description="Page number (alternative to limit/offset)"),
+    page_size: Optional[int] = Query(None, ge=1, le=100, description="Items per page (alternative to limit/offset)"),
+    limit: Optional[int] = Query(None, ge=1, le=100, description="Maximum number of results"),
+    offset: Optional[int] = Query(None, ge=0, description="Number of results to skip"),
 ):
     """List audit reports for a tenant."""
-    async with get_db_session_context() as session:
-        repo = AuditReportRepository(session)
+    # Support both page/page_size and limit/offset pagination
+    if limit is not None and offset is not None:
+        # Convert limit/offset to page/page_size
+        page = (offset // limit) + 1 if limit > 0 else 1
+        page_size = limit
+    else:
+        # Use defaults if not provided
+        page = page or 1
+        page_size = page_size or 50
+    
+    try:
+        async with get_db_session_context() as session:
+            repo = AuditReportRepository(session)
 
-        filters = {}
-        if status:
-            filters["status"] = status
-        if report_type:
-            filters["report_type"] = report_type
+            filters = {}
+            if status:
+                filters["status"] = status
+            if report_type:
+                filters["report_type"] = report_type
 
-        result = await repo.list_by_tenant(
-            tenant_id=tenant_id,
-            page=page,
-            page_size=page_size,
-            **filters,
-        )
+            result = await repo.list_by_tenant(
+                tenant_id=tenant_id,
+                page=page,
+                page_size=page_size,
+                **filters,
+            )
 
-        return PaginatedReportResponse(
-            items=[_to_response(r) for r in result.items],
-            total=result.total,
-            page=result.page,
-            page_size=result.page_size,
-            total_pages=result.total_pages,
+            return PaginatedReportResponse(
+                items=[_to_response(r) for r in result.items],
+                total=result.total,
+                page=result.page,
+                page_size=result.page_size,
+                total_pages=result.total_pages,
+            )
+    except Exception as e:
+        # Check if it's a table doesn't exist error
+        error_msg = str(e).lower()
+        if "does not exist" in error_msg or "no such table" in error_msg or "relation" in error_msg:
+            logger.warning(f"Audit reports table may not exist yet: {e}. Returning empty results.")
+            return PaginatedReportResponse(
+                items=[],
+                total=0,
+                page=page,
+                page_size=page_size,
+                total_pages=0,
+            )
+        logger.error(f"Failed to list audit reports: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list audit reports: {str(e)}",
         )
 
 
@@ -291,29 +387,6 @@ async def get_report_stats(
 
 
 @router.get(
-    "/{report_id}",
-    response_model=ReportResponse,
-    summary="Get report details",
-)
-async def get_report(
-    report_id: str,
-    tenant_id: str = Query(..., description="Tenant ID"),
-):
-    """Get details of a specific audit report."""
-    async with get_db_session_context() as session:
-        repo = AuditReportRepository(session)
-        report = await repo.get_by_id(report_id, tenant_id)
-
-        if not report:
-            raise HTTPException(
-                status_code=http_status.HTTP_404_NOT_FOUND,
-                detail=f"Report not found: {report_id}",
-            )
-
-        return _to_response(report)
-
-
-@router.get(
     "/{report_id}/download",
     summary="Download a completed report",
 )
@@ -326,42 +399,67 @@ async def download_report(
 
     Returns the report file for download.
     """
-    async with get_db_session_context() as session:
-        repo = AuditReportRepository(session)
-        report = await repo.get_by_id(report_id, tenant_id)
+    logger.info(f"Download request for report_id={report_id}, tenant_id={tenant_id}")
+    try:
+        async with get_db_session_context() as session:
+            repo = AuditReportRepository(session)
+            report = await repo.get_by_id(report_id, tenant_id)
 
-        if not report:
-            raise HTTPException(
-                status_code=http_status.HTTP_404_NOT_FOUND,
-                detail=f"Report not found: {report_id}",
+            if not report:
+                logger.warning(f"Report not found: report_id={report_id}, tenant_id={tenant_id}")
+                raise HTTPException(
+                    status_code=http_status.HTTP_404_NOT_FOUND,
+                    detail=f"Report not found: {report_id}",
+                )
+
+            if report.status != "completed":
+                raise HTTPException(
+                    status_code=http_status.HTTP_400_BAD_REQUEST,
+                    detail=f"Report is not ready for download (status: {report.status})",
+                )
+
+            if not report.file_path:
+                raise HTTPException(
+                    status_code=http_status.HTTP_404_NOT_FOUND,
+                    detail="Report file not found",
+                )
+
+            # Convert file_path to Path object and resolve to absolute path
+            file_path = Path(report.file_path)
+            # Resolve relative paths (e.g., "./reports/file.json") to absolute paths
+            if not file_path.is_absolute():
+                file_path = file_path.resolve()
+            
+            if not file_path.exists():
+                logger.error(f"Report file does not exist at path: {file_path} (resolved from {report.file_path})")
+                raise HTTPException(
+                    status_code=http_status.HTTP_404_NOT_FOUND,
+                    detail=f"Report file not found at path: {report.file_path}",
+                )
+
+            # Determine media type
+            media_type_map = {
+                "json": "application/json",
+                "csv": "text/csv",
+                "pdf": "application/pdf",
+            }
+            media_type = media_type_map.get(report.format, "application/octet-stream")
+
+            # Generate filename
+            safe_title = "".join(c if c.isalnum() or c in "._- " else "_" for c in report.title)
+            filename = f"{safe_title}.{report.format}"
+
+            logger.info(f"Serving report file: {file_path} (size: {file_path.stat().st_size} bytes)")
+            return FileResponse(
+                path=str(file_path),  # FileResponse accepts string path
+                media_type=media_type,
+                filename=filename,
             )
-
-        if report.status != "completed":
-            raise HTTPException(
-                status_code=http_status.HTTP_400_BAD_REQUEST,
-                detail=f"Report is not ready for download (status: {report.status})",
-            )
-
-        if not report.file_path:
-            raise HTTPException(
-                status_code=http_status.HTTP_404_NOT_FOUND,
-                detail="Report file not found",
-            )
-
-        # Determine media type
-        media_type_map = {
-            "json": "application/json",
-            "csv": "text/csv",
-            "pdf": "application/pdf",
-        }
-        media_type = media_type_map.get(report.format, "application/octet-stream")
-
-        # Generate filename
-        safe_title = "".join(c if c.isalnum() or c in "._- " else "_" for c in report.title)
-        filename = f"{safe_title}.{report.format}"
-
-        return FileResponse(
-            path=report.file_path,
-            media_type=media_type,
-            filename=filename,
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error downloading report {report_id}: {e}")
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error downloading report: {str(e)}",
         )

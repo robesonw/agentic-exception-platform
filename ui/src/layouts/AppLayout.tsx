@@ -33,9 +33,12 @@ import NotificationsIcon from '@mui/icons-material/Notifications'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import MemoryIcon from '@mui/icons-material/Memory'
 import BugReportIcon from '@mui/icons-material/BugReport'
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
+import HistoryIcon from '@mui/icons-material/History'
 import { useTenant } from '../hooks/useTenant.tsx'
 import { themeColors } from '../theme/theme.ts'
 import { AICopilotDock } from '../components/copilot'
+import { isOpsEnabled, isAdminEnabled } from '../utils/featureFlags'
 
 const DRAWER_WIDTH = 256
 
@@ -47,47 +50,157 @@ interface NavItem {
   label: string
   to: string
   icon: React.ReactElement
+  section?: string // 'main' | 'ops' | 'admin'
+}
+
+interface NavSection {
+  label?: string
+  subtitle?: string
+  items: NavItem[]
 }
 
 // Build nav items conditionally based on environment flags
-const getNavItems = (): NavItem[] => {
-  const items: NavItem[] = [
-    {
-      label: 'Exceptions',
-      to: '/exceptions',
-      icon: <DashboardIcon />,
-    },
-    {
-      label: 'Supervisor',
-      to: '/supervisor',
-      icon: <SupervisorAccountIcon />,
-    },
-    {
-      label: 'Tools',
-      to: '/tools',
-      icon: <BuildIcon />,
-    },
-    {
-      label: 'Config',
-      to: '/config',
-      icon: <SettingsIcon />,
-    },
-  ]
-  
-  // Add Ops page if enabled via environment variable
-  if (import.meta.env.VITE_ENABLE_OPS_PAGE === 'true') {
-    items.push({
-      label: 'Ops',
-      to: '/ops',
-      icon: <BugReportIcon />,
+// This function is called inside the component to ensure it re-evaluates
+const getNavSections = (): NavSection[] => {
+  // Debug logging in development
+  if (import.meta.env.DEV) {
+    console.log('[AppLayout] Feature flags:', {
+      VITE_OPS_ENABLED: import.meta.env.VITE_OPS_ENABLED,
+      VITE_ADMIN_ENABLED: import.meta.env.VITE_ADMIN_ENABLED,
+      isOpsEnabled: isOpsEnabled(),
+      isAdminEnabled: isAdminEnabled(),
     })
   }
-  
-  return items
+
+  const sections: NavSection[] = [
+    {
+      label: 'Main',
+      items: [
+        {
+          label: 'Exceptions',
+          to: '/exceptions',
+          icon: <DashboardIcon />,
+          section: 'main',
+        },
+        {
+          label: 'Supervisor',
+          to: '/supervisor',
+          icon: <SupervisorAccountIcon />,
+          section: 'main',
+        },
+      ],
+    },
+  ]
+
+  // Add Ops section if enabled
+  if (isOpsEnabled()) {
+    sections.push({
+      label: 'Ops',
+      subtitle: 'Operational monitoring & safe recovery',
+      items: [
+        {
+          label: 'Overview',
+          to: '/ops',
+          icon: <DashboardIcon />,
+          section: 'ops',
+        },
+        {
+          label: 'Workers',
+          to: '/ops/workers',
+          icon: <BugReportIcon />,
+          section: 'ops',
+        },
+        {
+          label: 'SLA',
+          to: '/ops/sla',
+          icon: <BugReportIcon />,
+          section: 'ops',
+        },
+        {
+          label: 'DLQ',
+          to: '/ops/dlq',
+          icon: <BugReportIcon />,
+          section: 'ops',
+        },
+        {
+          label: 'Alerts',
+          to: '/ops/alerts',
+          icon: <NotificationsIcon />,
+          section: 'ops',
+        },
+        {
+          label: 'Alert History',
+          to: '/ops/alerts/history',
+          icon: <HistoryIcon />,
+          section: 'ops',
+        },
+        {
+          label: 'Usage',
+          to: '/ops/usage',
+          icon: <MemoryIcon />,
+          section: 'ops',
+        },
+        {
+          label: 'Rate Limits',
+          to: '/ops/rate-limits',
+          icon: <SettingsIcon />,
+          section: 'ops',
+        },
+        {
+          label: 'Reports',
+          to: '/ops/reports',
+          icon: <BugReportIcon />,
+          section: 'ops',
+        },
+      ],
+    })
+  }
+
+  // Add Admin section if enabled
+  if (isAdminEnabled()) {
+    sections.push({
+      label: 'Admin',
+      subtitle: 'Governance, approvals, and configuration control',
+      items: [
+        {
+          label: 'Overview',
+          to: '/admin',
+          icon: <AdminPanelSettingsIcon />,
+          section: 'admin',
+        },
+        {
+          label: 'Config Changes',
+          to: '/admin/config-changes',
+          icon: <SettingsIcon />,
+          section: 'admin',
+        },
+        {
+          label: 'Packs',
+          to: '/admin/packs',
+          icon: <SettingsIcon />,
+          section: 'admin',
+        },
+        {
+          label: 'Playbooks',
+          to: '/admin/playbooks',
+          icon: <SettingsIcon />,
+          section: 'admin',
+        },
+        {
+          label: 'Tools',
+          to: '/admin/tools',
+          icon: <BuildIcon />,
+          section: 'admin',
+        },
+      ],
+    })
+  }
+
+  return sections
 }
 
 // Sample tenant/domain options for demo (can be replaced with API call later)
-const SAMPLE_TENANTS = ['tenant_001', 'tenant_002', 'TENANT_A', 'TENANT_FINANCE_001']
+const SAMPLE_TENANTS = ['tenant_001', 'tenant_002', 'TENANT_A', 'TENANT_FINANCE_001', 'TENANT_FIANNCE_001']
 const SAMPLE_DOMAINS = ['TestDomain', 'Finance', 'Healthcare', 'Retail']
 
 export default function AppLayout({ children }: AppLayoutProps) {
@@ -161,79 +274,118 @@ export default function AppLayout({ children }: AppLayoutProps) {
       </Box>
 
       {/* Navigation */}
-      <List
+      <Box
         sx={{
           flex: 1,
+          overflowY: 'auto',
           py: 1.5,
           px: 1,
         }}
       >
-        {getNavItems().map((item) => {
-          const isActive =
-            location.pathname === item.to || location.pathname.startsWith(item.to + '/')
-          return (
-            <ListItemButton
-              key={item.to}
-              component={Link}
-              to={item.to}
-              onClick={() => {
-                // Close mobile drawer when navigating
-                if (isMobile) {
-                  setMobileOpen(false)
-                }
-              }}
-              selected={isActive}
-              sx={{
-                mb: 0.5,
-                borderRadius: 2,
-                px: 1.5,
-                py: 1.5,
-                '&:hover': {
-                  backgroundColor: themeColors.bgTertiary,
-                },
-                '&.Mui-selected': {
-                  backgroundColor: `${themeColors.primary}1A`, // 10% opacity
-                  border: '1px solid',
-                  borderColor: `${themeColors.primary}33`, // 20% opacity
-                  boxShadow: `0 1px 3px 0 ${themeColors.primary}1A`,
-                  '&:hover': {
-                    backgroundColor: `${themeColors.primary}26`, // 15% opacity
-                  },
-                },
-              }}
-            >
-              <ListItemIcon
-                sx={{
-                  color: isActive ? 'primary.main' : themeColors.textTertiary,
-                  minWidth: 40,
-                }}
-              >
-                {item.icon}
-              </ListItemIcon>
-              <ListItemText
-                primary={item.label}
-                primaryTypographyProps={{
-                  fontSize: '0.875rem',
-                  fontWeight: isActive ? 500 : 400,
-                  color: isActive ? themeColors.textPrimary : themeColors.textSecondary,
-                }}
-              />
-              {isActive && (
-                <Box
+        {getNavSections().map((section, sectionIndex) => (
+          <Box key={sectionIndex} sx={{ mb: section.label ? 2 : 0 }}>
+            {section.label && (
+              <Box sx={{ px: 1.5, py: 0.5 }}>
+                <Typography
+                  variant="caption"
                   sx={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    bgcolor: 'primary.main',
-                    ml: 'auto',
-                    boxShadow: `0 0 8px ${themeColors.primary}80`,
+                    color: themeColors.textTertiary,
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    display: 'block',
                   }}
-                />
-              )}
-            </ListItemButton>
-          )
-        })}
-      </List>
+                >
+                  {section.label}
+                </Typography>
+                {section.subtitle && (
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: themeColors.textTertiary,
+                      fontSize: '0.65rem',
+                      fontWeight: 400,
+                      display: 'block',
+                      mt: 0.25,
+                      opacity: 0.7,
+                    }}
+                  >
+                    {section.subtitle}
+                  </Typography>
+                )}
+              </Box>
+            )}
+            <List sx={{ py: 0 }}>
+              {section.items.map((item) => {
+                const isActive =
+                  location.pathname === item.to || location.pathname.startsWith(item.to + '/')
+                return (
+                  <ListItemButton
+                    key={item.to}
+                    component={Link}
+                    to={item.to}
+                    onClick={() => {
+                      // Close mobile drawer when navigating
+                      if (isMobile) {
+                        setMobileOpen(false)
+                      }
+                    }}
+                    selected={isActive}
+                    sx={{
+                      mb: 0.5,
+                      borderRadius: 2,
+                      px: 1.5,
+                      py: 1.5,
+                      '&:hover': {
+                        backgroundColor: themeColors.bgTertiary,
+                      },
+                      '&.Mui-selected': {
+                        backgroundColor: `${themeColors.primary}1A`, // 10% opacity
+                        border: '1px solid',
+                        borderColor: `${themeColors.primary}33`, // 20% opacity
+                        boxShadow: `0 1px 3px 0 ${themeColors.primary}1A`,
+                        '&:hover': {
+                          backgroundColor: `${themeColors.primary}26`, // 15% opacity
+                        },
+                      },
+                    }}
+                  >
+                    <ListItemIcon
+                      sx={{
+                        color: isActive ? 'primary.main' : themeColors.textTertiary,
+                        minWidth: 40,
+                      }}
+                    >
+                      {item.icon}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={item.label}
+                      primaryTypographyProps={{
+                        fontSize: '0.875rem',
+                        fontWeight: isActive ? 500 : 400,
+                        color: isActive ? themeColors.textPrimary : themeColors.textSecondary,
+                      }}
+                    />
+                    {isActive && (
+                      <Box
+                        sx={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: '50%',
+                          bgcolor: 'primary.main',
+                          ml: 'auto',
+                          boxShadow: `0 0 8px ${themeColors.primary}80`,
+                        }}
+                      />
+                    )}
+                  </ListItemButton>
+                )
+              })}
+            </List>
+          </Box>
+        ))}
+      </Box>
     </Box>
   )
 
