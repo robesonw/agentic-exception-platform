@@ -1,6 +1,10 @@
 You are coding an enterprise Domain-Abstracted Agentic AI Platform for multi-tenant Exception Processing.
 
-SOURCE OF TRUTH:
+SOURCE OF TRUTH (read first):
+- CLAUDE.md
+- docs/STATE_OF_THE_PLATFORM.md
+- docs/phase10-ops-governance-mvp.md
+- docs/03-data-models-apis.md
 - docs/master_project_instruction_full.md
 - docs/01-architecture.md ... docs/09-tenant-onboarding.md
 - docs/06-mvp-plan.md defines milestones and order of implementation.

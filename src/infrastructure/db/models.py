@@ -738,14 +738,23 @@ class EventProcessing(Base):
     )
 
 
+class DLQStatus(PyEnum):
+    """DLQ entry lifecycle status (Phase 10 P10-4)."""
+    PENDING = "pending"
+    RETRYING = "retrying"
+    DISCARDED = "discarded"
+    SUCCEEDED = "succeeded"
+
+
 class DeadLetterEvent(Base):
     """
     Dead Letter Queue event entry.
-    
+
     Phase 9 P9-15: Stores events that failed processing after max retries.
+    Phase 10 P10-4: Enhanced with status tracking for DLQ management.
     """
     __tablename__ = "dead_letter_events"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     event_id = Column(String, nullable=False, unique=True, index=True)
     event_type = Column(String, nullable=False, index=True)
@@ -760,13 +769,20 @@ class DeadLetterEvent(Base):
     failed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    
+
+    # Phase 10 P10-4: DLQ management fields
+    status = Column(String(20), nullable=False, server_default="pending", index=True)
+    retried_at = Column(DateTime(timezone=True), nullable=True)
+    discarded_at = Column(DateTime(timezone=True), nullable=True)
+    discarded_by = Column(String(255), nullable=True)
+
     # Indexes for common queries
     __table_args__ = (
         Index("idx_dlq_tenant_failed_at", "tenant_id", "failed_at"),
         Index("idx_dlq_exception_failed_at", "exception_id", "failed_at"),
         Index("idx_dlq_tenant_type_failed_at", "tenant_id", "event_type", "failed_at"),
         Index("idx_dlq_worker_failed_at", "worker_type", "failed_at"),
+        Index("idx_dlq_tenant_status", "tenant_id", "status"),
     )
 
 
@@ -824,5 +840,821 @@ class ToolEnablement(Base):
         return (
             f"<ToolEnablement(tenant_id={self.tenant_id!r}, "
             f"tool_id={self.tool_id}, enabled={self.enabled})>"
+        )
+
+
+# ============================================================================
+# Phase 10 Alerting System Models (P10-5 through P10-9)
+# ============================================================================
+
+
+class AlertType(PyEnum):
+    """Alert type categories (Phase 10 P10-5)."""
+    SLA_BREACH = "sla_breach"
+    SLA_IMMINENT = "sla_imminent"
+    DLQ_GROWTH = "dlq_growth"
+    WORKER_UNHEALTHY = "worker_unhealthy"
+    ERROR_RATE_HIGH = "error_rate_high"
+    THROUGHPUT_LOW = "throughput_low"
+
+
+class AlertSeverity(PyEnum):
+    """Alert severity levels (Phase 10 P10-5)."""
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
+class AlertStatus(PyEnum):
+    """Alert lifecycle status (Phase 10 P10-5)."""
+    TRIGGERED = "triggered"
+    ACKNOWLEDGED = "acknowledged"
+    RESOLVED = "resolved"
+    SUPPRESSED = "suppressed"
+
+
+class AlertConfig(Base):
+    """
+    Per-tenant alert configuration (Phase 10 P10-5).
+
+    Stores alert type settings, thresholds, and notification channels.
+    """
+
+    __tablename__ = "alert_config"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        doc="Unique configuration identifier",
+    )
+    tenant_id = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        doc="Tenant identifier",
+    )
+    alert_type = Column(
+        String(50),
+        nullable=False,
+        doc="Alert type (sla_breach, dlq_growth, etc.)",
+    )
+    enabled = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        doc="Whether this alert type is enabled",
+    )
+    threshold = Column(
+        Numeric,
+        nullable=True,
+        doc="Threshold value for triggering alert",
+    )
+    threshold_unit = Column(
+        String(50),
+        nullable=True,
+        doc="Unit for threshold (percent, count, minutes, etc.)",
+    )
+    channels = Column(
+        JSONB,
+        nullable=False,
+        default=list,
+        doc="Notification channels [{type: webhook/email, url/address: ...}]",
+    )
+    quiet_hours_start = Column(
+        sa.Time,
+        nullable=True,
+        doc="Start of quiet hours (suppress non-critical)",
+    )
+    quiet_hours_end = Column(
+        sa.Time,
+        nullable=True,
+        doc="End of quiet hours",
+    )
+    escalation_minutes = Column(
+        Integer,
+        nullable=True,
+        doc="Minutes before escalation if not acknowledged",
+    )
+    config_metadata = Column(
+        JSONB,
+        nullable=True,
+        doc="Additional configuration metadata",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when config was created",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        doc="Timestamp when config was last updated",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "alert_type", name="uq_alert_config_tenant_type"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AlertConfig(id={self.id}, tenant_id={self.tenant_id!r}, "
+            f"alert_type={self.alert_type!r}, enabled={self.enabled})>"
+        )
+
+
+class AlertHistory(Base):
+    """
+    Alert trigger history and acknowledgment (Phase 10 P10-5).
+
+    Stores all triggered alerts with their lifecycle state.
+    """
+
+    __tablename__ = "alert_history"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        doc="Unique history entry identifier",
+    )
+    alert_id = Column(
+        String(50),
+        nullable=False,
+        unique=True,
+        index=True,
+        doc="Unique alert identifier (ALT-XXX)",
+    )
+    tenant_id = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        doc="Tenant identifier",
+    )
+    alert_type = Column(
+        String(50),
+        nullable=False,
+        doc="Alert type that triggered",
+    )
+    severity = Column(
+        String(20),
+        nullable=False,
+        default="warning",
+        doc="Alert severity level",
+    )
+    title = Column(
+        String(500),
+        nullable=False,
+        doc="Short alert title",
+    )
+    message = Column(
+        sa.Text,
+        nullable=True,
+        doc="Detailed alert message",
+    )
+    details = Column(
+        JSONB,
+        nullable=True,
+        doc="Additional alert context (exception_id, metrics, etc.)",
+    )
+    status = Column(
+        String(20),
+        nullable=False,
+        default="triggered",
+        doc="Alert status (triggered, acknowledged, resolved)",
+    )
+    triggered_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="When the alert was triggered",
+    )
+    acknowledged_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When the alert was acknowledged",
+    )
+    acknowledged_by = Column(
+        String(255),
+        nullable=True,
+        doc="Who acknowledged the alert",
+    )
+    resolved_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When the alert was resolved",
+    )
+    resolved_by = Column(
+        String(255),
+        nullable=True,
+        doc="Who resolved the alert",
+    )
+    notification_sent = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        doc="Whether notification was successfully sent",
+    )
+    notification_error = Column(
+        sa.Text,
+        nullable=True,
+        doc="Error message if notification failed",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when entry was created",
+    )
+
+    __table_args__ = (
+        Index("idx_alert_history_tenant_status", "tenant_id", "status"),
+        Index("idx_alert_history_tenant_type", "tenant_id", "alert_type"),
+        Index("idx_alert_history_triggered_at", "triggered_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AlertHistory(alert_id={self.alert_id!r}, tenant_id={self.tenant_id!r}, "
+            f"alert_type={self.alert_type!r}, status={self.status!r})>"
+        )
+
+
+# ============================================================================
+# Phase 10 Config Change Governance Models (P10-10)
+# ============================================================================
+
+
+class ConfigChangeType(PyEnum):
+    """Config change types for governance workflow (Phase 10 P10-10)."""
+    DOMAIN_PACK = "domain_pack"
+    TENANT_POLICY = "tenant_policy"
+    TOOL_DEFINITION = "tool"
+    PLAYBOOK = "playbook"
+
+
+class ConfigChangeStatus(PyEnum):
+    """Config change request status (Phase 10 P10-10)."""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    APPLIED = "applied"
+
+
+class ConfigChangeRequest(Base):
+    """
+    Configuration change request for governance workflow (Phase 10 P10-10).
+
+    Tracks proposed changes to Domain Packs, Tenant Policy Packs, Tools, and Playbooks
+    through a review and approval process.
+    """
+
+    __tablename__ = "config_change_request"
+
+    id = Column(
+        String(36),
+        primary_key=True,
+        doc="Unique change request identifier (UUID)",
+    )
+    tenant_id = Column(
+        String(50),
+        nullable=False,
+        index=True,
+        doc="Tenant identifier",
+    )
+    change_type = Column(
+        String(50),
+        nullable=False,
+        doc="Type of config change (domain_pack, tenant_policy, tool, playbook)",
+    )
+    resource_id = Column(
+        String(255),
+        nullable=False,
+        doc="ID of the resource being changed",
+    )
+    resource_name = Column(
+        String(255),
+        nullable=True,
+        doc="Human-readable name of the resource",
+    )
+    current_config = Column(
+        JSONB,
+        nullable=True,
+        doc="Snapshot of the current configuration",
+    )
+    proposed_config = Column(
+        JSONB,
+        nullable=False,
+        doc="Proposed new configuration",
+    )
+    diff_summary = Column(
+        sa.Text,
+        nullable=True,
+        doc="Human-readable summary of changes",
+    )
+    change_reason = Column(
+        sa.Text,
+        nullable=True,
+        doc="Reason for the proposed change",
+    )
+    status = Column(
+        String(20),
+        nullable=False,
+        default="pending",
+        doc="Request status (pending, approved, rejected, applied)",
+    )
+    requested_by = Column(
+        String(255),
+        nullable=False,
+        doc="User who requested the change",
+    )
+    requested_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="When the change was requested",
+    )
+    reviewed_by = Column(
+        String(255),
+        nullable=True,
+        doc="User who reviewed the change",
+    )
+    reviewed_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When the change was reviewed",
+    )
+    review_comment = Column(
+        sa.Text,
+        nullable=True,
+        doc="Reviewer's comment",
+    )
+    applied_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When the change was applied",
+    )
+    applied_by = Column(
+        String(255),
+        nullable=True,
+        doc="User who applied the change",
+    )
+    rollback_config = Column(
+        JSONB,
+        nullable=True,
+        doc="Configuration to rollback to if needed",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when record was created",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        doc="Timestamp when record was last updated",
+    )
+
+    __table_args__ = (
+        Index("idx_config_change_tenant", "tenant_id"),
+        Index("idx_config_change_status", "status"),
+        Index("idx_config_change_tenant_status", "tenant_id", "status"),
+        Index("idx_config_change_type", "change_type"),
+        Index("idx_config_change_requested_at", "requested_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ConfigChangeRequest(id={self.id!r}, tenant_id={self.tenant_id!r}, "
+            f"change_type={self.change_type!r}, status={self.status!r})>"
+        )
+
+
+# ============================================================================
+# Phase 10 Audit Reports Models (P10-11 to P10-14)
+# ============================================================================
+
+
+class AuditReportType(PyEnum):
+    """Audit report types (Phase 10 P10-11)."""
+    EXCEPTION_ACTIVITY = "exception_activity"
+    TOOL_EXECUTION = "tool_execution"
+    POLICY_DECISIONS = "policy_decisions"
+    CONFIG_CHANGES = "config_changes"
+    SLA_COMPLIANCE = "sla_compliance"
+
+
+class AuditReportStatus(PyEnum):
+    """Audit report generation status (Phase 10 P10-11)."""
+    PENDING = "pending"
+    GENERATING = "generating"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class AuditReportFormat(PyEnum):
+    """Audit report output format (Phase 10 P10-11)."""
+    JSON = "json"
+    CSV = "csv"
+    PDF = "pdf"
+
+
+class AuditReport(Base):
+    """
+    Audit report tracking (Phase 10 P10-11 to P10-14).
+
+    Tracks generated audit reports with their status and download information.
+    Reports are generated asynchronously and stored for download.
+    """
+
+    __tablename__ = "audit_report"
+
+    id = Column(
+        String(36),
+        primary_key=True,
+        doc="Unique report identifier (UUID)",
+    )
+    tenant_id = Column(
+        String(50),
+        nullable=False,
+        index=True,
+        doc="Tenant identifier",
+    )
+    report_type = Column(
+        String(50),
+        nullable=False,
+        doc="Report type (exception_activity, tool_execution, etc.)",
+    )
+    title = Column(
+        String(255),
+        nullable=False,
+        doc="Human-readable report title",
+    )
+    status = Column(
+        String(20),
+        nullable=False,
+        default="pending",
+        doc="Report status (pending, generating, completed, failed)",
+    )
+    format = Column(
+        "format",
+        String(10),
+        nullable=False,
+        default="json",
+        doc="Output format (json, csv, pdf)",
+    )
+    parameters = Column(
+        JSONB,
+        nullable=True,
+        doc="Report generation parameters (date range, filters, etc.)",
+    )
+    file_path = Column(
+        String(500),
+        nullable=True,
+        doc="Path to generated report file",
+    )
+    file_size_bytes = Column(
+        sa.BigInteger,
+        nullable=True,
+        doc="Size of the generated file in bytes",
+    )
+    download_url = Column(
+        String(1000),
+        nullable=True,
+        doc="Signed URL for download",
+    )
+    download_expires_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When the download URL expires",
+    )
+    row_count = Column(
+        Integer,
+        nullable=True,
+        doc="Number of rows/records in the report",
+    )
+    error_message = Column(
+        sa.Text,
+        nullable=True,
+        doc="Error message if generation failed",
+    )
+    requested_by = Column(
+        String(255),
+        nullable=False,
+        doc="User who requested the report",
+    )
+    started_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When report generation started",
+    )
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When report generation completed",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when record was created",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        doc="Timestamp when record was last updated",
+    )
+
+    __table_args__ = (
+        Index("idx_audit_report_tenant", "tenant_id"),
+        Index("idx_audit_report_status", "status"),
+        Index("idx_audit_report_tenant_status", "tenant_id", "status"),
+        Index("idx_audit_report_type", "report_type"),
+        Index("idx_audit_report_created_at", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AuditReport(id={self.id!r}, tenant_id={self.tenant_id!r}, "
+            f"report_type={self.report_type!r}, status={self.status!r})>"
+        )
+
+
+# ============================================================================
+# Phase 10 Rate Limiting Models (P10-15 to P10-17)
+# ============================================================================
+
+
+class RateLimitType(PyEnum):
+    """Rate limit types (Phase 10 P10-15)."""
+    API_REQUESTS = "api_requests"
+    EVENTS_INGESTED = "events_ingested"
+    TOOL_EXECUTIONS = "tool_executions"
+    REPORT_GENERATIONS = "report_generations"
+
+
+class RateLimitConfig(Base):
+    """
+    Per-tenant rate limit configuration (Phase 10 P10-15).
+
+    Defines rate limits by type for each tenant.
+    """
+
+    __tablename__ = "rate_limit_config"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        doc="Unique configuration identifier",
+    )
+    tenant_id = Column(
+        String(50),
+        nullable=False,
+        index=True,
+        doc="Tenant identifier",
+    )
+    limit_type = Column(
+        String(50),
+        nullable=False,
+        doc="Type of rate limit (api_requests, events_ingested, etc.)",
+    )
+    limit_value = Column(
+        Integer,
+        nullable=False,
+        doc="Maximum allowed per window",
+    )
+    window_seconds = Column(
+        Integer,
+        nullable=False,
+        default=60,
+        doc="Time window in seconds",
+    )
+    enabled = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        doc="Whether this rate limit is enabled",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when config was created",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        doc="Timestamp when config was last updated",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "limit_type", name="uq_rate_limit_config_tenant_type"),
+        Index("idx_rate_limit_config_tenant", "tenant_id"),
+        Index("idx_rate_limit_config_type", "limit_type"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<RateLimitConfig(id={self.id}, tenant_id={self.tenant_id!r}, "
+            f"limit_type={self.limit_type!r}, limit_value={self.limit_value})>"
+        )
+
+
+class RateLimitUsage(Base):
+    """
+    Rate limit usage tracking (Phase 10 P10-15).
+
+    Tracks current usage within time windows for rate limiting.
+    """
+
+    __tablename__ = "rate_limit_usage"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        doc="Unique usage record identifier",
+    )
+    tenant_id = Column(
+        String(50),
+        nullable=False,
+        index=True,
+        doc="Tenant identifier",
+    )
+    limit_type = Column(
+        String(50),
+        nullable=False,
+        doc="Type of rate limit",
+    )
+    window_start = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        doc="Start of the current time window",
+    )
+    current_count = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        doc="Current count within the window",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when record was created",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        doc="Timestamp when record was last updated",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "limit_type", "window_start",
+            name="uq_rate_limit_usage_tenant_type_window",
+        ),
+        Index("idx_rate_limit_usage_tenant", "tenant_id"),
+        Index("idx_rate_limit_usage_type", "limit_type"),
+        Index("idx_rate_limit_usage_window", "window_start"),
+        Index("idx_rate_limit_usage_tenant_type", "tenant_id", "limit_type"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<RateLimitUsage(id={self.id}, tenant_id={self.tenant_id!r}, "
+            f"limit_type={self.limit_type!r}, current_count={self.current_count})>"
+        )
+
+
+# ============================================================================
+# Phase 10 Usage Metering Models (P10-18 to P10-20)
+# ============================================================================
+
+
+class UsageMetricType(PyEnum):
+    """Usage metric types (Phase 10 P10-18)."""
+    API_CALLS = "api_calls"
+    EXCEPTIONS = "exceptions"
+    TOOL_EXECUTIONS = "tool_executions"
+    EVENTS = "events"
+    STORAGE = "storage"
+
+
+class UsagePeriodType(PyEnum):
+    """Usage aggregation period types (Phase 10 P10-18)."""
+    MINUTE = "minute"
+    HOUR = "hour"
+    DAY = "day"
+    MONTH = "month"
+
+
+class UsageMetric(Base):
+    """
+    Usage metric tracking (Phase 10 P10-18 to P10-20).
+
+    Tracks aggregated usage metrics per tenant for billing and monitoring.
+    """
+
+    __tablename__ = "usage_metric"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        doc="Unique metric record identifier",
+    )
+    tenant_id = Column(
+        String(50),
+        nullable=False,
+        index=True,
+        doc="Tenant identifier",
+    )
+    metric_type = Column(
+        String(50),
+        nullable=False,
+        doc="Type of metric (api_calls, exceptions, etc.)",
+    )
+    resource_id = Column(
+        String(255),
+        nullable=True,
+        doc="Optional resource identifier (e.g., tool_id, endpoint)",
+    )
+    period_start = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        doc="Start of the measurement period",
+    )
+    period_end = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        doc="End of the measurement period",
+    )
+    period_type = Column(
+        String(20),
+        nullable=False,
+        default="minute",
+        doc="Period granularity (minute, hour, day, month)",
+    )
+    count = Column(
+        sa.BigInteger,
+        nullable=False,
+        default=0,
+        doc="Count for count-based metrics",
+    )
+    bytes_value = Column(
+        sa.BigInteger,
+        nullable=True,
+        doc="Byte count for storage metrics",
+    )
+    usage_metadata = Column(
+        "metadata",
+        JSONB,
+        nullable=True,
+        doc="Additional metadata",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when record was created",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        doc="Timestamp when record was last updated",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "metric_type", "resource_id", "period_start", "period_type",
+            name="uq_usage_metric_tenant_type_resource_period",
+        ),
+        Index("idx_usage_metric_tenant", "tenant_id"),
+        Index("idx_usage_metric_type", "metric_type"),
+        Index("idx_usage_metric_period", "period_start", "period_end"),
+        Index("idx_usage_metric_tenant_type_period", "tenant_id", "metric_type", "period_start"),
+        Index("idx_usage_metric_tenant_period_type", "tenant_id", "period_type", "period_start"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<UsageMetric(id={self.id}, tenant_id={self.tenant_id!r}, "
+            f"metric_type={self.metric_type!r}, count={self.count})>"
         )
 

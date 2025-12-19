@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from src.api.main import app
 from src.infrastructure.db.models import EventLog
-from src.repository.dto import PaginatedResult
+from src.repository.base import PaginatedResult
 
 
 @pytest.fixture
