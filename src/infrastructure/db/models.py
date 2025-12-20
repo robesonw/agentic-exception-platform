@@ -44,6 +44,14 @@ class TenantStatus(PyEnum):
     ARCHIVED = "archived"
 
 
+class PackStatus(PyEnum):
+    """Pack lifecycle status for Phase 12 onboarding."""
+
+    DRAFT = "draft"
+    ACTIVE = "active"
+    DEPRECATED = "deprecated"
+
+
 class ExceptionSeverity(PyEnum):
     """Exception severity levels (database enum)."""
 
@@ -112,6 +120,11 @@ class Tenant(Base):
         nullable=False,
         server_default=func.now(),
         doc="Timestamp when tenant was created",
+    )
+    created_by = Column(
+        String,
+        nullable=True,
+        doc="User identifier who created the tenant (Phase 12)",
     )
     updated_at = Column(
         DateTime(timezone=True),
@@ -1656,5 +1669,351 @@ class UsageMetric(Base):
         return (
             f"<UsageMetric(id={self.id}, tenant_id={self.tenant_id!r}, "
             f"metric_type={self.metric_type!r}, count={self.count})>"
+        )
+
+
+# ============================================================================
+# Tenant & Domain Pack Onboarding Models
+# ============================================================================
+
+
+class DomainPack(Base):
+    """
+    Domain Pack for onboarding and management.
+    
+    Matches docs/phase12-onboarding-packs-mvp.md Section 4.2.
+    This is separate from DomainPackVersion which is for runtime.
+    """
+
+    __tablename__ = "domain_packs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, doc="Primary key")
+    domain = Column(String, nullable=False, index=True, doc="Domain name (e.g., Finance, Healthcare)")
+    version = Column(String, nullable=False, doc="Version string (e.g., 'v1.0', 'v2.3')")
+    content_json = Column(JSONB, nullable=False, doc="Domain Pack JSON content")
+    checksum = Column(String, nullable=False, doc="Checksum for integrity verification")
+    status = Column(
+        Enum(
+            PackStatus,
+            name="pack_status",
+            create_constraint=True,
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=False,
+        default=PackStatus.DRAFT,
+        doc="Pack lifecycle status",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when pack was created",
+    )
+    created_by = Column(String, nullable=False, doc="User identifier who created the pack")
+
+    # Unique constraint on domain + version
+    __table_args__ = (
+        UniqueConstraint("domain", "version", name="uq_domain_packs_domain_version"),
+        Index("ix_domain_packs_domain", "domain"),
+        Index("ix_domain_packs_version", "version"),
+        Index("ix_domain_packs_status", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<DomainPack(id={self.id}, domain={self.domain!r}, version={self.version!r}, status={self.status.value})>"
+
+
+class TenantPack(Base):
+    """
+    Tenant Pack for onboarding and management.
+    
+    Matches docs/phase12-onboarding-packs-mvp.md Section 4.3.
+    This is separate from TenantPolicyPackVersion which is for runtime.
+    """
+
+    __tablename__ = "tenant_packs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, doc="Primary key")
+    tenant_id = Column(
+        String,
+        ForeignKey("tenant.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        doc="Tenant identifier",
+    )
+    version = Column(String, nullable=False, doc="Version string (e.g., 'v1.0', 'v2.3')")
+    content_json = Column(JSONB, nullable=False, doc="Tenant Pack JSON content")
+    checksum = Column(String, nullable=False, doc="Checksum for integrity verification")
+    status = Column(
+        Enum(
+            PackStatus,
+            name="pack_status",
+            create_constraint=True,
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=False,
+        default=PackStatus.DRAFT,
+        doc="Pack lifecycle status",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when pack was created",
+    )
+    created_by = Column(String, nullable=False, doc="User identifier who created the pack")
+
+    # Relationships
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])
+
+    # Unique constraint on tenant_id + version
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "version", name="uq_tenant_packs_tenant_version"),
+        Index("ix_tenant_packs_tenant_id", "tenant_id"),
+        Index("ix_tenant_packs_version", "version"),
+        Index("ix_tenant_packs_status", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<TenantPack(id={self.id}, tenant_id={self.tenant_id!r}, "
+            f"version={self.version!r}, status={self.status.value})>"
+        )
+
+
+class TenantActiveConfig(Base):
+    """
+    Active configuration mapping.
+    
+    Maps tenants to their active pack versions.
+    Matches docs/phase12-onboarding-packs-mvp.md Section 4.4.
+    """
+
+    __tablename__ = "tenant_active_config"
+
+    tenant_id = Column(
+        String,
+        ForeignKey("tenant.tenant_id", ondelete="CASCADE"),
+        primary_key=True,
+        doc="Tenant identifier (primary key)",
+    )
+    active_domain_pack_version = Column(
+        String,
+        nullable=True,
+        doc="Active domain pack version string (e.g., 'v3.2')",
+    )
+    active_tenant_pack_version = Column(
+        String,
+        nullable=True,
+        doc="Active tenant pack version string (e.g., 'v1.4')",
+    )
+    activated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when configuration was activated",
+    )
+    activated_by = Column(String, nullable=False, doc="User identifier who activated the configuration")
+
+    # Relationships
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"<TenantActiveConfig(tenant_id={self.tenant_id!r}, "
+            f"domain_pack={self.active_domain_pack_version!r}, "
+            f"tenant_pack={self.active_tenant_pack_version!r})>"
+        )
+
+
+# ============================================================================
+# Phase 12+ Governance Audit Models
+# ============================================================================
+
+
+class AuditEntityType(PyEnum):
+    """Entity types for governance audit events."""
+    TENANT = "tenant"
+    DOMAIN_PACK = "domain_pack"
+    TENANT_PACK = "tenant_pack"
+    PLAYBOOK = "playbook"
+    TOOL = "tool"
+    RATE_LIMIT = "rate_limit"
+    ALERT_CONFIG = "alert_config"
+    CONFIG_CHANGE = "config_change"
+    REPORT = "report"
+
+
+class AuditAction(PyEnum):
+    """Actions for governance audit events."""
+    CREATE = "create"
+    UPDATE = "update"
+    DELETE = "delete"
+    IMPORT = "import"
+    VALIDATE = "validate"
+    ACTIVATE = "activate"
+    DEPRECATE = "deprecate"
+    ENABLE = "enable"
+    DISABLE = "disable"
+    APPROVE = "approve"
+    REJECT = "reject"
+    APPLY = "apply"
+    STATUS_CHANGE = "status_change"
+    LINK = "link"
+    UNLINK = "unlink"
+
+
+class GovernanceAuditEvent(Base):
+    """
+    Governance audit event log for Phase 12+ enterprise audit trail.
+
+    Provides a standardized audit trail for all governance-related actions
+    including tenant lifecycle, pack management, playbook/tool configuration,
+    rate limits, alerts, and config change approvals.
+
+    Matches Phase 12+ Governance & Audit Polish requirements.
+    """
+
+    __tablename__ = "governance_audit_event"
+
+    id = Column(
+        PostgresUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        doc="Unique audit event identifier",
+    )
+    event_type = Column(
+        String(100),
+        nullable=False,
+        index=True,
+        doc="Event type (e.g., TENANT_CREATED, DOMAIN_PACK_ACTIVATED)",
+    )
+    actor_id = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        doc="Actor identifier (user ID or 'system')",
+    )
+    actor_role = Column(
+        String(50),
+        nullable=True,
+        doc="Actor role (admin, supervisor, system)",
+    )
+    tenant_id = Column(
+        String(255),
+        nullable=True,  # Nullable for global events (e.g., domain pack import)
+        index=True,
+        doc="Tenant identifier (required for tenant-scoped events)",
+    )
+    domain = Column(
+        String(100),
+        nullable=True,
+        index=True,
+        doc="Domain name (when relevant)",
+    )
+    entity_type = Column(
+        String(50),
+        nullable=False,
+        index=True,
+        doc="Entity type (tenant, domain_pack, tenant_pack, playbook, tool, etc.)",
+    )
+    entity_id = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        doc="Entity identifier",
+    )
+    entity_version = Column(
+        String(50),
+        nullable=True,
+        doc="Entity version (when applicable)",
+    )
+    action = Column(
+        String(50),
+        nullable=False,
+        index=True,
+        doc="Action performed (create, update, activate, approve, reject, etc.)",
+    )
+    before_json = Column(
+        JSONB,
+        nullable=True,
+        doc="State before change (redacted of sensitive data)",
+    )
+    after_json = Column(
+        JSONB,
+        nullable=True,
+        doc="State after change (redacted of sensitive data)",
+    )
+    diff_summary = Column(
+        sa.Text,
+        nullable=True,
+        doc="Human-readable summary of changes",
+    )
+    correlation_id = Column(
+        String(100),
+        nullable=True,
+        index=True,
+        doc="Correlation ID for distributed tracing",
+    )
+    request_id = Column(
+        String(100),
+        nullable=True,
+        index=True,
+        doc="Request ID from HTTP request",
+    )
+    related_exception_id = Column(
+        String(255),
+        nullable=True,
+        index=True,
+        doc="Related exception ID (when applicable)",
+    )
+    related_change_request_id = Column(
+        String(36),
+        nullable=True,
+        index=True,
+        doc="Related config change request ID (for approval flows)",
+    )
+    event_metadata = Column(
+        "metadata",
+        JSONB,
+        nullable=True,
+        doc="Additional event metadata (redacted)",
+    )
+    ip_address = Column(
+        String(45),
+        nullable=True,
+        doc="Client IP address (for audit)",
+    )
+    user_agent = Column(
+        String(500),
+        nullable=True,
+        doc="Client user agent (for audit)",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        index=True,
+        doc="Timestamp when event was created",
+    )
+
+    # Comprehensive indexes for common query patterns
+    __table_args__ = (
+        Index("idx_gov_audit_tenant_created", "tenant_id", "created_at"),
+        Index("idx_gov_audit_entity_type_id", "entity_type", "entity_id"),
+        Index("idx_gov_audit_tenant_entity", "tenant_id", "entity_type", "entity_id"),
+        Index("idx_gov_audit_actor_created", "actor_id", "created_at"),
+        Index("idx_gov_audit_action_created", "action", "created_at"),
+        Index("idx_gov_audit_domain_created", "domain", "created_at"),
+        Index("idx_gov_audit_correlation", "correlation_id"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<GovernanceAuditEvent(id={self.id}, event_type={self.event_type!r}, "
+            f"entity_type={self.entity_type!r}, entity_id={self.entity_id!r}, "
+            f"action={self.action!r}, tenant_id={self.tenant_id!r})>"
         )
 

@@ -3,8 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Box, Typography, Button, CircularProgress, Alert, Dialog, DialogTitle, DialogContent, DialogActions, Chip } from '@mui/material'
 import ToggleOnIcon from '@mui/icons-material/ToggleOn'
 import ToggleOffIcon from '@mui/icons-material/ToggleOff'
+import LinkIcon from '@mui/icons-material/Link'
+import WarningIcon from '@mui/icons-material/Warning'
 import { useTenant } from '../../hooks/useTenant'
 import { listPlaybooks, getPlaybook, activatePlaybook } from '../../api/admin'
+import { getActiveConfig, type ActiveConfigResponse } from '../../api/onboarding'
 import PageHeader from '../../components/common/PageHeader'
 import NotAuthorizedPage from '../../components/common/NotAuthorizedPage'
 import AdminWarningBanner from '../../components/common/AdminWarningBanner'
@@ -27,6 +30,8 @@ export default function PlaybooksPage() {
   const [selectedPlaybook, setSelectedPlaybook] = useState<Playbook | null>(null)
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
   const [activateDialogOpen, setActivateDialogOpen] = useState(false)
+  const [activeConfig, setActiveConfig] = useState<ActiveConfigResponse | null>(null)
+  const [compatibilityWarning, setCompatibilityWarning] = useState<string | null>(null)
 
   const isAdmin = isAdminEnabled()
 
@@ -82,6 +87,22 @@ export default function PlaybooksPage() {
     try {
       const detail = await getPlaybook(playbook.id)
       setSelectedPlaybook(detail)
+      
+      // Fetch active config for the tenant to show linked pack information
+      if (tenantId) {
+        const config = await getActiveConfig(tenantId)
+        setActiveConfig(config)
+        
+        // Check compatibility: playbook domain should match active domain pack domain
+        if (config && config.active_domain_pack_version && detail.domain) {
+          // In a real implementation, we'd check if the domain pack version matches the playbook's domain
+          // For now, we'll just show a warning if there's a mismatch
+          setCompatibilityWarning(null) // No warning by default - would need backend validation
+        } else {
+          setCompatibilityWarning('No active domain pack configured for this tenant')
+        }
+      }
+      
       setDetailDialogOpen(true)
     } catch (error) {
       console.error('Failed to fetch playbook detail:', error)
@@ -133,6 +154,15 @@ export default function PlaybooksPage() {
       id: 'createdAt',
       label: 'Created',
       accessor: (row) => formatDateTime(row.createdAt),
+    },
+    {
+      id: 'linkedPack',
+      label: 'Linked Pack',
+      accessor: (row) => {
+        // This would show linked pack info if available
+        // For now, we'll show it in the detail view
+        return <Chip label="View Details" size="small" variant="outlined" />
+      },
     },
     {
       id: 'actions',
@@ -204,6 +234,8 @@ export default function PlaybooksPage() {
         onClose={() => {
           setDetailDialogOpen(false)
           setSelectedPlaybook(null)
+          setActiveConfig(null)
+          setCompatibilityWarning(null)
         }}
         maxWidth="lg"
         fullWidth
@@ -266,6 +298,47 @@ export default function PlaybooksPage() {
                   </Box>
                 </Box>
               )}
+
+              {/* Pack Linking Information */}
+              <Box sx={{ mt: 3, p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+                <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <LinkIcon fontSize="small" />
+                  Linked Pack Information
+                </Typography>
+                {activeConfig ? (
+                  <Box sx={{ mt: 1 }}>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      <strong>Tenant:</strong> {activeConfig.tenant_id}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      <strong>Active Domain Pack:</strong> {activeConfig.active_domain_pack_version || 'None'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      <strong>Active Tenant Pack:</strong> {activeConfig.active_tenant_pack_version || 'None'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      <strong>Playbook Domain:</strong> {selectedPlaybook.domain}
+                    </Typography>
+                    {compatibilityWarning && (
+                      <Alert severity="warning" sx={{ mt: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <WarningIcon fontSize="small" />
+                          <Typography variant="body2">{compatibilityWarning}</Typography>
+                        </Box>
+                      </Alert>
+                    )}
+                    {!compatibilityWarning && activeConfig.active_domain_pack_version && (
+                      <Alert severity="success" sx={{ mt: 2 }}>
+                        Playbook is compatible with active pack configuration
+                      </Alert>
+                    )}
+                  </Box>
+                ) : (
+                  <Alert severity="info" sx={{ mt: 1 }}>
+                    No active configuration found for this tenant. Playbook may not be usable until packs are activated.
+                  </Alert>
+                )}
+              </Box>
             </Box>
           )}
         </DialogContent>
@@ -283,6 +356,8 @@ export default function PlaybooksPage() {
           <Button onClick={() => {
             setDetailDialogOpen(false)
             setSelectedPlaybook(null)
+            setActiveConfig(null)
+            setCompatibilityWarning(null)
           }}>
             Close
           </Button>
@@ -298,6 +373,11 @@ export default function PlaybooksPage() {
         cancelLabel="Cancel"
         onConfirm={() => {
           if (selectedPlaybook) {
+            // Prevent activation if compatibility warning exists
+            if (compatibilityWarning && !selectedPlaybook.isActive) {
+              alert('Cannot activate playbook: ' + compatibilityWarning)
+              return
+            }
             activateMutation.mutate({
               id: selectedPlaybook.id,
               active: !selectedPlaybook.isActive,

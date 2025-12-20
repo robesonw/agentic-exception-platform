@@ -10,6 +10,8 @@ import SettingsIcon from '@mui/icons-material/Settings'
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
 import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck'
 import BuildIcon from '@mui/icons-material/Build'
+import HistoryIcon from '@mui/icons-material/History'
+import BusinessIcon from '@mui/icons-material/Business'
 
 interface QuickLinkCardProps {
   title: string
@@ -165,6 +167,22 @@ export default function AdminLandingPage() {
                 description="Manage tool registry and tenant enablement"
                 to="/admin/tools"
                 icon={<BuildIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={4}>
+              <QuickLinkCard
+                title="Tenants"
+                description="Create and manage tenant organizations"
+                to="/admin/tenants"
+                icon={<BusinessIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={4}>
+              <QuickLinkCard
+                title="Audit Trail"
+                description="View governance and configuration audit events"
+                to="/admin/audit"
+                icon={<HistoryIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
               />
             </Grid>
           </Grid>

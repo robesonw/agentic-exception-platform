@@ -12,9 +12,11 @@ import UsagePage from './routes/ops/UsagePage.tsx'
 import RateLimitsPage from './routes/ops/RateLimitsPage.tsx'
 import AdminLandingPage from './routes/admin/AdminLandingPage.tsx'
 import ConfigChangesPage from './routes/admin/ConfigChangesPage.tsx'
+import TenantsPage from './routes/admin/TenantsPage.tsx'
 import PacksPage from './routes/admin/PacksPage.tsx'
 import PlaybooksPage from './routes/admin/PlaybooksPage.tsx'
 import AdminToolsPage from './routes/admin/ToolsPage.tsx'
+import AuditPage from './routes/admin/AuditPage.tsx'
 import WorkersPage from './routes/ops/WorkersPage.tsx'
 import SLAPage from './routes/ops/SLAPage.tsx'
 import DLQPage from './routes/ops/DLQPage.tsx'
@@ -147,6 +149,14 @@ function App() {
           }
         />
         <Route
+          path="/admin/tenants"
+          element={
+            <ProtectedRoute requireAdmin>
+              <TenantsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/admin/packs"
           element={
             <ProtectedRoute requireAdmin>
@@ -170,7 +180,15 @@ function App() {
             </ProtectedRoute>
           }
         />
-        
+        <Route
+          path="/admin/audit"
+          element={
+            <ProtectedRoute requireAdmin>
+              <AuditPage />
+            </ProtectedRoute>
+          }
+        />
+
         <Route path="/" element={<ExceptionsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
