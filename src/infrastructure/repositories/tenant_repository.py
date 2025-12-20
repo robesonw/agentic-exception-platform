@@ -37,6 +37,54 @@ class TenantRepository(AbstractBaseRepository[Tenant]):
     are naturally isolated by the tenant_id itself.
     """
 
+    async def create_tenant(
+        self,
+        tenant_id: str,
+        name: str,
+        created_by: str,
+    ) -> Tenant:
+        """
+        Create a new tenant.
+        
+        Args:
+            tenant_id: Tenant identifier (primary key)
+            name: Tenant name
+            created_by: User identifier who created the tenant
+            
+        Returns:
+            Created Tenant model instance
+            
+        Raises:
+            ValueError: If tenant_id/name/created_by is invalid
+            ValueError: If tenant with same tenant_id already exists
+        """
+        if not tenant_id or not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        if not name or not name.strip():
+            raise ValueError("name is required")
+        if not created_by or not created_by.strip():
+            raise ValueError("created_by is required")
+        
+        # Check if tenant already exists
+        existing = await self.get_tenant(tenant_id)
+        if existing:
+            raise ValueError(f"Tenant already exists: tenant_id={tenant_id}")
+        
+        # Create new tenant
+        tenant = Tenant(
+            tenant_id=tenant_id,
+            name=name,
+            status=TenantStatus.ACTIVE,
+            created_by=created_by,
+        )
+        
+        self.session.add(tenant)
+        await self.session.flush()
+        await self.session.refresh(tenant)
+        
+        logger.info(f"Created tenant: tenant_id={tenant_id}, name={name}")
+        return tenant
+
     async def get_tenant(self, tenant_id: str) -> Optional[Tenant]:
         """
         Get a tenant by ID.

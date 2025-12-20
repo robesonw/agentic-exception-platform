@@ -26,6 +26,7 @@ from src.infrastructure.db.session import close_engine, initialize_database
 logger = logging.getLogger(__name__)
 from src.api.routes import (
     admin,
+    admin_audit,
     admin_domainpacks,
     admin_tenantpolicies,
     admin_tools,
@@ -40,6 +41,7 @@ from src.api.routes import (
     metrics,
     ops,
     ops_dashboard,
+    onboarding,
     playbooks,
     rate_limits,
     run,
@@ -132,6 +134,8 @@ app.include_router(rate_limits.router)  # Phase 10: Rate Limits Admin API (P10-1
 app.include_router(rate_limits.usage_router)  # Phase 10: Rate Limits Usage API (P10-15 to P10-17)
 app.include_router(usage.router)  # Phase 10: Usage Metering API (P10-18 to P10-20)
 app.include_router(ops_dashboard.router)  # Phase 10: Ops Dashboard API (P10-21 to P10-28)
+app.include_router(onboarding.router)  # Phase 12: Tenant & Pack Onboarding APIs (P12-10 to P12-21)
+app.include_router(admin_audit.router)  # Phase 12+: Governance Audit APIs
 
 
 @app.get("/health")

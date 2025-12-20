@@ -1,0 +1,414 @@
+{
+  "items": [
+    {
+      "id": "tenant_001:CapitalMarketsTrading:MISMATCHED_TRADE_DETAILS",
+      "name": "Mismatched Trade Details Resolution",
+      "version": "1.0.0",
+      "tenantId": "tenant_001",
+      "domain": "CapitalMarketsTrading",
+      "exceptionType": "MISMATCHED_TRADE_DETAILS",
+      "matchRules": {
+        "exceptionType": "MISMATCHED_TRADE_DETAILS",
+        "severity": ["MEDIUM", "HIGH"]
+      },
+      "steps": [
+        {
+          "stepId": "step_1",
+          "action": "Fetch trade order and executions using getOrder/getExecutions",
+          "parameters": {
+            "orderId": "${exception.normalizedContext.orderId}"
+          },
+          "description": "Retrieve original trade order and execution details"
+        },
+        {
+          "stepId": "step_2",
+          "action": "Compare price/qty/cusip/counterparty/tradeDate",
+          "parameters": {},
+          "description": "Compare execution details against original order"
+        },
+        {
+          "stepId": "step_3",
+          "action": "If mismatch is non-economic (formatting/enrichment): auto-correct booking attributes",
+          "parameters": {},
+          "description": "Auto-correct non-economic mismatches"
+        },
+        {
+          "stepId": "step_4",
+          "action": "If mismatch is economic: openCase('FO_MO_TRADE_BREAK') with evidence and assign to MiddleOffice",
+          "parameters": {
+            "caseType": "FO_MO_TRADE_BREAK",
+            "queue": "MiddleOffice"
+          },
+          "description": "Escalate economic mismatches to Middle Office"
+        },
+        {
+          "stepId": "step_5",
+          "action": "Rebook corrected trade or update attributes through approved tool",
+          "parameters": {},
+          "description": "Apply corrections to trade booking system"
+        },
+        {
+          "stepId": "step_6",
+          "action": "Notify trader and middle office",
+          "parameters": {},
+          "description": "Send notification to relevant parties"
+        }
+      ],
+      "referencedTools": ["getOrder", "getExecutions", "openCase", "assignCase"],
+      "isActive": true,
+      "createdAt": "2024-01-15T10:30:00Z"
+    },
+    {
+      "id": "tenant_001:CapitalMarketsTrading:FAILED_ALLOCATION",
+      "name": "Failed Allocation Recovery",
+      "version": "1.0.0",
+      "tenantId": "tenant_001",
+      "domain": "CapitalMarketsTrading",
+      "exceptionType": "FAILED_ALLOCATION",
+      "matchRules": {
+        "exceptionType": "FAILED_ALLOCATION",
+        "severity": ["MEDIUM", "HIGH"]
+      },
+      "steps": [
+        {
+          "stepId": "step_1",
+          "action": "Review allocations using getAllocations",
+          "parameters": {
+            "orderId": "${exception.normalizedContext.orderId}"
+          },
+          "description": "Fetch current allocation status"
+        },
+        {
+          "stepId": "step_2",
+          "action": "Retry allocations using repairAllocation(orderId)",
+          "parameters": {
+            "orderId": "${exception.normalizedContext.orderId}"
+          },
+          "description": "Attempt to repair failed allocations"
+        },
+        {
+          "stepId": "step_3",
+          "action": "Validate all child allocations total = block quantity",
+          "parameters": {},
+          "description": "Verify allocation completeness"
+        },
+        {
+          "stepId": "step_4",
+          "action": "If still failing: openCase('ALLOCATION_FAIL') and assign to AllocationsOps",
+          "parameters": {
+            "caseType": "ALLOCATION_FAIL",
+            "queue": "AllocationsOps"
+          },
+          "description": "Escalate persistent allocation failures"
+        }
+      ],
+      "referencedTools": ["getAllocations", "repairAllocation", "openCase", "assignCase"],
+      "isActive": true,
+      "createdAt": "2024-01-15T10:35:00Z"
+    },
+    {
+      "id": "tenant_001:CapitalMarketsTrading:POSITION_BREAK",
+      "name": "Position Break Reconciliation",
+      "version": "1.0.0",
+      "tenantId": "tenant_001",
+      "domain": "CapitalMarketsTrading",
+      "exceptionType": "POSITION_BREAK",
+      "matchRules": {
+        "exceptionType": "POSITION_BREAK",
+        "severity": ["HIGH", "CRITICAL"]
+      },
+      "steps": [
+        {
+          "stepId": "step_1",
+          "action": "Fetch positions and trade history evidence",
+          "parameters": {
+            "accountId": "${exception.normalizedContext.accountId}",
+            "cusip": "${exception.normalizedContext.cusip}"
+          },
+          "description": "Retrieve position and trade history data"
+        },
+        {
+          "stepId": "step_2",
+          "action": "Identify missing/duplicate trade or settlement events",
+          "parameters": {},
+          "description": "Analyze discrepancies in trade history"
+        },
+        {
+          "stepId": "step_3",
+          "action": "Run recalculatePosition(accountId,cusip)",
+          "parameters": {
+            "accountId": "${exception.normalizedContext.accountId}",
+            "cusip": "${exception.normalizedContext.cusip}"
+          },
+          "description": "Recalculate position from trade history"
+        },
+        {
+          "stepId": "step_4",
+          "action": "If unresolved or severity CRITICAL: openCase('POSITION_BREAK') and escalate to BreaksReconTier2",
+          "parameters": {
+            "caseType": "POSITION_BREAK",
+            "queue": "BreaksReconTier2"
+          },
+          "description": "Escalate critical or unresolved position breaks"
+        }
+      ],
+      "referencedTools": ["getPositions", "recalculatePosition", "openCase", "escalateCase"],
+      "isActive": true,
+      "createdAt": "2024-01-15T10:40:00Z"
+    },
+    {
+      "id": "tenant_001:CapitalMarketsTrading:SETTLEMENT_FAIL",
+      "name": "Settlement Failure Recovery",
+      "version": "1.0.0",
+      "tenantId": "tenant_001",
+      "domain": "CapitalMarketsTrading",
+      "exceptionType": "SETTLEMENT_FAIL",
+      "matchRules": {
+        "exceptionType": "SETTLEMENT_FAIL",
+        "severity": ["HIGH", "CRITICAL"]
+      },
+      "steps": [
+        {
+          "stepId": "step_1",
+          "action": "Fetch settlement details using getSettlement",
+          "parameters": {
+            "orderId": "${exception.normalizedContext.orderId}"
+          },
+          "description": "Retrieve settlement status and failure reason"
+        },
+        {
+          "stepId": "step_2",
+          "action": "Classify failReason (SSI mismatch, counterparty reject, insufficient securities/cash)",
+          "parameters": {},
+          "description": "Categorize settlement failure reason"
+        },
+        {
+          "stepId": "step_3",
+          "action": "If SSI issue: triggerSettlementRetry(orderId)",
+          "parameters": {
+            "orderId": "${exception.normalizedContext.orderId}"
+          },
+          "description": "Retry settlement for SSI-related failures"
+        },
+        {
+          "stepId": "step_4",
+          "action": "If aged beyond policy threshold: openCase('SETTLEMENT_FAIL') and assign to SettlementsTier2",
+          "parameters": {
+            "caseType": "SETTLEMENT_FAIL",
+            "queue": "SettlementsTier2"
+          },
+          "description": "Escalate aged settlement failures"
+        }
+      ],
+      "referencedTools": ["getSettlement", "triggerSettlementRetry", "openCase", "assignCase"],
+      "isActive": true,
+      "createdAt": "2024-01-15T10:45:00Z"
+    },
+    {
+      "id": "tenant_002:HealthcareClaimsAndCareOps:CLAIM_MISSING_AUTH",
+      "name": "Claim Missing Authorization Resolution",
+      "version": "1.0.0",
+      "tenantId": "tenant_002",
+      "domain": "HealthcareClaimsAndCareOps",
+      "exceptionType": "CLAIM_MISSING_AUTH",
+      "matchRules": {
+        "exceptionType": "CLAIM_MISSING_AUTH",
+        "severity": ["MEDIUM", "HIGH"]
+      },
+      "steps": [
+        {
+          "stepId": "step_1",
+          "action": "Fetch claim using getClaim(claimId)",
+          "parameters": {
+            "claimId": "${exception.normalizedContext.claimId}"
+          },
+          "description": "Retrieve claim details"
+        },
+        {
+          "stepId": "step_2",
+          "action": "Fetch authorizations using getAuthorization(patientId, procedureCodes)",
+          "parameters": {
+            "patientId": "${exception.normalizedContext.patientId}",
+            "procedureCodes": "${exception.normalizedContext.procedureCodes}"
+          },
+          "description": "Check for existing authorizations"
+        },
+        {
+          "stepId": "step_3",
+          "action": "If valid authorization exists for serviceDate: attachAuthorizationToClaim(claimId, authId)",
+          "parameters": {
+            "claimId": "${exception.normalizedContext.claimId}",
+            "authId": "${step_2.result.authId}"
+          },
+          "description": "Attach valid authorization to claim"
+        },
+        {
+          "stepId": "step_4",
+          "action": "Re-adjudicate using reprocessClaim(claimId)",
+          "parameters": {
+            "claimId": "${exception.normalizedContext.claimId}"
+          },
+          "description": "Reprocess claim with authorization attached"
+        },
+        {
+          "stepId": "step_5",
+          "action": "Notify BillingOps",
+          "parameters": {},
+          "description": "Notify billing operations team"
+        }
+      ],
+      "referencedTools": ["getClaim", "getAuthorization", "attachAuthorizationToClaim", "reprocessClaim"],
+      "isActive": true,
+      "createdAt": "2024-01-20T14:20:00Z"
+    },
+    {
+      "id": "tenant_002:HealthcareClaimsAndCareOps:PROVIDER_CREDENTIAL_EXPIRED",
+      "name": "Provider Credential Remediation",
+      "version": "1.0.0",
+      "tenantId": "tenant_002",
+      "domain": "HealthcareClaimsAndCareOps",
+      "exceptionType": "PROVIDER_CREDENTIAL_EXPIRED",
+      "matchRules": {
+        "exceptionType": "PROVIDER_CREDENTIAL_EXPIRED",
+        "severity": ["MEDIUM", "HIGH"]
+      },
+      "steps": [
+        {
+          "stepId": "step_1",
+          "action": "Fetch provider using getProviderCredential(providerId)",
+          "parameters": {
+            "providerId": "${exception.normalizedContext.providerId}"
+          },
+          "description": "Retrieve provider credential information"
+        },
+        {
+          "stepId": "step_2",
+          "action": "Confirm renewal evidence if available in payload",
+          "parameters": {},
+          "description": "Check for credential renewal documentation"
+        },
+        {
+          "stepId": "step_3",
+          "action": "If renewal confirmed: updateProviderCredential(providerId, newExpiryDate)",
+          "parameters": {
+            "providerId": "${exception.normalizedContext.providerId}",
+            "newExpiryDate": "${exception.rawPayload.renewalExpiryDate}"
+          },
+          "description": "Update provider credential with new expiry date"
+        },
+        {
+          "stepId": "step_4",
+          "action": "Reprocess impacted claims via reprocessClaim for each claimId",
+          "parameters": {
+            "claimIds": "${exception.normalizedContext.impactedClaimIds}"
+          },
+          "description": "Reprocess claims affected by credential update"
+        },
+        {
+          "stepId": "step_5",
+          "action": "If renewal not confirmed: openCase('PROVIDER_CREDENTIAL_BREAK') and assign to ProviderOps",
+          "parameters": {
+            "caseType": "PROVIDER_CREDENTIAL_BREAK",
+            "queue": "ProviderOps"
+          },
+          "description": "Escalate unconfirmed credential renewals"
+        }
+      ],
+      "referencedTools": ["getProviderCredential", "updateProviderCredential", "reprocessClaim", "openCase", "assignCase"],
+      "isActive": true,
+      "createdAt": "2024-01-20T14:25:00Z"
+    },
+    {
+      "id": "tenant_001:CapitalMarketsTrading:CASH_BREAK",
+      "name": "Cash Break Reconciliation",
+      "version": "1.0.0",
+      "tenantId": "tenant_001",
+      "domain": "CapitalMarketsTrading",
+      "exceptionType": "CASH_BREAK",
+      "matchRules": {
+        "exceptionType": "CASH_BREAK",
+        "severity": ["HIGH", "CRITICAL"]
+      },
+      "steps": [
+        {
+          "stepId": "step_1",
+          "action": "Fetch cash movements using getCashMovements(accountId, date)",
+          "parameters": {
+            "accountId": "${exception.normalizedContext.accountId}",
+            "date": "${exception.normalizedContext.valueDate}"
+          },
+          "description": "Retrieve cash movement history"
+        },
+        {
+          "stepId": "step_2",
+          "action": "Compare cash ledger against expected clearing amounts",
+          "parameters": {},
+          "description": "Identify discrepancies in cash positions"
+        },
+        {
+          "stepId": "step_3",
+          "action": "If discrepancy identified: openCase('CASH_BREAK') and assign to CashOps",
+          "parameters": {
+            "caseType": "CASH_BREAK",
+            "queue": "CashOps"
+          },
+          "description": "Escalate cash breaks for manual reconciliation"
+        }
+      ],
+      "referencedTools": ["getCashMovements", "openCase", "assignCase"],
+      "isActive": false,
+      "createdAt": "2024-01-15T11:00:00Z"
+    },
+    {
+      "id": "tenant_001:CapitalMarketsTrading:REG_REPORT_REJECTED",
+      "name": "Regulatory Report Rejection Handling",
+      "version": "1.0.0",
+      "tenantId": "tenant_001",
+      "domain": "CapitalMarketsTrading",
+      "exceptionType": "REG_REPORT_REJECTED",
+      "matchRules": {
+        "exceptionType": "REG_REPORT_REJECTED",
+        "severity": ["MEDIUM", "HIGH"]
+      },
+      "steps": [
+        {
+          "stepId": "step_1",
+          "action": "Fetch report + trade evidence",
+          "parameters": {
+            "reportId": "${exception.normalizedContext.reportId}",
+            "tradeId": "${exception.normalizedContext.tradeId}"
+          },
+          "description": "Retrieve rejected report and associated trade data"
+        },
+        {
+          "stepId": "step_2",
+          "action": "Identify missing/invalid fields from rejection reason",
+          "parameters": {},
+          "description": "Analyze rejection reason to identify required corrections"
+        },
+        {
+          "stepId": "step_3",
+          "action": "Regenerate report using regenerateRegReport(tradeId)",
+          "parameters": {
+            "tradeId": "${exception.normalizedContext.tradeId}"
+          },
+          "description": "Regenerate report with corrected data"
+        },
+        {
+          "stepId": "step_4",
+          "action": "If regeneration fails: openCase('REG_REPORT_BREAK') and assign to RegulatoryOps",
+          "parameters": {
+            "caseType": "REG_REPORT_BREAK",
+            "queue": "RegulatoryOps"
+          },
+          "description": "Escalate persistent report generation failures"
+        }
+      ],
+      "referencedTools": ["getRegReport", "regenerateRegReport", "openCase", "assignCase"],
+      "isActive": true,
+      "createdAt": "2024-01-15T11:05:00Z"
+    }
+  ],
+  "total": 8
+}
+

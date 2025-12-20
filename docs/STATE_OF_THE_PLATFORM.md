@@ -2,7 +2,7 @@
 
 > Authoritative snapshot of what exists in SentinAI today.
 
-**Last updated:** Phase 11 complete
+**Last updated:** Phase 12+ Governance & Audit Polish complete
 
 ---
 
@@ -68,6 +68,12 @@
 | `/admin/rate-limits/*` | Rate limit management |
 | `/usage/*` | Usage metering |
 | `/admin/config-changes/*` | Config change governance |
+| `/admin/tenants/*` | Tenant management (create, list, status update) |
+| `/admin/packs/domain/*` | Domain pack import, validation, listing, activation |
+| `/admin/packs/tenant/*` | Tenant pack import, validation, listing, activation |
+| `/admin/packs/activate` | Pack activation for tenants |
+| `/admin/packs/validate` | Pack validation without import |
+| `/admin/audit/*` | Governance audit events (query, timeline, recent changes) |
 
 ### UI (React + TypeScript)
 
@@ -87,9 +93,11 @@
 | `/ops/rate-limits` | Rate limits per tenant (view; admin can update) |
 | `/admin` | Admin landing page with quick links and pending approvals |
 | `/admin/config-changes` | Config change approval workflow |
-| `/admin/packs` | Domain Packs and Tenant Packs management |
-| `/admin/playbooks` | Playbooks list, detail, and activation |
+| `/admin/tenants` | Tenant onboarding and lifecycle management |
+| `/admin/packs` | Domain Packs and Tenant Packs management (import, validate, activate) |
+| `/admin/playbooks` | Playbooks list, detail, activation, and pack linking |
 | `/admin/tools` | Tool registry and tenant enablement |
+| `/admin/audit` | Governance audit trail with filters, timeline, correlation |
 | `/supervisor` | Supervisor analytics dashboard |
 
 ### Tools System (Phase 8)
@@ -112,6 +120,20 @@
 - SLO/SLA engine with breach detection
 - Decision timelines with evidence tracking
 - Explanation quality scoring
+
+### Tenant & Pack Onboarding (Phase 12)
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| **Tenant Registry** | Complete | Create, list, status management (ACTIVE/SUSPENDED) |
+| **Domain Pack Persistence** | Complete | Import, version, validate, activate domain packs |
+| **Tenant Pack Persistence** | Complete | Import, version, validate, activate tenant packs |
+| **Pack Validation** | Complete | Schema validation, cross-reference checks, compatibility |
+| **Active Configuration** | Complete | Per-tenant active pack version tracking |
+| **Pack Activation** | Complete | Activate domain/tenant pack versions with optional approval |
+| **Playbook Linking** | Complete | Link playbooks to tenants, domains, and active pack versions |
+| **Audit Trail** | Complete | All pack operations logged with who/when/what |
+| **Governance Audit** | Complete | Standardized audit events with redaction, correlation, timeline views |
 
 ### Operations & Governance (Phase 10)
 
@@ -367,3 +389,66 @@ SentinAI is a **production-ready, enterprise-grade platform** through Phase 11:
 **Phase 10 adds:** Operational visibility, governance controls, production hardening, and cost transparency.
 
 **Phase 11 adds:** Enterprise-grade Admin & Ops UI, removing all placeholders and providing production-ready operational and governance workflows.
+
+**Phase 12+ adds:** Enterprise-grade governance audit trail with standardized events, sensitive data redaction, correlation ID tracing, tenant isolation, and comprehensive UI for audit visibility.
+
+---
+
+## 8. Phase 12+ - Governance & Audit Polish (Complete)
+
+Phase 12+ adds enterprise-grade governance and audit capabilities:
+
+### Governance Audit Events
+- **Standardized Schema**: Consistent event structure across all audited operations
+- **Event Types**: TENANT_CREATED, DOMAIN_PACK_IMPORTED, CONFIG_ACTIVATED, TOOL_ENABLED, etc.
+- **Actions**: create, update, delete, import, validate, activate, approve, reject
+- **Entity Types**: tenant, domain_pack, tenant_pack, playbook, tool, rate_limit, alert_config
+
+### Sensitive Data Redaction
+- **Automatic Redaction**: API keys, tokens, secrets, passwords
+- **PII Protection**: Email, phone, SSN, credit card patterns
+- **Database URL Protection**: Connection strings redacted
+- **Before/After State**: Safely stored with redaction applied
+
+### Correlation & Tracing
+- **Correlation IDs**: Generated and propagated through service calls
+- **Request IDs**: Per-request tracking for debugging
+- **Related Events**: Query events by correlation ID
+- **Timeline Views**: Entity history in chronological order
+
+### Tenant Isolation
+- **Scoped Queries**: All audit queries enforce tenant_id filtering
+- **RBAC**: Admin/Supervisor access only
+- **Cross-Tenant Prevention**: Tenants can only see their own events
+
+### UI Components
+- **Admin Audit Page**: Full-featured event viewer at `/admin/audit`
+- **Filters**: Tenant, entity type, action, date range, actor
+- **Detail Drawer**: Before/after JSON, diff summary, metadata
+- **Recent Changes Panel**: Reusable component for entity detail views
+- **Correlation Tracing**: View all events for a correlation ID
+
+### New Database Table
+```sql
+governance_audit_event (
+    id UUID PRIMARY KEY,
+    event_type, actor_id, actor_role, tenant_id, domain,
+    entity_type, entity_id, entity_version, action,
+    before_json, after_json, diff_summary,
+    correlation_id, request_id,
+    related_exception_id, related_change_request_id,
+    metadata, ip_address, user_agent, created_at
+)
+```
+
+### API Endpoints
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /admin/audit/events` | Query events with filters and pagination |
+| `GET /admin/audit/events/{id}` | Get single event details |
+| `GET /admin/audit/timeline` | Get entity timeline |
+| `GET /admin/audit/recent/{tenant_id}` | Get recent changes for tenant |
+| `GET /admin/audit/entity/{type}/{id}/recent` | Get recent changes for entity |
+| `GET /admin/audit/correlation/{id}` | Get correlated events |
+
+See `docs/audit-governance.md` for full specification.

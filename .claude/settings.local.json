@@ -13,7 +13,9 @@
       "Bash(docker restart:*)",
       "Bash(cat:*)",
       "Bash(iconv:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(timeout 15 docker-compose logs:*)",
+      "Bash(timeout 10 docker-compose logs:*)"
     ],
     "deny": [],
     "ask": []
