@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Optional
 
 import jwt
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status
 
 logger = logging.getLogger(__name__)
 
@@ -171,8 +171,13 @@ class APIKeyAuth:
             raise AuthenticationError("Invalid API key")
         
         tenant_id, role = result
+        # For API key authentication, use a default user identifier based on the API key
+        # This ensures session isolation while providing a consistent user context
+        user_id = f"api_user_{api_key[-8:]}"  # Use last 8 chars of API key as user identifier
+        
         return UserContext(
             tenant_id=tenant_id,
+            user_id=user_id,
             role=role,
             auth_method=AuthMethod.API_KEY,
         )

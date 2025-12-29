@@ -730,6 +730,371 @@ class UIQueryService:
         audit_events.sort(key=lambda x: x.get("timestamp", ""))
         
         return audit_events
+    
+    async def get_exception_workflow_graph(
+        self, tenant_id: str, exception_id: str
+    ) -> Optional[dict[str, Any]]:
+        """
+        Get workflow graph data for an exception.
+        
+        Constructs workflow nodes and edges from pipeline events and playbook execution state.
+        Fetches playbook definition from:
+        1. Database playbook table (via exception.current_playbook_id)
+        2. Event payload (PlaybookMatched event)
+        3. Domain/tenant pack definitions (fallback)
+        
+        Derives step statuses from PlaybookStepCompleted events.
+        
+        Args:
+            tenant_id: Tenant identifier
+            exception_id: Exception identifier
+            
+        Returns:
+            Dictionary with workflow graph data, or None if not found
+        """
+        try:
+            from src.infrastructure.db.session import get_db_session_context
+            from src.repository.exceptions_repository import ExceptionRepository
+            from src.infrastructure.repositories.event_store_repository import EventStoreRepository
+            from src.services.trace_service import TraceService
+            from sqlalchemy.orm import selectinload
+            from sqlalchemy import select
+            from src.infrastructure.db.models import Playbook, PlaybookStep
+            
+            async with get_db_session_context() as session:
+                # First check if exception exists
+                repo = ExceptionRepository(session)
+                db_exception = await repo.get_exception(tenant_id, exception_id)
+                
+                if db_exception is None:
+                    return None
+                
+                # Get all events for this exception
+                event_store_repo = EventStoreRepository(session)
+                trace_service = TraceService(event_store_repo)
+                
+                trace_result = await trace_service.get_trace_for_exception(
+                    exception_id=exception_id,
+                    tenant_id=tenant_id,
+                    page=1,
+                    page_size=1000,  # Get all events for workflow construction
+                )
+                
+                # Define standard pipeline stages workflow
+                stages = [
+                    {"id": "stage:intake", "label": "Intake", "type": "agent", "kind": "stage"},
+                    {"id": "stage:triage", "label": "Triage", "type": "agent", "kind": "stage"},
+                    {"id": "stage:policy", "label": "Policy Check", "type": "agent", "kind": "stage"},
+                    {"id": "stage:playbook", "label": "Playbook", "type": "agent", "kind": "stage"},
+                    {"id": "stage:tool", "label": "Tool Execution", "type": "system", "kind": "stage"},
+                    {"id": "stage:feedback", "label": "Feedback", "type": "agent", "kind": "stage"},
+                ]
+                
+                # Build nodes with status from events
+                nodes = []
+                stage_status = {}
+                current_stage = None
+                
+                # Collect PlaybookStepCompleted events for step status derivation
+                step_completed_events = []
+                
+                # Process events to determine stage statuses
+                for event_log in trace_result.items:
+                    event_type = event_log.event_type
+                    timestamp = event_log.timestamp
+                    event_data = event_log.payload if isinstance(event_log.payload, dict) else {}
+                    
+                    # Map event types to stages
+                    if event_type == "ExceptionNormalized":
+                        stage_status["stage:intake"] = {
+                            "status": "completed",
+                            "completed_at": timestamp,
+                            "meta": {"event_type": event_type, "actor": "IntakeAgent"}
+                        }
+                    elif event_type == "TriageCompleted":
+                        stage_status["stage:triage"] = {
+                            "status": "completed",
+                            "completed_at": timestamp,
+                            "meta": {"event_type": event_type, "actor": "TriageAgent", "data": event_data}
+                        }
+                    elif event_type == "PolicyEvaluationCompleted":
+                        stage_status["stage:policy"] = {
+                            "status": "completed",
+                            "completed_at": timestamp,
+                            "meta": {"event_type": event_type, "actor": "PolicyAgent", "data": event_data}
+                        }
+                    elif event_type == "PlaybookMatched":
+                        stage_status["stage:playbook"] = {
+                            "status": "in-progress",
+                            "started_at": timestamp,
+                            "meta": {"event_type": event_type, "actor": "PlaybookAgent", "data": event_data}
+                        }
+                    elif event_type == "PlaybookStepCompleted":
+                        # Collect step completion events for later processing
+                        step_completed_events.append({
+                            "timestamp": timestamp,
+                            "data": event_data
+                        })
+                        # Update playbook stage status
+                        stage_status["stage:playbook"] = {
+                            "status": "completed",
+                            "completed_at": timestamp,
+                            "meta": {"event_type": event_type, "actor": "PlaybookAgent", "data": event_data}
+                        }
+                    elif event_type == "ToolExecutionRequested":
+                        stage_status["stage:tool"] = {
+                            "status": "in-progress",
+                            "started_at": timestamp,
+                            "meta": {"event_type": event_type, "actor": "ToolWorker", "data": event_data}
+                        }
+                    elif event_type == "ToolExecutionCompleted":
+                        stage_status["stage:tool"] = {
+                            "status": "completed",
+                            "completed_at": timestamp,
+                            "meta": {"event_type": event_type, "actor": "ToolWorker", "data": event_data}
+                        }
+                    elif event_type == "FeedbackCaptured":
+                        stage_status["stage:feedback"] = {
+                            "status": "completed",
+                            "completed_at": timestamp,
+                            "meta": {"event_type": event_type, "actor": "FeedbackAgent", "data": event_data}
+                        }
+                
+                # Build nodes based on stages and their status
+                for stage in stages:
+                    stage_id = stage["id"]
+                    status_info = stage_status.get(stage_id, {})
+                    
+                    # Determine status - default to pending for stages that haven't been processed
+                    status = status_info.get("status", "pending")
+                    
+                    # Set current stage to first in-progress or first pending stage
+                    if current_stage is None and status in ["in-progress", "pending"]:
+                        current_stage = stage_id.replace("stage:", "")
+                    
+                    node = {
+                        "id": stage_id,
+                        "type": stage["type"],
+                        "kind": stage["kind"],
+                        "label": stage["label"],
+                        "status": status,
+                        "started_at": status_info.get("started_at"),
+                        "completed_at": status_info.get("completed_at"),
+                        "meta": status_info.get("meta", {}),
+                    }
+                    nodes.append(node)
+                
+                # Try to extract playbook information from multiple sources
+                playbook_id = None
+                playbook_name = None
+                playbook_steps = []
+                playbook_nodes = []
+                playbook_edges = []
+                
+                # Source 1: Check if exception has current_playbook_id (DB reference)
+                if hasattr(db_exception, 'current_playbook_id') and db_exception.current_playbook_id:
+                    try:
+                        # Query the playbook with its steps
+                        stmt = (
+                            select(Playbook)
+                            .options(selectinload(Playbook.steps))
+                            .where(
+                                Playbook.playbook_id == db_exception.current_playbook_id,
+                                Playbook.tenant_id == tenant_id
+                            )
+                        )
+                        result = await session.execute(stmt)
+                        db_playbook = result.scalar_one_or_none()
+                        
+                        if db_playbook:
+                            playbook_id = db_playbook.playbook_id
+                            playbook_name = db_playbook.name
+                            # Convert DB steps to list format
+                            playbook_steps = [
+                                {
+                                    "name": step.name,
+                                    "action_type": step.action_type,
+                                    "step_order": step.step_order,
+                                    "params": step.params or {},
+                                    "step_id": step.step_id
+                                }
+                                for step in sorted(db_playbook.steps, key=lambda s: s.step_order)
+                            ]
+                            logger.debug(
+                                f"Loaded playbook from DB: id={playbook_id}, name={playbook_name}, "
+                                f"steps={len(playbook_steps)}"
+                            )
+                    except Exception as e:
+                        logger.warning(f"Failed to load playbook from DB: {e}")
+                
+                # Source 2: If no DB playbook, look in PlaybookMatched event payload
+                if not playbook_steps:
+                    for event_log in trace_result.items:
+                        if event_log.event_type == "PlaybookMatched" and event_log.payload:
+                            try:
+                                event_data = event_log.payload if isinstance(event_log.payload, dict) else json.loads(event_log.payload)
+                                if isinstance(event_data, dict):
+                                    # Check different possible payload structures
+                                    playbook_info = event_data.get("playbook") or event_data.get("output", {}).get("playbook")
+                                    playbook_id = playbook_id or event_data.get("playbook_id") or event_data.get("output", {}).get("playbook_id")
+                                    
+                                    if isinstance(playbook_info, dict):
+                                        playbook_steps = playbook_info.get("steps", [])
+                                        playbook_id = playbook_id or playbook_info.get("playbook_id")
+                                        playbook_name = playbook_info.get("name", playbook_info.get("playbook_name"))
+                                        logger.debug(
+                                            f"Loaded playbook from event: id={playbook_id}, name={playbook_name}, "
+                                            f"steps={len(playbook_steps) if playbook_steps else 0}"
+                                        )
+                                        break
+                            except (json.JSONDecodeError, AttributeError, TypeError) as e:
+                                logger.warning(f"Failed to parse PlaybookMatched payload: {e}")
+                
+                # Source 3: If still no playbook, try domain/tenant pack (future enhancement)
+                # This would require the domain pack registry lookup
+                # For now, we rely on DB and event sources
+                
+                # Build step completion status map
+                completed_steps = {}  # step_order/index -> completion info
+                for evt in step_completed_events:
+                    evt_data = evt.get("data", {})
+                    # Try to extract step identifier from event
+                    step_order = evt_data.get("step_order") or evt_data.get("step_index") or evt_data.get("step")
+                    step_name = evt_data.get("step_name") or evt_data.get("name")
+                    
+                    if step_order is not None:
+                        completed_steps[step_order] = {
+                            "status": "completed",
+                            "completed_at": evt.get("timestamp"),
+                            "result": evt_data.get("result") or evt_data.get("output"),
+                        }
+                    elif step_name:
+                        # Match by name if order not available
+                        completed_steps[step_name] = {
+                            "status": "completed",
+                            "completed_at": evt.get("timestamp"),
+                            "result": evt_data.get("result") or evt_data.get("output"),
+                        }
+                
+                # Add playbook steps as nodes if they exist
+                if playbook_steps and isinstance(playbook_steps, list):
+                    current_exception_step = getattr(db_exception, 'current_step', None)
+                    
+                    for i, step in enumerate(playbook_steps):
+                        step_order = i + 1
+                        step_id = f"playbook:step:{step_order}"
+                        
+                        # Get step label
+                        if isinstance(step, dict):
+                            step_label = step.get("name", step.get("text", f"Step {step_order}"))
+                            step_action = step.get("action_type", step.get("action", ""))
+                        else:
+                            step_label = str(step)
+                            step_action = ""
+                        
+                        # Determine step status from completed events
+                        step_status = "pending"
+                        step_started_at = None
+                        step_completed_at = None
+                        step_result = None
+                        
+                        # Check by order first, then by name
+                        completion_info = completed_steps.get(step_order) or completed_steps.get(step_label)
+                        
+                        if completion_info:
+                            step_status = completion_info.get("status", "completed")
+                            step_completed_at = completion_info.get("completed_at")
+                            step_result = completion_info.get("result")
+                        elif current_exception_step is not None:
+                            # Derive status from exception.current_step
+                            if step_order < current_exception_step:
+                                step_status = "completed"
+                            elif step_order == current_exception_step:
+                                step_status = "in-progress"
+                            # else remains "pending"
+                        
+                        step_meta = {
+                            "step_index": step_order,
+                            "step_data": step,
+                            "action_type": step_action,
+                        }
+                        if step_result:
+                            step_meta["result"] = step_result
+                        
+                        playbook_node = {
+                            "id": step_id,
+                            "type": "playbook",
+                            "kind": "step", 
+                            "label": step_label,
+                            "status": step_status,
+                            "started_at": step_started_at,
+                            "completed_at": step_completed_at,
+                            "meta": step_meta,
+                        }
+                        playbook_nodes.append(playbook_node)
+                        
+                        # Add edge from previous step or from playbook stage
+                        if i == 0:
+                            # Connect first step to playbook stage
+                            playbook_edges.append({
+                                "id": f"stage:playbook-to-{step_id}",
+                                "source": "stage:playbook", 
+                                "target": step_id,
+                                "label": None
+                            })
+                        else:
+                            # Connect to previous step
+                            prev_step_id = f"playbook:step:{i}"
+                            playbook_edges.append({
+                                "id": f"{prev_step_id}-to-{step_id}",
+                                "source": prev_step_id,
+                                "target": step_id,
+                                "label": None
+                            })
+                
+                # Combine stage nodes and playbook step nodes
+                all_nodes = nodes + playbook_nodes
+                
+                # Build edges - linear pipeline flow between stages
+                edges = []
+                for i in range(len(stages) - 1):
+                    edge = {
+                        "id": f"{stages[i]['id']}-to-{stages[i+1]['id']}",
+                        "source": stages[i]["id"],
+                        "target": stages[i+1]["id"],
+                        "label": None
+                    }
+                    edges.append(edge)
+                
+                # Add playbook edges
+                edges.extend(playbook_edges)
+                
+                # If we have playbook steps, connect last step to tool stage
+                if playbook_nodes:
+                    last_step = playbook_nodes[-1]
+                    edges.append({
+                        "id": f"{last_step['id']}-to-stage:tool",
+                        "source": last_step["id"],
+                        "target": "stage:tool",
+                        "label": None
+                    })
+                    
+                    # Remove the direct edge from playbook to tool stage
+                    edges = [e for e in edges if not (e["source"] == "stage:playbook" and e["target"] == "stage:tool")]
+                
+                return {
+                    "nodes": all_nodes,
+                    "edges": edges,
+                    "current_stage": current_stage,
+                    "playbook_id": playbook_id,
+                    "playbook_name": playbook_name,
+                    "playbook_steps": playbook_steps,
+                    "exception_current_step": getattr(db_exception, 'current_step', None),
+                }
+                
+        except Exception as e:
+            logger.error(f"Error building workflow graph for exception {exception_id}: {e}", exc_info=True)
+            return None
 
 
 # Global singleton instance

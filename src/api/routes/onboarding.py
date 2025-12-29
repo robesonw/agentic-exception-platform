@@ -136,6 +136,7 @@ class PackResponse(BaseModel):
     checksum: str
     created_at: datetime
     created_by: str
+    content_json: Optional[dict] = None
 
 
 class PaginatedPackResponse(BaseModel):
@@ -183,6 +184,35 @@ class ActiveConfigResponse(BaseModel):
     active_tenant_pack_version: Optional[str]
     activated_at: datetime
     activated_by: str
+
+
+class PlaybookRegistryEntry(BaseModel):
+    """Playbook entry in the registry."""
+    
+    playbook_id: str = Field(..., description="Playbook identifier")
+    name: str = Field(..., description="Playbook name")
+    description: Optional[str] = Field(None, description="Playbook description")
+    exception_type: Optional[str] = Field(None, description="Exception type or applies_to field")
+    domain: str = Field(..., description="Domain name")
+    version: str = Field(..., description="Pack version")
+    status: str = Field(..., description="Status (active)")
+    source_pack_type: str = Field(..., description="Source pack type: domain or tenant")
+    source_pack_id: int = Field(..., description="Source pack database ID")
+    source_pack_version: str = Field(..., description="Source pack version")
+    steps_count: int = Field(..., description="Number of steps in playbook")
+    tool_refs_count: int = Field(..., description="Number of tool references")
+    overridden: bool = Field(False, description="Whether this playbook is overridden by tenant pack")
+    overridden_from: Optional[str] = Field(None, description="Source of override if applicable")
+
+
+class PlaybookRegistryResponse(BaseModel):
+    """Response for playbook registry listing."""
+    
+    items: list[PlaybookRegistryEntry]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 # =============================================================================
@@ -1217,6 +1247,7 @@ async def get_domain_pack(
             checksum=pack.checksum,
             created_at=pack.created_at,
             created_by=pack.created_by,
+            content_json=pack.content_json,
         )
 
 
@@ -1364,6 +1395,7 @@ async def get_tenant_pack(
             checksum=pack.checksum,
             created_at=pack.created_at,
             created_by=pack.created_by,
+            content_json=pack.content_json,
         )
 
 
@@ -1641,4 +1673,188 @@ async def get_active_config(
             return None
         
         return ActiveConfigResponse.model_validate(config)
+
+
+@router.get("/playbooks/registry", response_model=PlaybookRegistryResponse)
+async def get_playbooks_registry(
+    request: Request,
+    tenant_id: Optional[str] = Query(None, description="Filter by tenant ID"),
+    domain: Optional[str] = Query(None, description="Filter by domain"),
+    exception_type: Optional[str] = Query(None, description="Filter by exception type"),
+    source: Optional[str] = Query(None, description="Filter by source: domain or tenant"),
+    search: Optional[str] = Query(None, description="Search by name or playbook ID"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(25, ge=1, le=100, description="Page size"),
+):
+    """
+    Get playbooks registry from active domain and tenant packs.
+    
+    This endpoint aggregates playbooks from ACTIVE domain and tenant packs,
+    applying override logic where tenant playbooks take precedence over domain playbooks.
+    
+    GET /admin/playbooks/registry
+    """
+    require_admin_role(request)
+    
+    try:
+        async with get_db_session_context() as session:
+            domain_pack_repo = DomainPackRepository(session)
+            tenant_pack_repo = TenantPackRepository(session)
+            
+            # Get active domain packs
+            domain_packs = await domain_pack_repo.list_domain_packs(
+                domain=domain if domain else None,
+                status=PackStatus.ACTIVE
+            )
+            
+            # Get active tenant packs (only if tenant_id is specified)
+            tenant_packs = []
+            if tenant_id:
+                tenant_packs = await tenant_pack_repo.list_tenant_packs(
+                    tenant_id=tenant_id,
+                    status=PackStatus.ACTIVE
+                )
+            
+            registry_entries = []
+            playbook_overrides = {}  # track tenant overrides: playbook_id -> tenant_entry
+            
+            # Process tenant packs first (they take precedence)
+            for tenant_pack in tenant_packs:
+                if tenant_pack.content_json:
+                    try:
+                        import json
+                        content = json.loads(tenant_pack.content_json) if isinstance(tenant_pack.content_json, str) else tenant_pack.content_json
+                        playbooks = content.get('playbooks', [])
+                        
+                        for idx, playbook in enumerate(playbooks):
+                            # Skip if playbook is not a dict (malformed data)
+                            if not isinstance(playbook, dict):
+                                logger.warning(f"Skipping malformed playbook entry (not a dict) in tenant pack {tenant_pack.id}")
+                                continue
+                            
+                            # Handle various playbook ID fields
+                            exception_type_val = playbook.get('exceptionType') or playbook.get('exception_type') or playbook.get('applies_to') or f'UNKNOWN_{idx}'
+                            playbook_id = playbook.get('playbook_id') or playbook.get('id') or f'{content.get("domainName", "unknown")}.{exception_type_val.lower()}'
+                            name = playbook.get('name') or playbook.get('title') or f'Playbook for {exception_type_val}'
+                                
+                            # Check filters
+                            if exception_type and exception_type_val != exception_type:
+                                continue
+                            if source and source != 'tenant':
+                                continue
+                            if search and search.lower() not in name.lower() and search.lower() not in playbook_id.lower():
+                                continue
+                                
+                            # Count steps and tool refs - ensure steps is a list of dicts
+                            steps = playbook.get('steps', [])
+                            if not isinstance(steps, list):
+                                steps = []
+                            steps_count = len(steps)
+                            tool_refs_count = len([step for step in steps if isinstance(step, dict) and (step.get('tool') or step.get('tool_id') or step.get('tool_ref'))])
+                            
+                            entry = PlaybookRegistryEntry(
+                                playbook_id=playbook_id,
+                                name=name,
+                                description=playbook.get('description') or f'Automated playbook for {exception_type_val}',
+                                exception_type=exception_type_val,
+                                domain=tenant_pack.tenant_id,  # Use tenant_id as domain for tenant packs
+                                version=tenant_pack.version,
+                                status='active',
+                                source_pack_type='tenant',
+                                source_pack_id=tenant_pack.id,
+                                source_pack_version=tenant_pack.version,
+                                steps_count=steps_count,
+                                tool_refs_count=tool_refs_count,
+                                overridden=False,
+                                overridden_from=None
+                            )
+                            
+                            registry_entries.append(entry)
+                            playbook_overrides[playbook_id] = entry
+                    except (json.JSONDecodeError, KeyError) as e:
+                        logger.warning(f"Failed to parse tenant pack {tenant_pack.id}: {e}")
+                        continue
+            
+            # Process domain packs (add non-overridden playbooks)
+            for domain_pack in domain_packs:
+                if domain_pack.content_json:
+                    try:
+                        import json
+                        content = json.loads(domain_pack.content_json) if isinstance(domain_pack.content_json, str) else domain_pack.content_json
+                        playbooks = content.get('playbooks', [])
+                        
+                        for idx, playbook in enumerate(playbooks):
+                            # Skip if playbook is not a dict (malformed data)
+                            if not isinstance(playbook, dict):
+                                logger.warning(f"Skipping malformed playbook entry (not a dict) in domain pack {domain_pack.id}")
+                                continue
+                            
+                            # Handle various playbook ID fields
+                            exception_type_val = playbook.get('exceptionType') or playbook.get('exception_type') or playbook.get('applies_to') or f'UNKNOWN_{idx}'
+                            playbook_id = playbook.get('playbook_id') or playbook.get('id') or f'{domain_pack.domain}.{exception_type_val.lower()}'
+                            name = playbook.get('name') or playbook.get('title') or f'Playbook for {exception_type_val}'
+                                
+                            # Check if overridden by tenant pack
+                            if playbook_id in playbook_overrides:
+                                # Mark the tenant entry as overriding
+                                playbook_overrides[playbook_id].overridden_from = f"domain:{domain_pack.domain}:{domain_pack.version}"
+                                continue
+                                
+                            # Check filters
+                            if exception_type and exception_type_val != exception_type:
+                                continue
+                            if source and source != 'domain':
+                                continue
+                            if search and search.lower() not in name.lower() and search.lower() not in playbook_id.lower():
+                                continue
+                                
+                            # Count steps and tool refs - ensure steps is a list of dicts
+                            steps = playbook.get('steps', [])
+                            if not isinstance(steps, list):
+                                steps = []
+                            steps_count = len(steps)
+                            tool_refs_count = len([step for step in steps if isinstance(step, dict) and (step.get('tool') or step.get('tool_id') or step.get('tool_ref'))])
+                            
+                            entry = PlaybookRegistryEntry(
+                                playbook_id=playbook_id,
+                                name=name,
+                                description=playbook.get('description') or f'Automated playbook for {exception_type_val}',
+                                exception_type=exception_type_val,
+                                domain=domain_pack.domain,
+                                version=domain_pack.version,
+                                status='active',
+                                source_pack_type='domain',
+                                source_pack_id=domain_pack.id,
+                                source_pack_version=domain_pack.version,
+                                steps_count=steps_count,
+                                tool_refs_count=tool_refs_count,
+                                overridden=False,
+                                overridden_from=None
+                            )
+                            
+                            registry_entries.append(entry)
+                    except (json.JSONDecodeError, KeyError) as e:
+                        logger.warning(f"Failed to parse domain pack {domain_pack.id}: {e}")
+                        continue
+            
+            # Apply pagination
+            total = len(registry_entries)
+            offset = (page - 1) * page_size
+            paginated_entries = registry_entries[offset:offset + page_size]
+            total_pages = (total + page_size - 1) // page_size
+            
+            return PlaybookRegistryResponse(
+                items=paginated_entries,
+                total=total,
+                page=page,
+                page_size=page_size,
+                total_pages=total_pages
+            )
+            
+    except Exception as e:
+        logger.error(f"Error fetching playbooks registry: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch playbooks registry: {str(e)}",
+        )
 

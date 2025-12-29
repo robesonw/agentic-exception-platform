@@ -18,6 +18,12 @@ from src.infrastructure.db.models import (
     TenantPolicyPackVersion,
     TenantStatus,
     ToolDefinition,
+    # Phase 13 Copilot models
+    CopilotDocument,
+    CopilotDocumentSourceType,
+    CopilotMessage,
+    CopilotMessageRole,
+    CopilotSession,
 )
 from src.infrastructure.db.session import (
     check_database_connection,
@@ -44,6 +50,12 @@ __all__ = [
     "Playbook",
     "PlaybookStep",
     "ToolDefinition",
+    # Phase 13 Copilot models
+    "CopilotDocument",
+    "CopilotDocumentSourceType",
+    "CopilotMessage",
+    "CopilotMessageRole",
+    "CopilotSession",
     # Session management
     "get_engine",
     "get_session_factory",

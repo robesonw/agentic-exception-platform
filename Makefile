@@ -1,13 +1,15 @@
-.PHONY: up down logs status clean help
+.PHONY: up down logs status clean help seed-demo seed-demo-reset
 
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  make up      - Start all services (postgres + kafka + kafka-ui + api + ui + all workers)"
-	@echo "  make down    - Stop all services and workers"
-	@echo "  make logs    - Tail worker logs"
-	@echo "  make status  - Show status of all services"
-	@echo "  make clean   - Stop all and remove volumes"
+	@echo "  make up              - Start all services (postgres + kafka + kafka-ui + api + ui + all workers)"
+	@echo "  make down            - Stop all services and workers"
+	@echo "  make logs            - Tail worker logs"
+	@echo "  make status          - Show status of all services"
+	@echo "  make clean           - Stop all and remove volumes"
+	@echo "  make seed-demo       - Seed demo data (idempotent)"
+	@echo "  make seed-demo-reset - Reset and reseed all demo data"
 
 # Start all services
 up:
@@ -111,3 +113,23 @@ clean:
 	@echo ""
 	@echo "Cleanup complete. All data has been removed."
 
+
+# Seed demo data (idempotent - safe to run multiple times)
+seed-demo:
+	@echo "=========================================="
+	@echo "Seeding Demo Data"
+	@echo "=========================================="
+	@echo ""
+	python scripts/seed_demo.py
+	@echo ""
+	@echo "Demo data seeding complete!"
+
+# Reset and reseed all demo data
+seed-demo-reset:
+	@echo "=========================================="
+	@echo "Resetting and Reseeding Demo Data"
+	@echo "=========================================="
+	@echo ""
+	python scripts/seed_demo.py --reset
+	@echo ""
+	@echo "Demo data reset complete!"

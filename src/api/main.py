@@ -22,8 +22,47 @@ except ImportError:
 
 from src.api.middleware import TenantRouterMiddleware
 from src.infrastructure.db.session import close_engine, initialize_database
+from src.api.auth import get_auth_manager, AuthenticationError
+from fastapi import Request, HTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
+
+
+class AuthenticationMiddleware(BaseHTTPMiddleware):
+    """
+    Authentication middleware that extracts API keys from headers.
+    
+    Looks for API key in X-API-KEY header (case-insensitive) and 
+    sets request.state.user_context for authenticated requests.
+    """
+    
+    async def dispatch(self, request: Request, call_next):
+        # Skip authentication for certain paths
+        if request.url.path in ["/", "/docs", "/openapi.json", "/redoc"]:
+            return await call_next(request)
+            
+        # Extract API key from headers (case-insensitive)
+        api_key = None
+        for header_name, header_value in request.headers.items():
+            if header_name.lower() == "x-api-key":
+                api_key = header_value
+                break
+        
+        # If API key provided, authenticate
+        if api_key:
+            try:
+                auth_manager = get_auth_manager()
+                user_context = auth_manager.authenticate(api_key=api_key)
+                request.state.user_context = user_context
+                logger.debug(f"Authenticated user: {user_context.user_id}, tenant: {user_context.tenant_id}, role: {user_context.role}")
+            except AuthenticationError as e:
+                logger.warning(f"Authentication failed for API key: {str(e)}")
+                # Don't fail here - let the endpoint handle authentication requirement
+        
+        return await call_next(request)
+
+
 from src.api.routes import (
     admin,
     admin_audit,
@@ -97,6 +136,9 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all HTTP methods (GET, POST, PUT, DELETE, OPTIONS, etc.)
     allow_headers=["*"],  # Allow all headers (including X-API-KEY, X-Tenant-Id, etc.)
 )
+
+# Add authentication middleware
+app.add_middleware(AuthenticationMiddleware)
 
 # Add tenant router middleware
 app.add_middleware(TenantRouterMiddleware)

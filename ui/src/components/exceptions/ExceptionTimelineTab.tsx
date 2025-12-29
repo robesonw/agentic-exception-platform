@@ -304,8 +304,8 @@ function ToolExecutionTimelineCard({ execution, toolName, isLast }: ToolExecutio
                   </Typography>
                 )}
                 <Chip
-                  label={execution.status.charAt(0).toUpperCase() + execution.status.slice(1)}
-                  color={getExecutionStatusColor(execution.status)}
+                  label={execution.status ? execution.status.charAt(0).toUpperCase() + execution.status.slice(1) : 'Unknown'}
+                  color={getExecutionStatusColor(execution.status || 'requested')}
                   size="small"
                   variant="outlined"
                 />
@@ -322,13 +322,13 @@ function ToolExecutionTimelineCard({ execution, toolName, isLast }: ToolExecutio
               </Typography>
               <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                 <Chip
-                  label={execution.requestedByActorType.charAt(0).toUpperCase() + execution.requestedByActorType.slice(1)}
-                  color={getActorTypeColor(execution.requestedByActorType)}
+                  label={execution.requestedByActorType ? execution.requestedByActorType.charAt(0).toUpperCase() + execution.requestedByActorType.slice(1) : 'Unknown'}
+                  color={getActorTypeColor(execution.requestedByActorType || 'system')}
                   size="small"
                   variant="outlined"
                 />
                 <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
-                  {execution.requestedByActorId}
+                  {execution.requestedByActorId || 'N/A'}
                 </Typography>
               </Box>
             </Box>
@@ -442,8 +442,8 @@ function EventTimelineCard({ event, isLast }: EventTimelineCardProps) {
               </Typography>
               <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                 <Chip
-                  label={event.actorType.charAt(0).toUpperCase() + event.actorType.slice(1)}
-                  color={getActorTypeColor(event.actorType)}
+                  label={event.actorType ? event.actorType.charAt(0).toUpperCase() + event.actorType.slice(1) : 'Unknown'}
+                  color={getActorTypeColor(event.actorType || 'system')}
                   size="small"
                   variant="outlined"
                 />

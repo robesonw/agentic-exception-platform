@@ -212,3 +212,62 @@ export interface AuditResponse {
   count: number
 }
 
+/**
+ * Workflow node
+ * Mirrors WorkflowNode from router_operator.py
+ */
+export interface WorkflowNode {
+  /** Node identifier */
+  id: string
+  /** Node type (agent, decision, human, system, playbook) */
+  type: string
+  /** Node kind (stage, playbook, step) */
+  kind: string
+  /** Display label */
+  label: string
+  /** Node status (pending, in-progress, completed, failed, skipped) */
+  status: string
+  /** Start timestamp */
+  started_at?: string | null
+  /** Completion timestamp */
+  completed_at?: string | null
+  /** Additional metadata */
+  meta?: Record<string, unknown> | null
+}
+
+/**
+ * Workflow edge
+ * Mirrors WorkflowEdge from router_operator.py
+ */
+export interface WorkflowEdge {
+  /** Edge identifier */
+  id: string
+  /** Source node ID */
+  source: string
+  /** Target node ID */
+  target: string
+  /** Optional edge label */
+  label?: string | null
+}
+
+/**
+ * Workflow graph response
+ * Mirrors WorkflowGraphResponse from router_operator.py
+ */
+export interface WorkflowGraphResponse {
+  /** Array of workflow nodes */
+  nodes: WorkflowNode[]
+  /** Array of workflow edges */
+  edges: WorkflowEdge[]
+  /** Current active stage */
+  current_stage?: string | null
+  /** Associated playbook ID */
+  playbook_id?: string | number | null
+  /** Name of the playbook */
+  playbook_name?: string | null
+  /** Playbook steps definition */
+  playbook_steps?: unknown[] | null
+  /** Current step the exception is on in the playbook */
+  exception_current_step?: number | null
+}
+

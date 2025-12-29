@@ -169,6 +169,25 @@ export async function getExceptionAudit(
 }
 
 /**
+ * Get workflow graph for an exception
+ * GET /ui/exceptions/{exception_id}/workflow-graph
+ * 
+ * @param exceptionId Exception identifier
+ * @returns Workflow graph response with nodes and edges
+ */
+export async function getExceptionWorkflowGraph(
+  exceptionId: string
+): Promise<WorkflowGraphResponse> {
+  // tenant_id will be added automatically by httpClient interceptor
+  // Validate tenantId exists before making request
+  const tenantId = getTenantIdForHttpClient()
+  if (!tenantId || typeof tenantId !== 'string' || tenantId.trim() === '') {
+    throw new Error('tenantId is required for getExceptionWorkflowGraph and must be a non-empty string')
+  }
+  return httpClient.get<WorkflowGraphResponse>(`/ui/exceptions/${exceptionId}/workflow-graph`)
+}
+
+/**
  * Parameters for fetching exception events
  * Mirrors query parameters from GET /exceptions/{exception_id}/events
  */

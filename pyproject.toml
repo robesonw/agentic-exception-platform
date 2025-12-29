@@ -81,5 +81,6 @@ markers = [
     "phase6: marks tests as Phase 6 tests (deselect with '-m \"not phase6\"')",
     "phase7: marks tests as Phase 7 tests (deselect with '-m \"not phase7\"')",
     "e2e: marks tests as end-to-end tests (deselect with '-m \"not e2e\"')",
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
 ]
 

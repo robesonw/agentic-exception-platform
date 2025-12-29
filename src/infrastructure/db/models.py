@@ -2017,3 +2017,524 @@ class GovernanceAuditEvent(Base):
             f"action={self.action!r}, tenant_id={self.tenant_id!r})>"
         )
 
+
+# ============================================================================
+# Phase 13 Copilot Intelligence Models
+# ============================================================================
+
+
+class CopilotDocumentSourceType(PyEnum):
+    """Source types for copilot documents (Phase 13 P13-1)."""
+    POLICY_DOC = "policy_doc"
+    RESOLVED_EXCEPTION = "resolved_exception"
+    AUDIT_EVENT = "audit_event"
+    TOOL_REGISTRY = "tool_registry"
+    PLAYBOOK = "playbook"
+
+
+class CopilotIndexJobStatus(PyEnum):
+    """Status for copilot index rebuild jobs (Phase 13 P13-8)."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class CopilotMessageRole(PyEnum):
+    """Message roles for copilot conversation (Phase 13 P13-14)."""
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+
+
+class CopilotDocument(Base):
+    """
+    Vector-indexed documents for Copilot RAG retrieval (Phase 13 P13-1).
+
+    Stores document chunks with embeddings for semantic search.
+    Uses pgvector for vector similarity search.
+
+    Matches docs/phase13-copilot-intelligence-mvp.md Section 4.2.
+    """
+
+    __tablename__ = "copilot_documents"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        doc="Primary key",
+    )
+    tenant_id = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        doc="Tenant identifier for isolation (mandatory)",
+    )
+    source_type = Column(
+        String(50),
+        nullable=False,
+        index=True,
+        doc="Source type (policy_doc, resolved_exception, audit_event, tool_registry, playbook)",
+    )
+    source_id = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        doc="Source document identifier (e.g., SOP-FIN-001, EX-2024-1120)",
+    )
+    domain = Column(
+        String(100),
+        nullable=True,
+        index=True,
+        doc="Domain name (Finance, Healthcare, etc.) - nullable for global docs",
+    )
+    chunk_id = Column(
+        String(100),
+        nullable=False,
+        doc="Unique chunk identifier within document (e.g., source_id-chunk-0)",
+    )
+    chunk_index = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        doc="Position of chunk within source document (0-indexed)",
+    )
+    content = Column(
+        sa.Text,
+        nullable=False,
+        doc="Document chunk text content",
+    )
+    # Note: The 'embedding' column will be added via migration using pgvector
+    # We define it here as JSONB fallback for testing without pgvector
+    embedding = Column(
+        JSONB,
+        nullable=True,
+        doc="Vector embedding (stored as JSONB array, converted to vector in queries)",
+    )
+    embedding_model = Column(
+        String(100),
+        nullable=True,
+        doc="Embedding model used (e.g., text-embedding-3-small)",
+    )
+    embedding_dimension = Column(
+        Integer,
+        nullable=True,
+        doc="Dimension of the embedding vector",
+    )
+    metadata_json = Column(
+        JSONB,
+        nullable=True,
+        doc="Additional metadata (title, snippet, url, tags, etc.)",
+    )
+    version = Column(
+        String(50),
+        nullable=True,
+        doc="Document version for cache invalidation",
+    )
+    content_hash = Column(
+        String(64),
+        nullable=True,
+        index=True,
+        doc="SHA-256 hash of content for deduplication",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when document was indexed",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        doc="Timestamp when document was last updated",
+    )
+
+    __table_args__ = (
+        # Unique constraint on tenant + source + chunk
+        UniqueConstraint(
+            "tenant_id", "source_type", "source_id", "chunk_id",
+            name="uq_copilot_doc_tenant_source_chunk",
+        ),
+        # Indexes for common query patterns
+        Index("idx_copilot_doc_tenant_source_type", "tenant_id", "source_type"),
+        Index("idx_copilot_doc_tenant_domain", "tenant_id", "domain"),
+        Index("idx_copilot_doc_tenant_source_id", "tenant_id", "source_id"),
+        Index("idx_copilot_doc_content_hash", "content_hash"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<CopilotDocument(id={self.id}, tenant_id={self.tenant_id!r}, "
+            f"source_type={self.source_type!r}, source_id={self.source_id!r}, "
+            f"chunk_id={self.chunk_id!r})>"
+        )
+
+
+class IndexingState(Base):
+    """
+    Track indexing watermarks for incremental processing (Phase 13 P13-5).
+    
+    Stores the last successfully indexed timestamp per tenant and source type
+    to enable efficient incremental indexing operations.
+    """
+
+    __tablename__ = "indexing_state"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, doc="Primary key")
+    tenant_id = Column(
+        String,
+        ForeignKey("tenant.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+        doc="Tenant identifier",
+    )
+    source_type = Column(
+        Enum(
+            CopilotDocumentSourceType,
+            name="indexing_source_type",
+            create_constraint=True,
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=False,
+        doc="Source type being indexed",
+    )
+    last_indexed_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        doc="Timestamp of last successfully indexed record",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when state was created",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        doc="Timestamp when state was last updated",
+    )
+
+    # Relationships
+    tenant = relationship("Tenant")
+
+    # Ensure one state per tenant/source_type combination
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "source_type", name="uq_indexing_state_tenant_source"),
+        Index("idx_indexing_state_tenant_source", "tenant_id", "source_type"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<IndexingState(tenant_id={self.tenant_id!r}, source_type={self.source_type.value}, "
+            f"last_indexed_at={self.last_indexed_at})>"
+        )
+
+
+class CopilotSession(Base):
+    """
+    Copilot conversation session (Phase 13 P13-14).
+
+    Stores session metadata for conversation memory.
+    Scoped to tenant + user for isolation.
+
+    Matches docs/phase13-copilot-intelligence-mvp.md Section 3, 5.
+    """
+
+    __tablename__ = "copilot_sessions"
+
+    id = Column(
+        PostgresUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        doc="Session identifier (UUID)",
+    )
+    tenant_id = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        doc="Tenant identifier for isolation (mandatory)",
+    )
+    user_id = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        doc="User identifier within tenant",
+    )
+    title = Column(
+        String(500),
+        nullable=True,
+        doc="Optional session title (auto-generated or user-provided)",
+    )
+    context_json = Column(
+        JSONB,
+        nullable=True,
+        doc="Session context metadata (exception_id, filters, preferences)",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        doc="Timestamp when session was created",
+    )
+    last_activity_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        doc="Timestamp of last activity (message sent/received)",
+    )
+    expires_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Optional TTL-based expiration timestamp",
+    )
+    is_active = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        doc="Whether session is active (false = soft-deleted)",
+    )
+
+    # Relationships
+    messages = relationship(
+        "CopilotMessage",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="CopilotMessage.created_at",
+    )
+
+    __table_args__ = (
+        Index("idx_copilot_session_tenant_user", "tenant_id", "user_id"),
+        Index("idx_copilot_session_tenant_active", "tenant_id", "is_active"),
+        Index("idx_copilot_session_last_activity", "last_activity_at"),
+        Index("idx_copilot_session_expires", "expires_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<CopilotSession(id={self.id}, tenant_id={self.tenant_id!r}, "
+            f"user_id={self.user_id!r}, is_active={self.is_active})>"
+        )
+
+
+class CopilotMessage(Base):
+    """
+    Copilot conversation message (Phase 13 P13-14).
+
+    Stores individual messages in a conversation session.
+    Includes role, content, and response metadata (citations, playbooks).
+
+    Matches docs/phase13-copilot-intelligence-mvp.md Section 3, 6.
+    """
+
+    __tablename__ = "copilot_messages"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        doc="Message identifier",
+    )
+    session_id = Column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("copilot_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        doc="Session identifier (FK to copilot_sessions)",
+    )
+    tenant_id = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        doc="Tenant identifier for isolation (denormalized for query efficiency)",
+    )
+    role = Column(
+        String(20),
+        nullable=False,
+        doc="Message role (user, assistant, system)",
+    )
+    content = Column(
+        sa.Text,
+        nullable=False,
+        doc="Message content text",
+    )
+    metadata_json = Column(
+        JSONB,
+        nullable=True,
+        doc="Response metadata (citations, playbook recommendations, safety info)",
+    )
+    intent = Column(
+        String(50),
+        nullable=True,
+        doc="Detected intent for user messages (summary, explain, find_similar, etc.)",
+    )
+    request_id = Column(
+        String(100),
+        nullable=True,
+        index=True,
+        doc="Request ID for tracing and evidence retrieval",
+    )
+    exception_id = Column(
+        String(255),
+        nullable=True,
+        index=True,
+        doc="Related exception ID if query is exception-scoped",
+    )
+    tokens_used = Column(
+        Integer,
+        nullable=True,
+        doc="Number of tokens used for this message (for metering)",
+    )
+    latency_ms = Column(
+        Integer,
+        nullable=True,
+        doc="Response latency in milliseconds",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        index=True,
+        doc="Timestamp when message was created",
+    )
+
+    # Relationships
+    session = relationship("CopilotSession", back_populates="messages")
+
+    __table_args__ = (
+        Index("idx_copilot_msg_session_created", "session_id", "created_at"),
+        Index("idx_copilot_msg_tenant_created", "tenant_id", "created_at"),
+        Index("idx_copilot_msg_request_id", "request_id"),
+        Index("idx_copilot_msg_exception_id", "exception_id"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<CopilotMessage(id={self.id}, session_id={self.session_id}, "
+            f"role={self.role!r}, tenant_id={self.tenant_id!r})>"
+        )
+
+
+class CopilotIndexJob(Base):
+    """
+    Copilot index rebuild jobs tracking (Phase 13 P13-8).
+
+    Tracks progress and status of index rebuild operations for
+    different source types and tenants.
+    """
+
+    __tablename__ = "copilot_index_jobs"
+
+    id = Column(
+        PostgresUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        doc="Unique job identifier",
+    )
+    tenant_id = Column(
+        String(255),
+        nullable=True,  # Null for global jobs
+        index=True,
+        doc="Tenant identifier (null for global index jobs)",
+    )
+    sources = Column(
+        JSONB,
+        nullable=False,
+        doc="List of source types to rebuild (e.g., ['policy_doc', 'audit_event'])",
+    )
+    full_rebuild = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        doc="Whether this is a full rebuild (true) or incremental (false)",
+    )
+    status = Column(
+        Enum(CopilotIndexJobStatus, name="copilot_index_job_status", create_type=True),
+        nullable=False,
+        index=True,
+        default=CopilotIndexJobStatus.PENDING,
+        doc="Current job status",
+    )
+    progress_current = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        doc="Current progress count (documents processed)",
+    )
+    progress_total = Column(
+        Integer,
+        nullable=True,
+        doc="Total documents to process (null if unknown)",
+    )
+    documents_processed = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        doc="Total documents successfully processed",
+    )
+    documents_failed = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        doc="Total documents that failed processing",
+    )
+    chunks_indexed = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        doc="Total chunks successfully indexed",
+    )
+    error_message = Column(
+        String(1000),
+        nullable=True,
+        doc="Error message if job failed",
+    )
+    error_details = Column(
+        JSONB,
+        nullable=True,
+        doc="Detailed error information as JSON",
+    )
+    started_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Timestamp when job started running",
+    )
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Timestamp when job completed (success or failure)",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        index=True,
+        doc="Timestamp when job was created",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        doc="Timestamp when job was last updated",
+    )
+
+    __table_args__ = (
+        Index("idx_copilot_index_job_tenant_status", "tenant_id", "status"),
+        Index("idx_copilot_index_job_created", "created_at"),
+        Index("idx_copilot_index_job_status_created", "status", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<CopilotIndexJob(id={self.id}, tenant_id={self.tenant_id!r}, "
+            f"status={self.status!r}, sources={self.sources})>"
+        )
+
