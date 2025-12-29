@@ -16,6 +16,7 @@ import ExceptionTimelineTab from '../components/exceptions/ExceptionTimelineTab.
 import ExceptionEvidenceTab from '../components/exceptions/ExceptionEvidenceTab.tsx'
 import ExceptionExplanationTab from '../components/exceptions/ExceptionExplanationTab.tsx'
 import ExceptionAuditTab from '../components/exceptions/ExceptionAuditTab.tsx'
+import ExceptionWorkflowTab from '../components/exceptions/ExceptionWorkflowTab.tsx'
 import SimulationDialog from '../components/exceptions/SimulationDialog.tsx'
 import SimulationResult from '../components/exceptions/SimulationResult.tsx'
 import RecommendedPlaybookPanel from '../components/exceptions/RecommendedPlaybookPanel.tsx'
@@ -60,7 +61,7 @@ export default function ExceptionDetailPage() {
   const simulationId = searchParams.get('simulationId')
 
   // Tab names mapping
-  const tabNames = ['timeline', 'evidence', 'explanation', 'audit'] as const
+  const tabNames = ['timeline', 'evidence', 'explanation', 'workflow', 'audit'] as const
   type TabName = typeof tabNames[number]
 
   // Get initial tab from URL or default to 'timeline'
@@ -394,7 +395,8 @@ export default function ExceptionDetailPage() {
               <Tab label="Timeline" id="exception-tab-0" aria-controls="exception-tabpanel-0" />
               <Tab label="Evidence" id="exception-tab-1" aria-controls="exception-tabpanel-1" />
               <Tab label="Explanation" id="exception-tab-2" aria-controls="exception-tabpanel-2" />
-              <Tab label="Audit" id="exception-tab-3" aria-controls="exception-tabpanel-3" />
+              <Tab label="Workflow" id="exception-tab-3" aria-controls="exception-tabpanel-3" />
+              <Tab label="Audit" id="exception-tab-4" aria-controls="exception-tabpanel-4" />
             </Tabs>
 
             <TabPanel value={activeTab} index={0}>
@@ -410,6 +412,10 @@ export default function ExceptionDetailPage() {
             </TabPanel>
 
             <TabPanel value={activeTab} index={3}>
+              <ExceptionWorkflowTab exceptionId={id!} isActive={activeTab === 3} />
+            </TabPanel>
+
+            <TabPanel value={activeTab} index={4}>
               <ExceptionAuditTab exceptionId={id!} />
             </TabPanel>
           </Paper>

@@ -6,6 +6,7 @@ Phase 2: Tenant Policy Pack upload, validation against domain pack, storage, ver
 Matches specification from phase2-mvp-issues.md Issue 38.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -25,6 +26,12 @@ from src.tenantpack.loader import (
     load_tenant_policy,
     validate_tenant_policy,
 )
+from src.services.copilot.indexing.rebuild_service import IndexRebuildService, IndexRebuildError
+from src.services.copilot.chunking_service import DocumentChunkingService
+from src.services.copilot.embedding_service import EmbeddingService
+from src.infrastructure.repositories.copilot_document_repository import CopilotDocumentRepository
+from src.infrastructure.db.session import get_db_session_context
+from src.audit.logger import AuditLogger
 
 logger = logging.getLogger(__name__)
 
@@ -320,6 +327,17 @@ async def upload_tenant_policy(
             logger.error(f"Failed to activate Tenant Policy Pack: {e}")
             # Don't fail the upload if activation fails
     
+    # Trigger async policy docs indexing if uploaded successfully (and optionally activated)
+    if stored:
+        asyncio.create_task(
+            _trigger_policy_docs_indexing(
+                tenant_id=tenant_id,
+                domain=policy.domain_name,
+                pack_version=version,
+                operation="tenant_policy_upload" + ("_and_activate" if activated else "")
+            )
+        )
+    
     return TenantPolicyUploadResponse(
         tenantId=tenant_id,
         domainName=policy.domain_name,
@@ -432,6 +450,16 @@ async def activate_tenant_policy(
             f"Activated Tenant Policy Pack version {target_version} for tenant '{tenant_id}'"
         )
         
+        # Trigger async policy docs indexing after successful activation
+        asyncio.create_task(
+            _trigger_policy_docs_indexing(
+                tenant_id=tenant_id,
+                domain=policy.domain_name,
+                pack_version=target_version,
+                operation="tenant_policy_activation"
+            )
+        )
+        
         return ActivateResponse(
             tenantId=tenant_id,
             previousVersion=previous_version,
@@ -444,5 +472,97 @@ async def activate_tenant_policy(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to activate Tenant Policy Pack: {str(e)}"
+        )
+
+
+async def _trigger_policy_docs_indexing(
+    tenant_id: str,
+    domain: str,
+    pack_version: str,
+    operation: str,
+) -> None:
+    """
+    Trigger async policy docs indexing for a tenant/domain/version.
+    
+    This function runs in the background and does not block the HTTP response.
+    
+    Args:
+        tenant_id: Tenant identifier
+        domain: Domain name  
+        pack_version: Pack version
+        operation: Operation type (tenant_policy_upload, tenant_policy_activation, etc.)
+    """
+    try:
+        # Create indexing service
+        async with get_db_session_context() as db_session:
+            # Initialize required services
+            chunking_service = DocumentChunkingService()
+            embedding_service = EmbeddingService()
+            document_repository = CopilotDocumentRepository()
+            
+            rebuild_service = IndexRebuildService(
+                db_session=db_session,
+                embedding_service=embedding_service,
+                chunking_service=chunking_service,
+                document_repository=document_repository,
+            )
+            
+            # Start indexing job for policy_doc source only
+            job_id = await rebuild_service.start_rebuild(
+                tenant_id=tenant_id,
+                sources=["policy_doc"],
+                full_rebuild=False,  # Incremental by default
+            )
+            
+            logger.info(
+                f"Started policy docs indexing job {job_id} for tenant {tenant_id}, "
+                f"domain {domain}, version {pack_version}, operation {operation}"
+            )
+            
+            # Record audit event
+            try:
+                audit_logger = AuditLogger()
+                await audit_logger.log_event(
+                    event_type="POLICY_INDEX_TRIGGERED",
+                    tenant_id=tenant_id,
+                    details={
+                        "job_id": job_id,
+                        "domain": domain,
+                        "pack_version": pack_version,
+                        "operation": operation,
+                        "source_types": ["policy_doc"],
+                    },
+                    result="success",
+                )
+            except Exception as audit_error:
+                # Don't fail the indexing if audit logging fails
+                logger.warning(f"Failed to record audit event: {audit_error}")
+                
+    except IndexRebuildError as e:
+        logger.error(
+            f"Failed to start policy docs indexing for tenant {tenant_id}, "
+            f"domain {domain}, version {pack_version}: {e}"
+        )
+        # Record audit failure
+        try:
+            audit_logger = AuditLogger()
+            await audit_logger.log_event(
+                event_type="POLICY_INDEX_TRIGGERED",
+                tenant_id=tenant_id,
+                details={
+                    "domain": domain,
+                    "pack_version": pack_version,
+                    "operation": operation,
+                    "error": str(e),
+                },
+                result="failure",
+            )
+        except Exception:
+            pass  # Ignore audit logging failures
+            
+    except Exception as e:
+        logger.error(
+            f"Unexpected error triggering policy docs indexing for tenant {tenant_id}: {e}",
+            exc_info=True
         )
 

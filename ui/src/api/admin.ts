@@ -96,6 +96,41 @@ export interface Playbook {
   createdAt: string
 }
 
+export interface PlaybookRegistryEntry {
+  playbook_id: string
+  name: string
+  description?: string
+  exception_type?: string
+  domain: string
+  version: string
+  status: string
+  source_pack_type: 'domain' | 'tenant'
+  source_pack_id: number
+  source_pack_version: string
+  steps_count: number
+  tool_refs_count: number
+  overridden: boolean
+  overridden_from?: string
+}
+
+export interface PlaybookRegistryParams {
+  tenant_id?: string
+  domain?: string
+  exception_type?: string
+  source?: 'domain' | 'tenant'
+  search?: string
+  page?: number
+  page_size?: number
+}
+
+export interface PlaybookRegistryResponse {
+  items: PlaybookRegistryEntry[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
 export interface Tool {
   id: string
   name: string
@@ -478,6 +513,13 @@ export async function activatePlaybook(id: string, tenantId: string, active: boo
   await httpClient.post(`/admin/config/playbooks/${id}/activate`, { active }, {
     params: { tenant_id: tenantId },
   })
+}
+
+export async function getPlaybooksRegistry(params: PlaybookRegistryParams = {}): Promise<PlaybookRegistryResponse> {
+  const response = await httpClient.get<PlaybookRegistryResponse>('/admin/playbooks/registry', {
+    params
+  })
+  return response
 }
 
 // ============================================================================

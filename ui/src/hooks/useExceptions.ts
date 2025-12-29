@@ -18,6 +18,7 @@ import {
   getExceptionDetail,
   getExceptionEvidence,
   getExceptionAudit,
+  getExceptionWorkflowGraph,
   fetchExceptionEvents,
   getExceptionPlaybook,
   recalculatePlaybook,
@@ -35,6 +36,7 @@ import type {
   ExceptionDetailResponse,
   EvidenceResponse,
   AuditResponse,
+  WorkflowGraphResponse,
   PaginatedResponse,
 } from '../types'
 
@@ -64,6 +66,11 @@ export const exceptionKeys = {
   /** Exception audit query */
   audit: (tenantId: string | null, id: string) =>
     [...exceptionKeys.audits(), tenantId, id] as const,
+  /** Exception workflow graph queries */
+  workflowGraphs: () => [...exceptionKeys.all, 'workflowGraph'] as const,
+  /** Exception workflow graph query */
+  workflowGraph: (tenantId: string | null, id: string) =>
+    [...exceptionKeys.workflowGraphs(), tenantId, id] as const,
   /** Exception events queries */
   events: () => [...exceptionKeys.all, 'events'] as const,
   /** Exception events query */
@@ -184,6 +191,27 @@ export function useExceptionAudit(
     queryFn: () => getExceptionAudit(id),
     enabled: !!tenantId && !!id && hasApiKey,
     staleTime: 30_000, // 30 seconds (audit trail may update)
+  })
+}
+
+/**
+ * Hook to fetch exception workflow graph
+ * 
+ * @param id Exception identifier
+ * @returns Query result with workflow graph data
+ */
+export function useExceptionWorkflowGraph(
+  id: string
+): UseQueryResult<WorkflowGraphResponse, Error> {
+  const { tenantId, apiKey } = useTenant()
+  const apiKeyFromHttpClient = getApiKeyForHttpClient()
+  const hasApiKey = !!(apiKey || apiKeyFromHttpClient)
+
+  return useQuery({
+    queryKey: exceptionKeys.workflowGraph(tenantId, id),
+    queryFn: () => getExceptionWorkflowGraph(id),
+    enabled: !!tenantId && !!id && hasApiKey,
+    staleTime: 10_000, // 10 seconds (workflow state may update frequently)
   })
 }
 

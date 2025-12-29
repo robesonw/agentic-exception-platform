@@ -14,7 +14,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi import Request
@@ -67,6 +67,40 @@ class EvidenceResponse(BaseModel):
     rag_results: list
     tool_outputs: list
     agent_evidence: list
+
+
+class WorkflowNode(BaseModel):
+    """Workflow node for workflow graph."""
+    
+    id: str
+    type: str  # 'agent', 'decision', 'human', 'system', 'playbook'
+    kind: str  # 'stage', 'playbook', 'step'
+    label: str
+    status: str  # 'pending', 'in-progress', 'completed', 'failed', 'skipped'
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    meta: Optional[dict] = None
+
+
+class WorkflowEdge(BaseModel):
+    """Workflow edge for workflow graph."""
+    
+    id: str
+    source: str
+    target: str
+    label: Optional[str] = None
+
+
+class WorkflowGraphResponse(BaseModel):
+    """Response for workflow graph endpoint."""
+    
+    nodes: list[WorkflowNode]
+    edges: list[WorkflowEdge]
+    current_stage: Optional[str] = None
+    playbook_id: Optional[Union[str, int]] = None
+    playbook_name: Optional[str] = None
+    playbook_steps: Optional[list] = None
+    exception_current_step: Optional[int] = None
 
 
 # IMPORTANT: More specific routes (with path parameters) must come BEFORE less specific ones
@@ -230,6 +264,45 @@ async def get_exception_audit(
         "events": audit_events,
         "count": len(audit_events),
     }
+
+
+@router.get("/exceptions/{exception_id}/workflow-graph", response_model=WorkflowGraphResponse)
+async def get_exception_workflow_graph(
+    exception_id: str,
+    tenant_id: str = Query(..., description="Tenant identifier"),
+) -> WorkflowGraphResponse:
+    """
+    Get workflow graph for an exception.
+    
+    Returns:
+    - nodes: List of workflow nodes with status and metadata
+    - edges: List of workflow edges connecting nodes
+    - current_stage: Current active stage in the workflow
+    - playbook_id: Associated playbook identifier (if any)
+    - playbook_name: Name of the associated playbook (if any)
+    - playbook_steps: Playbook steps definition (if any)
+    - exception_current_step: Current step the exception is on in the playbook
+    
+    Phase 13 P13-26: Workflow Viewer using React Flow.
+    """
+    ui_query_service = get_ui_query_service()
+    workflow_data = await ui_query_service.get_exception_workflow_graph(tenant_id, exception_id)
+    if not workflow_data:
+        raise HTTPException(status_code=404, detail="Exception not found")
+    
+    # Convert workflow data to response format
+    nodes = [WorkflowNode(**node) for node in workflow_data.get("nodes", [])]
+    edges = [WorkflowEdge(**edge) for edge in workflow_data.get("edges", [])]
+    
+    return WorkflowGraphResponse(
+        nodes=nodes,
+        edges=edges,
+        current_stage=workflow_data.get("current_stage"),
+        playbook_id=workflow_data.get("playbook_id"),
+        playbook_name=workflow_data.get("playbook_name"),
+        playbook_steps=workflow_data.get("playbook_steps"),
+        exception_current_step=workflow_data.get("exception_current_step"),
+    )
 
 
 @router.get("/stream/exceptions")

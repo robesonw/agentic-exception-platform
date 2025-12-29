@@ -1,49 +1,55 @@
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Box, Typography, Button, CircularProgress, Alert, Dialog, DialogTitle, DialogContent, DialogActions, Chip } from '@mui/material'
-import ToggleOnIcon from '@mui/icons-material/ToggleOn'
-import ToggleOffIcon from '@mui/icons-material/ToggleOff'
-import LinkIcon from '@mui/icons-material/Link'
-import WarningIcon from '@mui/icons-material/Warning'
+import { useState, useMemo, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { Box, Typography, Button, CircularProgress, Alert, Dialog, DialogTitle, DialogContent, DialogActions, Chip, Tooltip, Paper, Stack, TextField, FormControl, InputLabel, Select, MenuItem, Tabs, Tab, IconButton } from '@mui/material'
+import AccountTreeIcon from '@mui/icons-material/AccountTree'
+import InfoIcon from '@mui/icons-material/Info'
+import FolderOpenIcon from '@mui/icons-material/FolderOpen'
+import CloseIcon from '@mui/icons-material/Close'
 import { useTenant } from '../../hooks/useTenant'
-import { listPlaybooks, getPlaybook, activatePlaybook } from '../../api/admin'
-import { getActiveConfig, type ActiveConfigResponse } from '../../api/onboarding'
+import { getPlaybooksRegistry, PlaybookRegistryEntry, PlaybookRegistryParams } from '../../api/admin'
+import { getDomainPack } from '../../api/onboarding'
 import PageHeader from '../../components/common/PageHeader'
 import NotAuthorizedPage from '../../components/common/NotAuthorizedPage'
 import AdminWarningBanner from '../../components/common/AdminWarningBanner'
 import DataTable from '../../components/common/DataTable'
-import ConfirmDialog from '../../components/common/ConfirmDialog'
 import CodeViewer from '../../components/common/CodeViewer'
-import OpsFilterBar from '../../components/common/OpsFilterBar'
+import PlaybookDiagram from '../../components/admin/PlaybookDiagram'
 import type { DataTableColumn } from '../../components/common/DataTable'
-import type { OpsFilters } from '../../components/common/OpsFilterBar'
-import type { Playbook } from '../../api/admin'
-import { isAdminEnabled } from '../../utils/featureFlags'
-import { formatDateTime } from '../../utils/dateFormat'
+
+// Filters for playbooks
+interface PlaybookFilters {
+  domain?: string
+  status?: string
+  source?: 'domain' | 'tenant'
+  search?: string
+  exception_type?: string
+}
 
 export default function PlaybooksPage() {
   const { tenantId } = useTenant()
-  const queryClient = useQueryClient()
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(25)
-  const [filters, setFilters] = useState<OpsFilters>({})
-  const [selectedPlaybook, setSelectedPlaybook] = useState<Playbook | null>(null)
+  const [filters, setFilters] = useState<PlaybookFilters>({})
+  const [selectedPlaybook, setSelectedPlaybook] = useState<PlaybookRegistryEntry | null>(null)
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
-  const [activateDialogOpen, setActivateDialogOpen] = useState(false)
-  const [activeConfig, setActiveConfig] = useState<ActiveConfigResponse | null>(null)
-  const [compatibilityWarning, setCompatibilityWarning] = useState<string | null>(null)
-
-  const isAdmin = isAdminEnabled()
+  const [playbookContent, setPlaybookContent] = useState<any>(null)
+  const [loadingPlaybook, setLoadingPlaybook] = useState(false)
+  const [dialogTab, setDialogTab] = useState<'details' | 'diagram'>('details')
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['playbooks', tenantId, filters, page, pageSize],
-    queryFn: () => listPlaybooks({
-      tenantId: tenantId || undefined,
-      domain: filters.domain,
-      exceptionType: filters.eventType,
-      limit: pageSize,
-      offset: page * pageSize,
-    }),
+    queryKey: ['playbooks-registry', tenantId, filters, page, pageSize],
+    queryFn: () => {
+      const params: PlaybookRegistryParams = {
+        tenant_id: tenantId || undefined,
+        domain: filters.domain,
+        exception_type: filters.exception_type,
+        source: filters.source as 'domain' | 'tenant' | undefined,
+        search: filters.search,
+        page: page + 1, // API uses 1-based pagination
+        page_size: pageSize,
+      }
+      return getPlaybooksRegistry(params)
+    },
     enabled: !!tenantId,
   })
 
@@ -72,60 +78,73 @@ export default function PlaybooksPage() {
     )
   }
 
-  const activateMutation = useMutation({
-    mutationFn: ({ id, active }: { id: string; active: boolean }) =>
-      activatePlaybook(id, tenantId || '', active),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['playbooks'] })
-      setActivateDialogOpen(false)
-      setDetailDialogOpen(false)
-      setSelectedPlaybook(null)
-    },
-  })
-
-  const handleViewDetail = async (playbook: Playbook) => {
+  const handleViewDetail = async (playbook: PlaybookRegistryEntry) => {
+    setSelectedPlaybook(playbook)
+    setDetailDialogOpen(true)
+    setLoadingPlaybook(true)
+    setPlaybookContent(null)
+    
     try {
-      const detail = await getPlaybook(playbook.id)
-      setSelectedPlaybook(detail)
-      
-      // Fetch active config for the tenant to show linked pack information
-      if (tenantId) {
-        const config = await getActiveConfig(tenantId)
-        setActiveConfig(config)
+      // Fetch the source pack to get full playbook content
+      if (playbook.source_pack_type === 'domain') {
+        // Use the domain pack API with domain and version
+        console.log('Fetching domain pack:', playbook.domain, playbook.version)
         
-        // Check compatibility: playbook domain should match active domain pack domain
-        if (config && config.active_domain_pack_version && detail.domain) {
-          // In a real implementation, we'd check if the domain pack version matches the playbook's domain
-          // For now, we'll just show a warning if there's a mismatch
-          setCompatibilityWarning(null) // No warning by default - would need backend validation
-        } else {
-          setCompatibilityWarning('No active domain pack configured for this tenant')
-        }
+        const pack = await getDomainPack(playbook.domain, playbook.version)
+        // The pack contains content_json with playbooks
+        const packContent = (pack as any).content_json || (pack as any).config || pack
+        const playbooks = packContent?.playbooks || []
+        
+        console.log('Pack content:', packContent)
+        console.log('Playbooks found:', playbooks.length)
+        
+        const fullPlaybook = playbooks.find((pb: any) => {
+          const pbExceptionType = pb.exceptionType || pb.exception_type || pb.applies_to
+          console.log('Checking playbook:', pbExceptionType, 'vs', playbook.exception_type)
+          return pbExceptionType === playbook.exception_type
+        })
+        
+        console.log('Found playbook:', fullPlaybook)
+        setPlaybookContent(fullPlaybook)
+      } else {
+        // For tenant packs, we'd fetch from tenant pack endpoint
+        console.log('Tenant pack fetching not yet implemented')
       }
-      
-      setDetailDialogOpen(true)
     } catch (error) {
-      console.error('Failed to fetch playbook detail:', error)
+      console.error('Failed to fetch playbook content:', error)
+    } finally {
+      setLoadingPlaybook(false)
     }
   }
 
-  const handleToggleActive = () => {
-    if (!selectedPlaybook) return
-    setActivateDialogOpen(true)
-  }
+  const handleCloseDialog = useCallback(() => {
+    setDetailDialogOpen(false)
+    setSelectedPlaybook(null)
+    setPlaybookContent(null)
+    setDialogTab('details')
+  }, [])
 
-  const columns: DataTableColumn<Playbook>[] = [
+  const columns: DataTableColumn<PlaybookRegistryEntry>[] = [
+    {
+      id: 'playbook_id',
+      label: 'ID',
+      accessor: (row) => (
+        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+          {row.playbook_id}
+        </Typography>
+      ),
+    },
     {
       id: 'name',
       label: 'Name',
       accessor: (row) => row.name,
     },
     {
-      id: 'exceptionType',
+      id: 'exception_type',
       label: 'Exception Type',
       accessor: (row) => (
         <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
-          {row.exceptionType}
+          {row.exception_type || '-'}
         </Typography>
       ),
     },
@@ -135,57 +154,68 @@ export default function PlaybooksPage() {
       accessor: (row) => row.domain,
     },
     {
+      id: 'source_pack_type',
+      label: 'Source',
+      accessor: (row) => (
+        <Chip
+          label={row.source_pack_type}
+          size="small"
+          color={row.source_pack_type === 'tenant' ? 'primary' : 'default'}
+        />
+      ),
+    },
+    {
       id: 'version',
       label: 'Version',
       accessor: (row) => row.version,
     },
     {
-      id: 'isActive',
+      id: 'steps_count',
+      label: 'Steps',
+      accessor: (row) => row.steps_count,
+    },
+    {
+      id: 'tool_refs_count',
+      label: 'Tools',
+      accessor: (row) => row.tool_refs_count,
+    },
+    {
+      id: 'status',
       label: 'Status',
       accessor: (row) => (
         <Chip
-          label={row.isActive ? 'Active' : 'Inactive'}
+          label={row.status}
           size="small"
-          color={row.isActive ? 'success' : 'default'}
+          color={row.status === 'active' ? 'success' : 'default'}
         />
       ),
     },
     {
-      id: 'createdAt',
-      label: 'Created',
-      accessor: (row) => formatDateTime(row.createdAt),
-    },
-    {
-      id: 'linkedPack',
-      label: 'Linked Pack',
-      accessor: (row) => {
-        // This would show linked pack info if available
-        // For now, we'll show it in the detail view
-        return <Chip label="View Details" size="small" variant="outlined" />
-      },
+      id: 'overridden',
+      label: 'Override',
+      accessor: (row) => (
+        row.overridden ? (
+          <Tooltip title={`Overridden from ${row.overridden_from}`}>
+            <Chip
+              label="Overridden"
+              size="small"
+              color="warning"
+            />
+          </Tooltip>
+        ) : null
+      ),
     },
     {
       id: 'actions',
       label: 'Actions',
       accessor: (row) => (
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button size="small" onClick={() => handleViewDetail(row)}>
-            View
-          </Button>
-          {isAdmin && (
-            <Button
-              size="small"
-              color={row.isActive ? 'error' : 'success'}
-              startIcon={row.isActive ? <ToggleOffIcon /> : <ToggleOnIcon />}
-              onClick={() => {
-                setSelectedPlaybook(row)
-                handleToggleActive()
-              }}
-            >
-              {row.isActive ? 'Deactivate' : 'Activate'}
-            </Button>
-          )}
-        </Box>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={() => handleViewDetail(row)}
+        >
+          View Details
+        </Button>
       ),
     },
   ]
@@ -207,13 +237,50 @@ export default function PlaybooksPage() {
       
       <AdminWarningBanner />
 
-      <OpsFilterBar
-        value={filters}
-        onChange={setFilters}
-        showDomain={true}
-        showEventType={true}
-        syncWithUrl={true}
-      />
+      {/* Custom Filters for Playbooks Registry */}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+          <TextField
+            label="Search by Name or ID"
+            value={filters.search || ''}
+            onChange={(e) => setFilters({ ...filters, search: e.target.value || undefined })}
+            size="small"
+            sx={{ minWidth: 200 }}
+          />
+          <TextField
+            label="Domain"
+            value={filters.domain || ''}
+            onChange={(e) => setFilters({ ...filters, domain: e.target.value || undefined })}
+            size="small"
+            sx={{ minWidth: 150 }}
+          />
+          <TextField
+            label="Exception Type"
+            value={filters.exception_type || ''}
+            onChange={(e) => setFilters({ ...filters, exception_type: e.target.value || undefined })}
+            size="small"
+            sx={{ minWidth: 150 }}
+          />
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Source</InputLabel>
+            <Select
+              value={filters.source || ''}
+              label="Source"
+              onChange={(e) => setFilters({ ...filters, source: e.target.value as 'domain' | 'tenant' || undefined })}
+            >
+              <MenuItem value="">All</MenuItem>
+              <MenuItem value="domain">Domain Packs</MenuItem>
+              <MenuItem value="tenant">Tenant Packs</MenuItem>
+            </Select>
+          </FormControl>
+          <Button
+            variant="outlined"
+            onClick={() => setFilters({})}
+          >
+            Clear Filters
+          </Button>
+        </Stack>
+      </Paper>
 
       <DataTable
         columns={columns}
@@ -228,166 +295,264 @@ export default function PlaybooksPage() {
         emptyMessage="No playbooks found."
       />
 
-      {/* Detail Dialog */}
+      {/* Detail Dialog with Tabs */}
       <Dialog
         open={detailDialogOpen}
-        onClose={() => {
-          setDetailDialogOpen(false)
-          setSelectedPlaybook(null)
-          setActiveConfig(null)
-          setCompatibilityWarning(null)
-        }}
+        onClose={handleCloseDialog}
         maxWidth="lg"
         fullWidth
+        PaperProps={{ sx: { minHeight: '70vh' } }}
       >
-        <DialogTitle>
-          Playbook Details
-          {selectedPlaybook?.isActive && (
-            <Chip label="Active" size="small" color="success" sx={{ ml: 2 }} />
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, pr: 6 }}>
+          <Typography variant="h6" component="span" sx={{ flexGrow: 1 }}>
+            {selectedPlaybook?.name || 'Playbook'}
+          </Typography>
+          <Chip 
+            label={selectedPlaybook?.status || 'unknown'} 
+            size="small" 
+            color={selectedPlaybook?.status === 'active' ? 'success' : 'default'} 
+          />
+          {selectedPlaybook?.overridden && (
+            <Chip label="Overridden" size="small" color="warning" />
           )}
+          <IconButton
+            aria-label="close"
+            onClick={handleCloseDialog}
+            sx={{ position: 'absolute', right: 8, top: 8 }}
+          >
+            <CloseIcon />
+          </IconButton>
         </DialogTitle>
-        <DialogContent>
-          {selectedPlaybook && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Name: {selectedPlaybook.name}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Exception Type: {selectedPlaybook.exceptionType}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Domain: {selectedPlaybook.domain}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Version: {selectedPlaybook.version}
-              </Typography>
+        
+        {/* Tab Navigation */}
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 3 }}>
+          <Tabs 
+            value={dialogTab} 
+            onChange={(_, newValue) => setDialogTab(newValue)}
+            aria-label="Playbook view tabs"
+          >
+            <Tab 
+              icon={<InfoIcon />} 
+              iconPosition="start" 
+              label="Details" 
+              value="details" 
+            />
+            <Tab 
+              icon={<AccountTreeIcon />} 
+              iconPosition="start" 
+              label="Workflow Diagram" 
+              value="diagram" 
+              disabled={!playbookContent?.steps || playbookContent.steps.length === 0}
+            />
+          </Tabs>
+        </Box>
 
-              <Box sx={{ mt: 3 }}>
-                <Typography variant="h6" gutterBottom>
-                  Match Rules
+        <DialogContent sx={{ p: 0 }}>
+          {loadingPlaybook && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+              <CircularProgress />
+            </Box>
+          )}
+          
+          {/* Details Tab */}
+          {selectedPlaybook && !loadingPlaybook && dialogTab === 'details' && (
+            <Box sx={{ p: 3 }}>
+              {/* Summary Section */}
+              <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  Summary
                 </Typography>
-                <CodeViewer
-                  code={selectedPlaybook.matchRules}
-                  title="Match Rules"
-                  maxHeight={200}
-                  collapsible
-                />
-              </Box>
-
-              <Box sx={{ mt: 3 }}>
-                <Typography variant="h6" gutterBottom>
-                  Steps
-                </Typography>
-                <CodeViewer
-                  code={selectedPlaybook.steps}
-                  title="Steps"
-                  maxHeight={300}
-                  collapsible
-                />
-              </Box>
-
-              {selectedPlaybook.referencedTools.length > 0 && (
-                <Box sx={{ mt: 3 }}>
-                  <Typography variant="h6" gutterBottom>
-                    Referenced Tools
-                  </Typography>
-                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    {selectedPlaybook.referencedTools.map((tool) => (
-                      <Chip key={tool} label={tool} size="small" />
-                    ))}
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Name</Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>{selectedPlaybook.name}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Playbook ID</Typography>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{selectedPlaybook.playbook_id}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Exception Type</Typography>
+                    <Chip label={selectedPlaybook.exception_type} size="small" variant="outlined" />
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Domain</Typography>
+                    <Typography variant="body1">{selectedPlaybook.domain}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Version</Typography>
+                    <Typography variant="body1">{selectedPlaybook.version}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Source</Typography>
+                    <Chip 
+                      label={`${selectedPlaybook.source_pack_type} pack`} 
+                      size="small" 
+                      color={selectedPlaybook.source_pack_type === 'tenant' ? 'primary' : 'default'}
+                    />
                   </Box>
                 </Box>
+                {selectedPlaybook.description && (
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="caption" color="text.secondary">Description</Typography>
+                    <Typography variant="body2">{selectedPlaybook.description}</Typography>
+                  </Box>
+                )}
+              </Paper>
+
+              {/* Metrics Section */}
+              <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  Metrics
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 4 }}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography variant="h4" color="primary">{selectedPlaybook.steps_count}</Typography>
+                    <Typography variant="caption" color="text.secondary">Workflow Steps</Typography>
+                  </Box>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography variant="h4" color="secondary">{selectedPlaybook.tool_refs_count}</Typography>
+                    <Typography variant="caption" color="text.secondary">Tool References</Typography>
+                  </Box>
+                </Box>
+              </Paper>
+
+              {/* Override Information */}
+              {selectedPlaybook.overridden && (
+                <Paper variant="outlined" sx={{ p: 2, mb: 3, borderColor: 'warning.main' }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1, color: 'warning.main' }}>
+                    Override Information
+                  </Typography>
+                  <Typography variant="body2">
+                    This playbook overrides: <strong>{selectedPlaybook.overridden_from}</strong>
+                  </Typography>
+                </Paper>
               )}
 
-              {/* Pack Linking Information */}
-              <Box sx={{ mt: 3, p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
-                <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <LinkIcon fontSize="small" />
-                  Linked Pack Information
-                </Typography>
-                {activeConfig ? (
-                  <Box sx={{ mt: 1 }}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      <strong>Tenant:</strong> {activeConfig.tenant_id}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      <strong>Active Domain Pack:</strong> {activeConfig.active_domain_pack_version || 'None'}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      <strong>Active Tenant Pack:</strong> {activeConfig.active_tenant_pack_version || 'None'}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      <strong>Playbook Domain:</strong> {selectedPlaybook.domain}
-                    </Typography>
-                    {compatibilityWarning && (
-                      <Alert severity="warning" sx={{ mt: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <WarningIcon fontSize="small" />
-                          <Typography variant="body2">{compatibilityWarning}</Typography>
+              {/* Workflow Steps List */}
+              {playbookContent?.steps && playbookContent.steps.length > 0 && (
+                <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                    Workflow Steps ({playbookContent.steps.length})
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {playbookContent.steps.map((step: any, index: number) => (
+                      <Box 
+                        key={index} 
+                        sx={{ 
+                          display: 'flex', 
+                          alignItems: 'flex-start', 
+                          p: 1.5, 
+                          bgcolor: 'action.hover', 
+                          borderRadius: 1,
+                          border: '1px solid',
+                          borderColor: 'divider'
+                        }}
+                      >
+                        <Box 
+                          sx={{ 
+                            minWidth: 28, 
+                            height: 28, 
+                            bgcolor: step.type === 'human' ? 'warning.main' : step.type === 'decision' ? 'info.main' : 'primary.main', 
+                            color: 'white', 
+                            borderRadius: '50%', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center', 
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold',
+                            mr: 2,
+                            flexShrink: 0
+                          }}
+                        >
+                          {index + 1}
                         </Box>
-                      </Alert>
-                    )}
-                    {!compatibilityWarning && activeConfig.active_domain_pack_version && (
-                      <Alert severity="success" sx={{ mt: 2 }}>
-                        Playbook is compatible with active pack configuration
-                      </Alert>
-                    )}
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {step.action || step.name || `Step ${index + 1}`}
+                          </Typography>
+                          {step.description && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                              {step.description}
+                            </Typography>
+                          )}
+                          {step.type && (
+                            <Chip label={step.type} size="small" sx={{ mt: 0.5 }} />
+                          )}
+                          {step.tool && (
+                            <Chip label={`Tool: ${step.tool}`} size="small" color="secondary" sx={{ mt: 0.5, ml: 0.5 }} />
+                          )}
+                        </Box>
+                      </Box>
+                    ))}
                   </Box>
-                ) : (
-                  <Alert severity="info" sx={{ mt: 1 }}>
-                    No active configuration found for this tenant. Playbook may not be usable until packs are activated.
-                  </Alert>
-                )}
-              </Box>
+                </Paper>
+              )}
+
+              {/* Source Pack Info */}
+              <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  <FolderOpenIcon sx={{ verticalAlign: 'middle', mr: 1 }} />
+                  Source Pack Information
+                </Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Pack Type</Typography>
+                    <Typography variant="body1" sx={{ textTransform: 'capitalize' }}>{selectedPlaybook.source_pack_type}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Pack ID</Typography>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{selectedPlaybook.source_pack_id}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Domain</Typography>
+                    <Typography variant="body1">{selectedPlaybook.domain}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Version</Typography>
+                    <Typography variant="body1">{selectedPlaybook.version}</Typography>
+                  </Box>
+                </Box>
+              </Paper>
+
+              {/* Raw Configuration */}
+              {playbookContent && (
+                <Paper variant="outlined" sx={{ p: 2 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                    Raw Configuration
+                  </Typography>
+                  <CodeViewer
+                    code={JSON.stringify(playbookContent, null, 2)}
+                    title="Playbook JSON"
+                    language="json"
+                    maxHeight={300}
+                    collapsible
+                  />
+                </Paper>
+              )}
+            </Box>
+          )}
+
+          {/* Diagram Tab */}
+          {selectedPlaybook && !loadingPlaybook && dialogTab === 'diagram' && playbookContent?.steps && (
+            <Box sx={{ height: 500, width: '100%' }}>
+              <PlaybookDiagram 
+                steps={playbookContent.steps}
+                playbookName={selectedPlaybook.name}
+              />
             </Box>
           )}
         </DialogContent>
-        <DialogActions>
-          {isAdmin && selectedPlaybook && (
-            <Button
-              variant="contained"
-              color={selectedPlaybook.isActive ? 'error' : 'success'}
-              startIcon={selectedPlaybook.isActive ? <ToggleOffIcon /> : <ToggleOnIcon />}
-              onClick={handleToggleActive}
-            >
-              {selectedPlaybook.isActive ? 'Deactivate' : 'Activate'}
-            </Button>
-          )}
-          <Button onClick={() => {
-            setDetailDialogOpen(false)
-            setSelectedPlaybook(null)
-            setActiveConfig(null)
-            setCompatibilityWarning(null)
-          }}>
+        
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button 
+            variant="contained"
+            onClick={handleCloseDialog}
+          >
             Close
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* Activate/Deactivate Confirm Dialog */}
-      <ConfirmDialog
-        open={activateDialogOpen}
-        title={selectedPlaybook?.isActive ? 'Deactivate Playbook' : 'Activate Playbook'}
-        message={`Are you sure you want to ${selectedPlaybook?.isActive ? 'deactivate' : 'activate'} the playbook "${selectedPlaybook?.name}"?`}
-        confirmLabel={selectedPlaybook?.isActive ? 'Deactivate' : 'Activate'}
-        cancelLabel="Cancel"
-        onConfirm={() => {
-          if (selectedPlaybook) {
-            // Prevent activation if compatibility warning exists
-            if (compatibilityWarning && !selectedPlaybook.isActive) {
-              alert('Cannot activate playbook: ' + compatibilityWarning)
-              return
-            }
-            activateMutation.mutate({
-              id: selectedPlaybook.id,
-              active: !selectedPlaybook.isActive,
-            })
-          }
-        }}
-        onCancel={() => setActivateDialogOpen(false)}
-        loading={activateMutation.isPending}
-        destructive={selectedPlaybook?.isActive || false}
-      />
     </Box>
   )
 }

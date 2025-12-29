@@ -44,8 +44,8 @@ import NotAuthorizedPage from '../../components/common/NotAuthorizedPage'
 import AdminWarningBanner from '../../components/common/AdminWarningBanner'
 import DataTable from '../../components/common/DataTable'
 import ConfirmDialog from '../../components/common/ConfirmDialog'
-import CodeViewer from '../../components/common/CodeViewer'
 import OpsFilterBar from '../../components/common/OpsFilterBar'
+import PackContentViewer from '../../components/admin/PackContentViewer'
 import type { DataTableColumn } from '../../components/common/DataTable'
 import type { OpsFilters } from '../../components/common/OpsFilterBar'
 import { isAdminEnabled } from '../../utils/featureFlags'
@@ -223,9 +223,6 @@ export default function PacksPage() {
       setActivateDialogOpen(false)
       setDetailDialogOpen(false)
       setSelectedPack(null)
-      const packInfo = data.active_domain_pack_version
-        ? `Domain pack ${data.active_domain_pack_version}`
-        : `Tenant pack ${data.active_tenant_pack_version}`
       showSuccess(`Pack activated successfully for tenant ${data.tenant_id}`)
     },
     onError: (error: Error) => {
@@ -253,7 +250,10 @@ export default function PacksPage() {
       const request: PackImportRequest = {
         version: importData.version,
         content,
-        ...(tab === 'domain' ? { domain: importData.domain || content.domainName || content.domain } : { tenant_id: importData.tenant_id || tenantId }),
+        ...(tab === 'domain' ? 
+          { domain: importData.domain || content.domainName || content.domain } : 
+          { tenant_id: importData.tenant_id || tenantId || '' }
+        ),
       }
       importMutation.mutate(request)
     } catch (error) {
@@ -738,40 +738,10 @@ export default function PacksPage() {
         </DialogTitle>
         <DialogContent>
           {selectedPack && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Version: {selectedPack.version}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Status: {selectedPack.status}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Created: {formatDateTime(selectedPack.created_at)}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Created By: {selectedPack.created_by}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Checksum: {selectedPack.checksum}
-              </Typography>
-
-              {selectedPack.content_json && (
-                <Box sx={{ mt: 3 }}>
-                  <Typography variant="h6" gutterBottom>
-                    Configuration
-                  </Typography>
-                  <CodeViewer
-                    code={typeof selectedPack.content_json === 'string' 
-                      ? selectedPack.content_json 
-                      : JSON.stringify(selectedPack.content_json, null, 2)}
-                    language="json"
-                    title="Pack Configuration"
-                    maxHeight={500}
-                    collapsible
-                  />
-                </Box>
-              )}
-            </Box>
+            <PackContentViewer 
+              pack={selectedPack}
+              packType={tab}
+            />
           )}
         </DialogContent>
         <DialogActions>

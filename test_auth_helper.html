@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Admin Playbooks Authentication</title>
+</head>
+<body>
+    <h1>Admin Playbooks Test</h1>
+    <p>This page helps test authentication for the admin playbooks page.</p>
+    
+    <h2>Step 1: Set Authentication</h2>
+    <button onclick="setAuth()">Set Test Authentication (CMT3)</button>
+    
+    <h2>Step 2: Test API Access</h2>
+    <button onclick="testApi()">Test Backend API</button>
+    <div id="apiResult"></div>
+    
+    <h2>Step 3: Navigate to Admin Playbooks</h2>
+    <button onclick="goToPlaybooks()">Open Admin Playbooks Page</button>
+    
+    <script>
+        function setAuth() {
+            localStorage.setItem('apiKey', 'test_api_key_tenant_001');
+            localStorage.setItem('tenantId', 'cmt3');
+            localStorage.setItem('domain', 'TestDomain');
+            alert('Authentication set! API Key: test_api_key_tenant_001, Tenant: cmt3');
+        }
+        
+        async function testApi() {
+            const apiKey = localStorage.getItem('apiKey');
+            const tenantId = localStorage.getItem('tenantId');
+            const resultDiv = document.getElementById('apiResult');
+            
+            try {
+                const response = await fetch('http://localhost:8000/admin/playbooks/registry?tenant_id=' + tenantId, {
+                    headers: {
+                        'X-API-Key': apiKey,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = '<h3>✅ API Test Success!</h3><p>Found ' + data.items.length + ' playbooks</p>';
+                } else {
+                    resultDiv.innerHTML = '<h3>❌ API Test Failed!</h3><p>Status: ' + response.status + '</p>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<h3>❌ API Test Error!</h3><p>' + error.message + '</p>';
+            }
+        }
+        
+        function goToPlaybooks() {
+            window.open('http://localhost:3000/admin/playbooks', '_blank');
+        }
+    </script>
+</body>
+</html>
