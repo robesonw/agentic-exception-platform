@@ -7,20 +7,26 @@ import {
   TableRow,
   TableSortLabel,
   TablePagination,
-  Paper,
   IconButton,
   Tooltip,
   Menu,
   MenuItem,
   Checkbox,
   Box,
-  Button,
 } from '@mui/material'
 import DownloadIcon from '@mui/icons-material/Download'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import TableSkeleton from './TableSkeleton'
 import EmptyState from './EmptyState'
 import { useState } from 'react'
+import {
+  tableHeaderCellSx,
+  tableBodyCellSx,
+  tableRowSx,
+  tableContainerSx,
+  tablePaginationSx,
+  tableSortLabelSx,
+} from './tableStyles'
 
 export interface DataTableColumn<TRow> {
   id: string
@@ -146,7 +152,7 @@ export default function DataTable<TRow extends Record<string, unknown>>({
   }
 
   return (
-    <Paper sx={{ width: '100%', overflow: 'hidden' }}>
+    <Box sx={{ width: '100%', overflow: 'hidden' }}>
       {/* Toolbar */}
       {(exportEnabled || onColumnVisibilityChange) && (
         <Box
@@ -154,9 +160,11 @@ export default function DataTable<TRow extends Record<string, unknown>>({
             display: 'flex',
             justifyContent: 'flex-end',
             gap: 1,
-            p: 1,
-            borderBottom: '1px solid',
+            px: 2,
+            py: 1,
+            borderBottom: 1,
             borderColor: 'divider',
+            backgroundColor: 'background.paper',
           }}
         >
           {onColumnVisibilityChange && (
@@ -198,7 +206,7 @@ export default function DataTable<TRow extends Record<string, unknown>>({
           )}
         </Box>
       )}
-      <TableContainer sx={{ maxHeight: 'calc(100vh - 300px)', overflowX: 'auto' }}>
+      <TableContainer sx={tableContainerSx}>
         <Table stickyHeader size="small" aria-label="data table">
           <TableHead>
             <TableRow>
@@ -208,13 +216,7 @@ export default function DataTable<TRow extends Record<string, unknown>>({
                   align={column.numeric ? 'right' : 'left'}
                   style={{ minWidth: column.minWidth }}
                   sortDirection={sortField === column.id ? sortDirection : false}
-                  sx={{
-                    backgroundColor: 'background.default',
-                    borderBottom: '2px solid',
-                    borderColor: 'divider',
-                    fontWeight: 600,
-                    fontSize: '0.875rem',
-                  }}
+                  sx={tableHeaderCellSx}
                 >
                   {column.disableSort || !onSortChange ? (
                     column.label
@@ -223,6 +225,7 @@ export default function DataTable<TRow extends Record<string, unknown>>({
                       active={sortField === column.id}
                       direction={sortField === column.id ? sortDirection : 'asc'}
                       onClick={() => handleSort(column.id)}
+                      sx={tableSortLabelSx}
                     >
                       {column.label}
                     </TableSortLabel>
@@ -243,29 +246,22 @@ export default function DataTable<TRow extends Record<string, unknown>>({
                       title={emptyTitle || 'No records found'}
                       description={emptyMessage}
                       action={emptyAction}
-                      sx={{ py: 4 }}
+                      sx={{ py: 6 }}
                     />
                   </TableCell>
                 </TableRow>
               ) : (
-                // Data rows
+                // Data rows - consistent height, subtle hover
                 rows.map((row, rowIndex) => (
                   <TableRow
                     key={rowIndex}
-                    hover
-                    sx={{
-                      '&:last-child td, &:last-child th': { border: 0 },
-                      '&:hover': {
-                        backgroundColor: 'action.hover',
-                        cursor: 'pointer',
-                      },
-                      transition: 'background-color 0.2s ease',
-                    }}
+                    sx={tableRowSx}
                   >
-                    {columns.map((column) => (
+                    {visibleColumns.map((column) => (
                       <TableCell
                         key={column.id}
                         align={column.numeric ? 'right' : 'left'}
+                        sx={tableBodyCellSx}
                       >
                         {renderCell(row, column)}
                       </TableCell>
@@ -285,12 +281,13 @@ export default function DataTable<TRow extends Record<string, unknown>>({
         rowsPerPage={pageSize}
         onRowsPerPageChange={handleChangeRowsPerPage}
         rowsPerPageOptions={[10, 25, 50, 100]}
-        labelRowsPerPage="Rows per page:"
+        labelRowsPerPage="Rows:"
         labelDisplayedRows={({ from, to, count }) =>
           `${from}–${to} of ${count !== -1 ? count : `more than ${to}`}`
         }
+        sx={tablePaginationSx}
       />
-    </Paper>
+    </Box>
   )
 }
 

@@ -133,9 +133,9 @@ export default function ConfigChangesPage() {
       id: 'resourceId',
       label: 'Resource',
       accessor: (row) => (
-        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+        <Box component="span" sx={{ fontFamily: 'monospace', fontSize: '0.8125rem', color: 'text.primary' }}>
           {row.resourceId}
-        </Typography>
+        </Box>
       ),
     },
     {
@@ -146,7 +146,11 @@ export default function ConfigChangesPage() {
     {
       id: 'requestedAt',
       label: 'Requested At',
-      accessor: (row) => formatDateTime(row.requestedAt),
+      accessor: (row) => (
+        <Box component="span" sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
+          {formatDateTime(row.requestedAt)}
+        </Box>
+      ),
     },
     {
       id: 'status',

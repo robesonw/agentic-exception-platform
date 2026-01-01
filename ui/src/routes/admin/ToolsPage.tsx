@@ -6,6 +6,7 @@ import ToggleOffIcon from '@mui/icons-material/ToggleOff'
 import { Link as RouterLink } from 'react-router-dom'
 import { useTenant } from '../../hooks/useTenant'
 import { listTools, getTool, enableToolForTenant } from '../../api/admin'
+import { PageShell, Card, DataCard } from '../../components/ui'
 import PageHeader from '../../components/common/PageHeader'
 import NotAuthorizedPage from '../../components/common/NotAuthorizedPage'
 import AdminWarningBanner from '../../components/common/AdminWarningBanner'
@@ -50,7 +51,7 @@ export default function ToolsPage() {
   // Handle 429 rate limit errors
   if (isError && error && 'status' in error && error.status === 429) {
     return (
-      <Box>
+      <PageShell>
         <PageHeader
           title="Tools Management"
           subtitle="View and manage tool registry and tenant enablement"
@@ -63,7 +64,7 @@ export default function ToolsPage() {
             Too many requests. Please wait a minute before trying again.
           </Typography>
         </Alert>
-      </Box>
+      </PageShell>
     )
   }
 
@@ -178,14 +179,14 @@ export default function ToolsPage() {
 
   if (!tenantId) {
     return (
-      <Box sx={{ p: 3 }}>
+      <PageShell>
         <Alert severity="warning">Please select a tenant to view tools.</Alert>
-      </Box>
+      </PageShell>
     )
   }
 
   return (
-    <Box>
+    <PageShell>
       <PageHeader
         title="Tools Management"
         subtitle="View and manage tool registry and tenant enablement"
@@ -193,26 +194,30 @@ export default function ToolsPage() {
       
       <AdminWarningBanner />
 
-      <OpsFilterBar
-        value={filters}
-        onChange={setFilters}
-        showStatus={true}
-        showDomain={true}
-        syncWithUrl={true}
-      />
+      <Card sx={{ mb: 3 }}>
+        <OpsFilterBar
+          value={filters}
+          onChange={setFilters}
+          showStatus={true}
+          showDomain={true}
+          syncWithUrl={true}
+        />
+      </Card>
 
-      <DataTable
-        columns={columns}
-        rows={data?.items || []}
-        loading={isLoading}
-        page={page}
-        pageSize={pageSize}
-        totalCount={data?.total || 0}
-        onPageChange={setPage}
-        onPageSizeChange={setPageSize}
-        exportEnabled={true}
-        emptyMessage="No tools found."
-      />
+      <DataCard title="Tool Registry" subtitle={data?.total ? `${data.total} tools` : undefined}>
+        <DataTable
+          columns={columns}
+          rows={data?.items || []}
+          loading={isLoading}
+          page={page}
+          pageSize={pageSize}
+          totalCount={data?.total || 0}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          exportEnabled={true}
+          emptyMessage="No tools found."
+        />
+      </DataCard>
 
       {/* Detail Dialog */}
       <Dialog
@@ -309,7 +314,7 @@ export default function ToolsPage() {
         loading={enableMutation.isPending}
         destructive={selectedTool?.enabledForTenant || false}
       />
-    </Box>
+    </PageShell>
   )
 }
 

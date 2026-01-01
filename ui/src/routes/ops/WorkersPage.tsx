@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Box, Alert, Chip, Typography, Tabs, Tab, CircularProgress } from '@mui/material'
 import PageHeader from '../../components/common/PageHeader'
+import { PageShell, Card } from '../../components/ui'
 import { useTenant } from '../../hooks/useTenant'
 import { isOpsEnabled } from '../../utils/featureFlags'
 import { getWorkerHealth, getWorkerThroughput } from '../../api/ops'
@@ -197,7 +198,7 @@ export default function WorkersPage() {
   })
 
   return (
-    <Box>
+    <PageShell>
       <PageHeader
         title="Workers Health & Status"
         subtitle="Monitor worker instances and their health metrics"
@@ -205,55 +206,61 @@ export default function WorkersPage() {
         onRefresh={handleRefresh}
       />
 
-      <Tabs value={tabValue} onChange={(_, newValue) => setTabValue(newValue)} sx={{ mb: 2 }}>
-        <Tab label="Health Status" />
-        <Tab label="Throughput" />
-      </Tabs>
+      <Card noPadding>
+        <Box sx={{ px: 3, pt: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+          <Tabs value={tabValue} onChange={(_, newValue) => setTabValue(newValue)}>
+            <Tab label="Health Status" />
+            <Tab label="Throughput" />
+          </Tabs>
+        </Box>
 
-      <TabPanel value={tabValue} index={0}>
-        {healthError ? (
-          <Alert severity="error" sx={{ mb: 2 }}>Failed to load worker health data.</Alert>
-        ) : (
-          <DataTable
-            columns={healthColumns as DataTableColumn<Record<string, unknown>>[]}
-            rows={sortedHealthWorkers as Record<string, unknown>[]}
-            loading={healthLoading}
-            page={page}
-            pageSize={pageSize}
-            totalCount={sortedHealthWorkers.length}
-            onPageChange={setPage}
-            onPageSizeChange={setPageSize}
-            sortField={sortField}
-            sortDirection={sortDirection}
-            onSortChange={handleSortChange}
-            emptyTitle="No workers reporting"
-            emptyMessage="No workers are currently reporting. Start worker containers to see heartbeats."
-          />
-        )}
-      </TabPanel>
+        <Box sx={{ p: 0 }}>
+          <TabPanel value={tabValue} index={0}>
+            {healthError ? (
+              <Alert severity="error" sx={{ m: 2 }}>Failed to load worker health data.</Alert>
+            ) : (
+              <DataTable
+                columns={healthColumns as DataTableColumn<Record<string, unknown>>[]}
+                rows={sortedHealthWorkers as Record<string, unknown>[]}
+                loading={healthLoading}
+                page={page}
+                pageSize={pageSize}
+                totalCount={sortedHealthWorkers.length}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+                sortField={sortField}
+                sortDirection={sortDirection}
+                onSortChange={handleSortChange}
+                emptyTitle="No workers reporting"
+                emptyMessage="No workers are currently reporting. Start worker containers to see heartbeats."
+              />
+            )}
+          </TabPanel>
 
-      <TabPanel value={tabValue} index={1}>
-        {throughputError ? (
-          <Alert severity="error" sx={{ mb: 2 }}>Failed to load throughput data.</Alert>
-        ) : (
-          <DataTable
-            columns={throughputColumns as DataTableColumn<Record<string, unknown>>[]}
-            rows={sortedThroughput as Record<string, unknown>[]}
-            loading={throughputLoading}
-            page={page}
-            pageSize={pageSize}
-            totalCount={sortedThroughput.length}
-            onPageChange={setPage}
-            onPageSizeChange={setPageSize}
-            sortField={sortField}
-            sortDirection={sortDirection}
-            onSortChange={handleSortChange}
-            emptyTitle="No throughput data"
-            emptyMessage="No throughput metrics available. Workers will report metrics once they start processing events."
-          />
-        )}
-      </TabPanel>
-    </Box>
+          <TabPanel value={tabValue} index={1}>
+            {throughputError ? (
+              <Alert severity="error" sx={{ m: 2 }}>Failed to load throughput data.</Alert>
+            ) : (
+              <DataTable
+                columns={throughputColumns as DataTableColumn<Record<string, unknown>>[]}
+                rows={sortedThroughput as Record<string, unknown>[]}
+                loading={throughputLoading}
+                page={page}
+                pageSize={pageSize}
+                totalCount={sortedThroughput.length}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+                sortField={sortField}
+                sortDirection={sortDirection}
+                onSortChange={handleSortChange}
+                emptyTitle="No throughput data"
+                emptyMessage="No throughput metrics available. Workers will report metrics once they start processing events."
+              />
+            )}
+          </TabPanel>
+        </Box>
+      </Card>
+    </PageShell>
   )
 }
 

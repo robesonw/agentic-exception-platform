@@ -18,6 +18,7 @@ import {
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import { useTenant } from '../../hooks/useTenant'
+import { PageShell, Card, DataCard } from '../../components/ui'
 import {
   listTenants,
   createTenant,
@@ -172,9 +173,9 @@ export default function TenantsPage() {
       id: 'tenant_id',
       label: 'Tenant ID',
       accessor: (row) => (
-        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
+        <Box component="span" sx={{ fontFamily: 'monospace', fontWeight: 500, color: 'primary.main', fontSize: '0.8125rem' }}>
           {row.tenant_id}
-        </Typography>
+        </Box>
       ),
     },
     {
@@ -196,7 +197,11 @@ export default function TenantsPage() {
     {
       id: 'created_at',
       label: 'Created At',
-      accessor: (row) => formatDateTime(row.created_at),
+      accessor: (row) => (
+        <Box component="span" sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
+          {formatDateTime(row.created_at)}
+        </Box>
+      ),
     },
     {
       id: 'created_by',
@@ -232,7 +237,7 @@ export default function TenantsPage() {
   }
 
   return (
-    <Box>
+    <PageShell>
       <PageHeader
         title="Tenants Management"
         subtitle="Create and manage tenants"
@@ -250,7 +255,7 @@ export default function TenantsPage() {
       <AdminWarningBanner />
 
       {/* Status Filter */}
-      <Box sx={{ mb: 3 }}>
+      <Card sx={{ mb: 3 }}>
         <FormControl size="small" sx={{ minWidth: 200 }}>
           <InputLabel>Status</InputLabel>
           <Select
@@ -265,20 +270,22 @@ export default function TenantsPage() {
             <MenuItem value="SUSPENDED">SUSPENDED</MenuItem>
           </Select>
         </FormControl>
-      </Box>
+      </Card>
 
-      <DataTable
-        columns={columns}
-        rows={data?.items || []}
-        loading={isLoading}
-        page={page}
-        pageSize={pageSize}
-        totalCount={data?.total || 0}
-        onPageChange={setPage}
-        onPageSizeChange={setPageSize}
-        exportEnabled={true}
-        emptyMessage="No tenants found."
-      />
+      <DataCard title="Tenants" subtitle={data?.total ? `${data.total} tenants` : undefined}>
+        <DataTable
+          columns={columns}
+          rows={data?.items || []}
+          loading={isLoading}
+          page={page}
+          pageSize={pageSize}
+          totalCount={data?.total || 0}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          exportEnabled={true}
+          emptyMessage="No tenants found."
+        />
+      </DataCard>
 
       {/* Create Tenant Dialog */}
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="sm" fullWidth>
@@ -431,7 +438,7 @@ export default function TenantsPage() {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </PageShell>
   )
 }
 

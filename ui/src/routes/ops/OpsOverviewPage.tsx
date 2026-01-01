@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Box, Grid, Card, CardContent, Typography, Link, CircularProgress, Alert } from '@mui/material'
-import { Link as RouterLink } from 'react-router-dom'
+import { Box, CircularProgress, Alert, IconButton, Tooltip } from '@mui/material'
+import RefreshIcon from '@mui/icons-material/Refresh'
 import { useTenant } from '../../hooks/useTenant'
 import {
   getWorkerHealth,
@@ -11,60 +11,8 @@ import {
   getAlertHistory,
   listAuditReports,
 } from '../../api/ops'
-import PageHeader from '../../components/common/PageHeader'
-import ErrorIcon from '@mui/icons-material/Error'
-import CheckCircleIcon from '@mui/icons-material/CheckCircle'
-import WarningIcon from '@mui/icons-material/Warning'
-
-interface MetricWidgetProps {
-  title: string
-  value: string | number
-  subtitle?: string
-  icon?: React.ReactNode
-  color?: 'primary' | 'success' | 'warning' | 'error'
-  linkTo?: string
-}
-
-function MetricWidget({ title, value, subtitle, icon, color = 'primary', linkTo }: MetricWidgetProps) {
-  const content = (
-    <Card
-      sx={{
-        height: '100%',
-        transition: 'transform 0.2s, box-shadow 0.2s',
-        '&:hover': linkTo ? { transform: 'translateY(-4px)', boxShadow: 4 } : {},
-        cursor: linkTo ? 'pointer' : 'default',
-      }}
-    >
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-          <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 600 }}>
-            {title}
-          </Typography>
-          {icon}
-        </Box>
-        <Typography variant="h4" sx={{ fontWeight: 700, color: `${color}.main` }}>
-          {value}
-        </Typography>
-        {subtitle && (
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            {subtitle}
-          </Typography>
-        )}
-        {linkTo && (
-          <Link
-            component={RouterLink}
-            to={linkTo}
-            sx={{ mt: 1, display: 'inline-block', fontSize: '0.875rem' }}
-          >
-            View details →
-          </Link>
-        )}
-      </CardContent>
-    </Card>
-  )
-
-  return content
-}
+import { PageShell, Section, KpiGrid } from '../../components/layout'
+import { StatCard } from '../../components/ui'
 
 export default function OpsOverviewPage() {
   const { tenantId } = useTenant()
@@ -169,21 +117,40 @@ export default function OpsOverviewPage() {
 
   if (!tenantId) {
     return (
-      <Box sx={{ p: 3 }}>
+      <PageShell
+        title="Operations Overview"
+        subtitle="Real-time view of system health, throughput, and operational metrics"
+      >
         <Alert severity="warning">Please select a tenant to view operations data.</Alert>
-      </Box>
+      </PageShell>
     )
   }
 
-  return (
-    <Box>
-      <PageHeader
-        title="Operations Overview"
-        subtitle="Real-time view of system health, throughput, and operational metrics"
-        lastUpdated={lastUpdated}
-        onRefresh={handleRefresh}
-      />
+  // Format last updated for display
+  const formatLastUpdated = () => {
+    if (!lastUpdated) return null
+    return lastUpdated.toLocaleString()
+  }
 
+  return (
+    <PageShell
+      title="Operations Overview"
+      subtitle="Real-time view of system health, throughput, and operational metrics"
+      actions={
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {formatLastUpdated() && (
+            <Box component="span" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
+              Updated: {formatLastUpdated()}
+            </Box>
+          )}
+          <Tooltip title="Refresh all metrics">
+            <IconButton onClick={handleRefresh} size="small">
+              <RefreshIcon />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      }
+    >
       {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
           <CircularProgress />
@@ -191,176 +158,93 @@ export default function OpsOverviewPage() {
       ) : (
         <>
           {/* Health Summary Section */}
-          <Box sx={{ mb: 4 }}>
-            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
-              Health Summary
-            </Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={6} md={3}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      Workers Healthy
-                    </Typography>
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: 'success.main' }}>
-                      {totalWorkers > 0 ? `${healthyWorkers}/${totalWorkers}` : '—'}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {degradedWorkers > 0 && `${degradedWorkers} degraded`}
-                      {degradedWorkers > 0 && unhealthyWorkers > 0 && ', '}
-                      {unhealthyWorkers > 0 && `${unhealthyWorkers} unhealthy`}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      SLA Breached
-                    </Typography>
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: slaBreachedCount > 0 ? 'error.main' : 'text.primary' }}>
-                      {slaAtRisk ? slaBreachedCount : '—'}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      exceptions at risk
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      DLQ Size
-                    </Typography>
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: dlqSize > 0 ? 'error.main' : 'text.primary' }}>
-                      {dlqData ? dlqSize : '—'}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      failed events
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      Alerts Fired (24h)
-                    </Typography>
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: alertsFired24h > 0 ? 'warning.main' : 'text.primary' }}>
-                      {alertsData ? alertsFired24h : '—'}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      last 24 hours
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-            </Grid>
-          </Box>
+          <Section title="Health Summary">
+            <KpiGrid>
+              <StatCard
+                label="Workers Healthy"
+                value={totalWorkers > 0 ? `${healthyWorkers}/${totalWorkers}` : '—'}
+                subtitle={degradedWorkers > 0 || unhealthyWorkers > 0
+                  ? `${degradedWorkers} degraded${unhealthyWorkers > 0 ? `, ${unhealthyWorkers} unhealthy` : ''}`
+                  : 'all systems operational'
+                }
+                variant={unhealthyWorkers > 0 ? 'error' : degradedWorkers > 0 ? 'warning' : 'success'}
+              />
+              <StatCard
+                label="SLA Breached"
+                value={slaAtRisk ? slaBreachedCount : '—'}
+                subtitle="exceptions at risk"
+                variant={slaBreachedCount > 0 ? 'error' : 'default'}
+              />
+              <StatCard
+                label="DLQ Size"
+                value={dlqData ? dlqSize : '—'}
+                subtitle="failed events"
+                variant={dlqSize > 0 ? 'error' : 'default'}
+              />
+              <StatCard
+                label="Alerts (24h)"
+                value={alertsData ? alertsFired24h : '—'}
+                subtitle="last 24 hours"
+                variant={alertsFired24h > 0 ? 'warning' : 'default'}
+              />
+            </KpiGrid>
+          </Section>
 
-          {/* Main Metrics Grid */}
-          <Grid container spacing={3}>
-          {/* Worker Health */}
-          <Grid item xs={12} sm={6} md={3}>
-            <MetricWidget
-              title="Worker Health"
-              value={`${healthyWorkers}/${totalWorkers}`}
-              subtitle={`${degradedWorkers} degraded, ${unhealthyWorkers} unhealthy`}
-              icon={<CheckCircleIcon color="success" />}
-              color={unhealthyWorkers > 0 ? 'error' : degradedWorkers > 0 ? 'warning' : 'success'}
-              linkTo="/ops/workers"
-            />
-          </Grid>
-
-          {/* Throughput */}
-          <Grid item xs={12} sm={6} md={3}>
-            <MetricWidget
-              title="Throughput"
-              value={`${totalThroughput.toFixed(1)}`}
-              subtitle="events/min"
-              color="primary"
-              linkTo="/ops/workers"
-            />
-          </Grid>
-
-          {/* Error Rate */}
-          <Grid item xs={12} sm={6} md={3}>
-            <MetricWidget
-              title="Error Rate"
-              value={`${(avgErrorRate * 100).toFixed(2)}%`}
-              subtitle="average across workers"
-              icon={avgErrorRate > 0.05 ? <ErrorIcon color="error" /> : <CheckCircleIcon color="success" />}
-              color={avgErrorRate > 0.05 ? 'error' : avgErrorRate > 0.01 ? 'warning' : 'success'}
-              linkTo="/ops/workers"
-            />
-          </Grid>
-
-          {/* SLA Compliance */}
-          <Grid item xs={12} sm={6} md={3}>
-            <MetricWidget
-              title="SLA Compliance"
-              value={`${((slaCompliance?.complianceRate || 0) * 100).toFixed(1)}%`}
-              subtitle={slaCompliance?.period || 'day'}
-              icon={(slaCompliance?.complianceRate || 0) < 0.95 ? <WarningIcon color="warning" /> : <CheckCircleIcon color="success" />}
-              color={(slaCompliance?.complianceRate || 0) < 0.95 ? 'warning' : 'success'}
-              linkTo="/ops/sla"
-            />
-          </Grid>
-
-          {/* SLA Breached */}
-          <Grid item xs={12} sm={6} md={3}>
-            <MetricWidget
-              title="SLA Breached"
-              value={slaAtRisk?.total || 0}
-              subtitle="exceptions"
-              icon={<ErrorIcon color="error" />}
-              color="error"
-              linkTo="/ops/sla"
-            />
-          </Grid>
-
-          {/* DLQ Size */}
-          <Grid item xs={12} sm={6} md={3}>
-            <MetricWidget
-              title="DLQ Size"
-              value={dlqSize}
-              subtitle="failed events"
-              icon={dlqSize > 0 ? <ErrorIcon color="error" /> : <CheckCircleIcon color="success" />}
-              color={dlqSize > 0 ? 'error' : 'success'}
-              linkTo="/ops/dlq"
-            />
-          </Grid>
-
-          {/* Alerts Fired */}
-          <Grid item xs={12} sm={6} md={3}>
-            <MetricWidget
-              title="Alerts Fired"
-              value={alertsFired24h}
-              subtitle="last 24h"
-              icon={alertsFired24h > 0 ? <WarningIcon color="warning" /> : <CheckCircleIcon color="success" />}
-              color={alertsFired24h > 0 ? 'warning' : 'success'}
-              linkTo="/ops/alerts/history"
-            />
-          </Grid>
-
-          {/* Report Jobs */}
-          <Grid item xs={12} sm={6} md={3}>
-            <MetricWidget
-              title="Report Jobs"
-              value={`${reportJobsQueued} queued`}
-              subtitle={`${reportJobsCompleted} completed, ${reportJobsFailed} failed`}
-              icon={reportJobsFailed > 0 ? <ErrorIcon color="error" /> : <CheckCircleIcon color="success" />}
-              color={reportJobsFailed > 0 ? 'error' : reportJobsQueued > 0 ? 'warning' : 'success'}
-              linkTo="/ops/reports"
-            />
-          </Grid>
-        </Grid>
+          {/* Detailed Metrics Grid */}
+          <Section title="Detailed Metrics" noMargin>
+            <KpiGrid>
+              <StatCard
+                label="Worker Health"
+                value={`${healthyWorkers}/${totalWorkers}`}
+                subtitle={`${degradedWorkers} degraded, ${unhealthyWorkers} unhealthy`}
+                variant={unhealthyWorkers > 0 ? 'error' : degradedWorkers > 0 ? 'warning' : 'success'}
+              />
+              <StatCard
+                label="Throughput"
+                value={`${totalThroughput.toFixed(1)}`}
+                subtitle="events/min"
+                variant="primary"
+              />
+              <StatCard
+                label="Error Rate"
+                value={`${(avgErrorRate * 100).toFixed(2)}%`}
+                subtitle="average across workers"
+                variant={avgErrorRate > 0.05 ? 'error' : avgErrorRate > 0.01 ? 'warning' : 'success'}
+              />
+              <StatCard
+                label="SLA Compliance"
+                value={`${((slaCompliance?.complianceRate || 0) * 100).toFixed(1)}%`}
+                subtitle={slaCompliance?.period || 'day'}
+                variant={(slaCompliance?.complianceRate || 0) < 0.95 ? 'warning' : 'success'}
+              />
+              <StatCard
+                label="SLA Breached"
+                value={slaAtRisk?.total || 0}
+                subtitle="exceptions"
+                variant="error"
+              />
+              <StatCard
+                label="DLQ Size"
+                value={dlqSize}
+                subtitle="failed events"
+                variant={dlqSize > 0 ? 'error' : 'success'}
+              />
+              <StatCard
+                label="Alerts Fired"
+                value={alertsFired24h}
+                subtitle="last 24h"
+                variant={alertsFired24h > 0 ? 'warning' : 'success'}
+              />
+              <StatCard
+                label="Report Jobs"
+                value={`${reportJobsQueued} queued`}
+                subtitle={`${reportJobsCompleted} done, ${reportJobsFailed} failed`}
+                variant={reportJobsFailed > 0 ? 'error' : reportJobsQueued > 0 ? 'warning' : 'success'}
+              />
+            </KpiGrid>
+          </Section>
         </>
       )}
-    </Box>
+    </PageShell>
   )
 }
-

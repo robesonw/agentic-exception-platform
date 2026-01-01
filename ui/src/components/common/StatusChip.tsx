@@ -1,12 +1,13 @@
 /**
  * Shared Status Chip Component
  * 
- * Displays exception resolution status with consistent colors.
- * Used across Exceptions list, detail, and Supervisor views.
+ * Displays exception resolution status with muted enterprise colors.
+ * Colors are informative, not aggressive - used as badges only.
  */
 
 import { Chip, ChipProps } from '@mui/material'
 import type { ExceptionStatus } from '../../types'
+import { statusColors } from '../../theme/tokens'
 
 export interface StatusChipProps {
   /** Resolution status */
@@ -17,24 +18,20 @@ export interface StatusChipProps {
   sx?: ChipProps['sx']
 }
 
+type StatusKey = 'open' | 'analyzing' | 'in_progress' | 'resolved' | 'escalated' | 'closed'
+
 /**
- * Get status chip color
+ * Normalize status to lowercase key
  */
-function getStatusColor(status: string | null | undefined): ChipProps['color'] {
-  switch (status) {
-    case 'OPEN':
-      return 'info'
-    case 'IN_PROGRESS':
-      return 'warning'
-    case 'RESOLVED':
-      return 'success'
-    case 'ESCALATED':
-      return 'error'
-    case 'PENDING_APPROVAL':
-      return 'secondary'
-    default:
-      return 'default'
-  }
+function normalizeStatus(status: string | null | undefined): StatusKey {
+  if (!status) return 'open'
+  const lower = status.toLowerCase().replace(/[_\s-]/g, '_')
+  if (lower === 'in_progress' || lower === 'inprogress') return 'in_progress'
+  if (lower === 'analyzing' || lower === 'pending_approval') return 'analyzing'
+  if (lower === 'resolved') return 'resolved'
+  if (lower === 'escalated') return 'escalated'
+  if (lower === 'closed') return 'closed'
+  return 'open'
 }
 
 /**
@@ -50,18 +47,25 @@ function formatStatusLabel(status: string | null | undefined): string {
 /**
  * Status Chip Component
  * 
- * Displays exception resolution status with color-coded chip.
+ * Displays exception resolution status with muted, enterprise-friendly colors.
  */
 export default function StatusChip({ status, size = 'small', sx }: StatusChipProps) {
-  const color = getStatusColor(status)
+  const level = normalizeStatus(status)
+  const colors = statusColors[level]
   const label = formatStatusLabel(status)
 
   return (
     <Chip
       label={label}
-      color={color}
       size={size}
-      sx={sx}
+      sx={{
+        backgroundColor: colors.bg,
+        color: colors.text,
+        border: `1px solid ${colors.border}`,
+        fontWeight: 500,
+        fontSize: size === 'small' ? '0.75rem' : '0.8125rem',
+        ...sx,
+      }}
     />
   )
 }

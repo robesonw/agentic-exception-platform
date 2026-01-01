@@ -1,15 +1,16 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { Box, Button, Alert, Grid, Paper, Typography } from '@mui/material'
+import { Box, Button, Alert } from '@mui/material'
 import FilterBar, { type ExceptionFilters } from '../components/common/FilterBar.tsx'
 import DataTable, { type DataTableColumn } from '../components/common/DataTable.tsx'
 import { SeverityChip, StatusChip } from '../components/common'
+import { PageShell, Section, KpiGrid } from '../components/layout'
+import { StatCard, DataCard } from '../components/ui'
 import { useExceptionsList } from '../hooks/useExceptions.ts'
 import { useTenant } from '../hooks/useTenant.tsx'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import { formatDateTime } from '../utils/dateFormat.ts'
 import type { ExceptionSummary } from '../types'
-import { themeColors } from '../theme/theme.ts'
 
 
 export default function ExceptionsPage() {
@@ -121,19 +122,14 @@ export default function ExceptionsPage() {
   // Show message if API key is missing (but tenant is set)
   if (!apiKey && tenantId) {
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5 }}>
-            Operations Center
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Monitor and triage exceptions across all tenants and domains.
-          </Typography>
-        </Box>
+      <PageShell
+        title="Operations Center"
+        subtitle="Monitor and triage exceptions across all tenants and domains."
+      >
         <Alert severity="warning">
           API key is required to access exceptions. Please go to <Link to="/login">Login</Link> to set your API key.
         </Alert>
-      </Box>
+      </PageShell>
     )
   }
 
@@ -208,12 +204,15 @@ export default function ExceptionsPage() {
         accessor: (row) => (
           <Link
             to={`/exceptions/${row.exception_id}`}
-            style={{ textDecoration: 'none', color: 'inherit' }}
+            style={{ textDecoration: 'none' }}
           >
             <Box
               component="span"
               sx={{
                 color: 'primary.main',
+                fontWeight: 500,
+                fontFamily: 'monospace',
+                fontSize: '0.8125rem',
                 '&:hover': { textDecoration: 'underline' },
               }}
             >
@@ -225,304 +224,108 @@ export default function ExceptionsPage() {
       {
         id: 'severity',
         label: 'Severity',
-        minWidth: 120,
+        minWidth: 100,
         accessor: (row) => <SeverityChip severity={row.severity} size="small" />,
       },
       {
         id: 'resolution_status',
         label: 'Status',
-        minWidth: 130,
+        minWidth: 110,
         accessor: (row) => <StatusChip status={row.resolution_status} size="small" />,
       },
       {
         id: 'exception_type',
         label: 'Exception Type',
-        minWidth: 180,
-        accessor: (row) => row.exception_type || '—',
+        minWidth: 160,
+        accessor: (row) => (
+          <Box component="span" sx={{ color: 'text.primary' }}>
+            {row.exception_type || '—'}
+          </Box>
+        ),
       },
       {
         id: 'source_system',
         label: 'Source System',
-        minWidth: 150,
-        accessor: (row) => row.source_system || '—',
+        minWidth: 130,
+        accessor: (row) => (
+          <Box component="span" sx={{ color: 'text.secondary' }}>
+            {row.source_system || '—'}
+          </Box>
+        ),
       },
       {
         id: 'timestamp',
         label: 'Timestamp',
-        minWidth: 180,
-        accessor: (row) => formatDateTime(row.timestamp),
+        minWidth: 160,
+        accessor: (row) => (
+          <Box component="span" sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
+            {formatDateTime(row.timestamp)}
+          </Box>
+        ),
       },
     ],
     []
   )
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      {/* Header Section */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5 }}>
-            Operations Center
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Monitor and triage exceptions across all tenants and domains.
-          </Typography>
-        </Box>
+    <PageShell
+      title="Operations Center"
+      subtitle="Monitor and triage exceptions across all tenants and domains."
+      actions={
         <Button variant="contained" onClick={handleNewException}>
           New Exception
         </Button>
-      </Box>
-
+      }
+    >
       {/* Workers Warning Banner */}
       {hasUnprocessedExceptions && (
-        <Alert severity="warning">
-          <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          <Box component="span" sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}>
             Workers May Not Be Running
-          </Typography>
-          <Typography variant="body2">
-            Some exceptions appear to be unprocessed. Workers must be running to process exceptions through the pipeline.
-            See <strong>docs/WORKERS_QUICK_START.md</strong> for instructions on starting workers.
-          </Typography>
+          </Box>
+          Some exceptions appear to be unprocessed. Workers must be running to process exceptions through the pipeline.
+          See <strong>docs/WORKERS_QUICK_START.md</strong> for instructions on starting workers.
         </Alert>
       )}
 
       {/* Quick Stats / KPI Cards */}
-      <Grid container spacing={2}>
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            sx={{
-              p: 3,
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: themeColors.borderPrimary,
-              bgcolor: themeColors.bgSecondary,
-              background: `linear-gradient(135deg, ${themeColors.error}15, transparent)`,
-              borderLeft: '4px solid',
-              borderLeftColor: themeColors.error,
-              position: 'relative',
-              overflow: 'hidden',
-              '&:hover': {
-                borderColor: themeColors.borderSecondary,
-                boxShadow: `0 4px 12px ${themeColors.error}20`,
-                transform: 'translateY(-2px)',
-              },
-              transition: 'all 0.2s',
-            }}
-          >
-            <Box
-              sx={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                width: 80,
-                height: 80,
-                background: `radial-gradient(circle, ${themeColors.error}10, transparent)`,
-                borderRadius: '50%',
-                transform: 'translate(20px, -20px)',
-              }}
-            />
-            <Typography
-              variant="caption"
-              sx={{
-                textTransform: 'uppercase',
-                fontSize: '0.75rem',
-                fontWeight: 700,
-                letterSpacing: '0.05em',
-                display: 'block',
-                mb: 1,
-                color: themeColors.textTertiary,
-                position: 'relative',
-                zIndex: 1,
-              }}
-            >
-              Critical Exceptions
-            </Typography>
-            <Typography
-              variant="h4"
-              sx={{
-                fontWeight: 700,
-                color: themeColors.textPrimary,
-                position: 'relative',
-                zIndex: 1,
-              }}
-            >
-              {criticalCount.toLocaleString()}
-            </Typography>
-          </Paper>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            sx={{
-              p: 3,
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: themeColors.borderPrimary,
-              bgcolor: themeColors.bgSecondary,
-              background: `linear-gradient(135deg, ${themeColors.primary}15, transparent)`,
-              borderLeft: '4px solid',
-              borderLeftColor: themeColors.primary,
-              position: 'relative',
-              overflow: 'hidden',
-              '&:hover': {
-                borderColor: themeColors.borderSecondary,
-                boxShadow: `0 4px 12px ${themeColors.primary}20`,
-                transform: 'translateY(-2px)',
-              },
-              transition: 'all 0.2s',
-            }}
-          >
-            <Box
-              sx={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                width: 80,
-                height: 80,
-                background: `radial-gradient(circle, ${themeColors.primary}10, transparent)`,
-                borderRadius: '50%',
-                transform: 'translate(20px, -20px)',
-              }}
-            />
-            <Typography
-              variant="caption"
-              sx={{
-                textTransform: 'uppercase',
-                fontSize: '0.75rem',
-                fontWeight: 700,
-                letterSpacing: '0.05em',
-                display: 'block',
-                mb: 1,
-                color: themeColors.textTertiary,
-                position: 'relative',
-                zIndex: 1,
-              }}
-            >
-              AI Resolution Rate
-            </Typography>
-            <Typography
-              variant="h4"
-              sx={{
-                fontWeight: 700,
-                color: themeColors.textPrimary,
-                position: 'relative',
-                zIndex: 1,
-              }}
-            >
-              —
-            </Typography>
-          </Paper>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            sx={{
-              p: 3,
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: themeColors.borderPrimary,
-              bgcolor: themeColors.bgSecondary,
-              position: 'relative',
-              overflow: 'hidden',
-              '&:hover': {
-                borderColor: themeColors.borderSecondary,
-                boxShadow: `0 4px 12px ${themeColors.warning}20`,
-                transform: 'translateY(-2px)',
-              },
-              transition: 'all 0.2s',
-            }}
-          >
-            <Typography
-              variant="caption"
-              sx={{
-                textTransform: 'uppercase',
-                fontSize: '0.75rem',
-                fontWeight: 700,
-                letterSpacing: '0.05em',
-                display: 'block',
-                mb: 1,
-                color: themeColors.textTertiary,
-              }}
-            >
-              Open Exceptions
-            </Typography>
-            <Typography variant="h4" sx={{ fontWeight: 700, color: themeColors.textPrimary }}>
-              {openCount.toLocaleString()}
-            </Typography>
-          </Paper>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            sx={{
-              p: 3,
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: themeColors.borderPrimary,
-              bgcolor: themeColors.bgSecondary,
-              position: 'relative',
-              overflow: 'hidden',
-              '&:hover': {
-                borderColor: themeColors.borderSecondary,
-                boxShadow: `0 4px 12px ${themeColors.info}20`,
-                transform: 'translateY(-2px)',
-              },
-              transition: 'all 0.2s',
-            }}
-          >
-            <Typography
-              variant="caption"
-              sx={{
-                textTransform: 'uppercase',
-                fontSize: '0.75rem',
-                fontWeight: 700,
-                letterSpacing: '0.05em',
-                display: 'block',
-                mb: 1,
-                color: themeColors.textTertiary,
-              }}
-            >
-              Total Exceptions
-            </Typography>
-            <Typography variant="h4" sx={{ fontWeight: 700, color: themeColors.textPrimary }}>
-              {totalCount.toLocaleString()}
-            </Typography>
-          </Paper>
-        </Grid>
-      </Grid>
+      <KpiGrid>
+        <StatCard
+          label="Critical Exceptions"
+          value={criticalCount.toLocaleString()}
+          variant="error"
+        />
+        <StatCard
+          label="AI Resolution Rate"
+          value="—"
+          subtitle="coming soon"
+          variant="primary"
+        />
+        <StatCard
+          label="Open Exceptions"
+          value={openCount.toLocaleString()}
+          variant="warning"
+        />
+        <StatCard
+          label="Total Exceptions"
+          value={totalCount.toLocaleString()}
+        />
+      </KpiGrid>
 
       {/* Filters + Table Section */}
-      <Paper
-        sx={{
-          p: 2,
-          borderRadius: 2,
-          border: '1px solid',
-          borderColor: 'divider',
-          bgcolor: 'background.paper',
-        }}
-      >
-        {/* Filter Bar */}
-        <Box sx={{ mb: 2 }}>
-          <FilterBar value={filters} onChange={handleFilterChange} />
-        </Box>
+      <Section title="Exceptions" description={totalCount > 0 ? `${totalCount.toLocaleString()} total records` : undefined} noMargin sx={{ mt: 4 }}>
+        <DataCard
+          filterContent={<FilterBar value={filters} onChange={handleFilterChange} />}
+        >
+          {/* Error State */}
+          {isError && (
+            <Alert severity="error" sx={{ m: 2 }}>
+              Failed to load exceptions: {error?.message || 'Unknown error'}
+            </Alert>
+          )}
 
-        {/* Error State */}
-        {isError && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            Failed to load exceptions: {error?.message || 'Unknown error'}
-          </Alert>
-        )}
-
-        {/* Data Table */}
-        {tenantId ? (
-          <Box
-            sx={{
-              '& .MuiPaper-root': {
-                backgroundColor: 'background.paper',
-                borderRadius: 2,
-                border: '1px solid',
-                borderColor: 'divider',
-                boxShadow: 'none',
-              },
-            }}
-          >
+          {/* Data Table */}
+          {tenantId ? (
             <DataTable
               columns={columns}
               rows={exceptions}
@@ -549,13 +352,13 @@ export default function ExceptionsPage() {
                 ) : undefined
               }
             />
-          </Box>
-        ) : (
-          <Alert severity="info">
-            Please select a tenant to view exceptions.
-          </Alert>
-        )}
-      </Paper>
-    </Box>
+          ) : (
+            <Alert severity="info" sx={{ m: 2 }}>
+              Please select a tenant to view exceptions.
+            </Alert>
+          )}
+        </DataCard>
+      </Section>
+    </PageShell>
   )
 }
