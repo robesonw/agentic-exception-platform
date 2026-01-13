@@ -247,4 +247,74 @@ class ToolDefinitionRepository(AbstractBaseRepository[ToolDefinition]):
             page_size=page_size,
         )
 
+    async def get_tool_by_name(
+        self,
+        tenant_id: str,
+        name: str,
+    ) -> Optional[ToolDefinition]:
+        """
+        Get a tool by name within a tenant context.
+        
+        Args:
+            tenant_id: Tenant identifier
+            name: Tool name
+            
+        Returns:
+            ToolDefinition or None
+        """
+        query = select(ToolDefinition).where(
+            and_(
+                ToolDefinition.name == name,
+                or_(
+                    ToolDefinition.tenant_id.is_(None),
+                    ToolDefinition.tenant_id == tenant_id,
+                ),
+            )
+        )
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
 
+    async def create_tool_with_simulation(
+        self,
+        tenant_id: Optional[str],
+        tool_data: ToolDefinitionCreateDTO,
+        execution_mode=None,
+        simulate_profile=None,
+        simulate_latency_ms: Optional[dict] = None,
+        simulate_result_template: Optional[dict] = None,
+    ) -> ToolDefinition:
+        """
+        Create a new tool definition with simulation support.
+        
+        Args:
+            tenant_id: Optional tenant identifier. If None, creates a global tool.
+            tool_data: ToolDefinitionCreateDTO with tool details
+            execution_mode: Execution mode enum value
+            simulate_profile: Simulation profile enum value
+            simulate_latency_ms: Latency range dict {min, max}
+            simulate_result_template: Response template dict
+            
+        Returns:
+            Created ToolDefinition instance
+        """
+        tool = ToolDefinition(
+            tenant_id=tenant_id,
+            name=tool_data.name,
+            type=tool_data.type,
+            config=tool_data.config,
+            execution_mode=execution_mode,
+            simulate_profile=simulate_profile,
+            simulate_latency_ms=simulate_latency_ms,
+            simulate_result_template=simulate_result_template,
+        )
+        
+        self.session.add(tool)
+        await self.session.flush()
+        await self.session.refresh(tool)
+        
+        scope = "global" if tenant_id is None else f"tenant={tenant_id}"
+        logger.info(
+            f"Created tool definition with simulation: tool_id={tool.tool_id}, name={tool.name}, "
+            f"execution_mode={execution_mode}, scope={scope}"
+        )
+        return tool

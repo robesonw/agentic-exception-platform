@@ -281,11 +281,24 @@ class IntakeWorker(AgentWorker):
                 severity = ExceptionSeverity.MEDIUM
         
         # Map ExceptionRecord to ExceptionCreateOrUpdateDTO
+        # DEFENSIVE NORMALIZATION: Ensure exception_type is clean before storing to DB
+        # This provides a final safety net even if IntakeAgent normalization didn't work
+        exception_type_str = str(exception.exception_type) if exception.exception_type else "Unknown"
+        if exception_type_str and exception_type_str != "Unknown":
+            # Strip ALL leading colons (handles ":value", "::value", etc.)
+            while exception_type_str.startswith(':'):
+                exception_type_str = exception_type_str[1:]
+            # Strip leading/trailing whitespace
+            exception_type_str = exception_type_str.strip()
+            # Convert to uppercase if all lowercase (preserve mixed case like "FIN_SETTLEMENT_FAIL")
+            if exception_type_str and exception_type_str.islower():
+                exception_type_str = exception_type_str.upper()
+        
         exception_dto = ExceptionCreateOrUpdateDTO(
             exception_id=exception.exception_id,
             tenant_id=exception.tenant_id,
             domain=str(domain) if domain else "default",
-            type=str(exception.exception_type) if exception.exception_type else "Unknown",
+            type=exception_type_str,
             severity=severity,
             status=ExceptionStatus.OPEN,  # Default status
             source_system=str(exception.source_system) if exception.source_system else None,

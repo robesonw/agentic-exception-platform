@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Box, Typography, Button, CircularProgress, Alert, Dialog, DialogTitle, DialogContent, DialogActions, Chip, Tooltip, Paper, Stack, TextField, FormControl, InputLabel, Select, MenuItem, Tabs, Tab, IconButton } from '@mui/material'
+import { Box, Typography, Button, CircularProgress, Alert, Dialog, DialogTitle, DialogContent, DialogActions, Chip, Tooltip, Stack, TextField, FormControl, InputLabel, Select, MenuItem, Tabs, Tab, IconButton, Paper } from '@mui/material'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import InfoIcon from '@mui/icons-material/Info'
 import FolderOpenIcon from '@mui/icons-material/FolderOpen'
@@ -14,6 +14,7 @@ import AdminWarningBanner from '../../components/common/AdminWarningBanner'
 import DataTable from '../../components/common/DataTable'
 import CodeViewer from '../../components/common/CodeViewer'
 import PlaybookDiagram from '../../components/admin/PlaybookDiagram'
+import { PageShell, Card, DataCard } from '../../components/ui'
 import type { DataTableColumn } from '../../components/common/DataTable'
 
 // Filters for playbooks
@@ -61,7 +62,7 @@ export default function PlaybooksPage() {
   // Handle 429 rate limit errors
   if (isError && error && 'status' in error && error.status === 429) {
     return (
-      <Box>
+      <PageShell>
         <PageHeader
           title="Playbooks Management"
           subtitle="View and manage playbook configurations"
@@ -74,7 +75,7 @@ export default function PlaybooksPage() {
             Too many requests. Please wait a minute before trying again.
           </Typography>
         </Alert>
-      </Box>
+      </PageShell>
     )
   }
 
@@ -222,14 +223,18 @@ export default function PlaybooksPage() {
 
   if (!tenantId) {
     return (
-      <Box sx={{ p: 3 }}>
+      <PageShell>
+        <PageHeader
+          title="Playbooks Management"
+          subtitle="View and manage playbook configurations"
+        />
         <Alert severity="warning">Please select a tenant to view playbooks.</Alert>
-      </Box>
+      </PageShell>
     )
   }
 
   return (
-    <Box>
+    <PageShell>
       <PageHeader
         title="Playbooks Management"
         subtitle="View and manage playbook configurations"
@@ -238,7 +243,7 @@ export default function PlaybooksPage() {
       <AdminWarningBanner />
 
       {/* Custom Filters for Playbooks Registry */}
-      <Paper sx={{ p: 2, mb: 3 }}>
+      <Card sx={{ mb: 3 }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <TextField
             label="Search by Name or ID"
@@ -280,20 +285,22 @@ export default function PlaybooksPage() {
             Clear Filters
           </Button>
         </Stack>
-      </Paper>
+      </Card>
 
-      <DataTable
-        columns={columns}
-        rows={data?.items || []}
-        loading={isLoading}
-        page={page}
-        pageSize={pageSize}
-        totalCount={data?.total || 0}
-        onPageChange={setPage}
-        onPageSizeChange={setPageSize}
-        exportEnabled={true}
-        emptyMessage="No playbooks found."
-      />
+      <DataCard title="Playbooks Registry" subtitle={data?.total ? `${data.total} playbooks` : undefined}>
+        <DataTable
+          columns={columns}
+          rows={data?.items || []}
+          loading={isLoading}
+          page={page}
+          pageSize={pageSize}
+          totalCount={data?.total || 0}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          exportEnabled={true}
+          emptyMessage="No playbooks found."
+        />
+      </DataCard>
 
       {/* Detail Dialog with Tabs */}
       <Dialog
@@ -553,7 +560,7 @@ export default function PlaybooksPage() {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </PageShell>
   )
 }
 

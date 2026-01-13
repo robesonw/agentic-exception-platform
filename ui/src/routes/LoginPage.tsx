@@ -17,8 +17,20 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import { setApiKeyForHttpClient, setTenantIdForHttpClient } from '../utils/httpClient.ts'
 
 // Sample tenant/domain options for demo (can be replaced with API call later)
-const SAMPLE_TENANTS = ['tenant_001', 'TENANT_001', 'TENANT_002', 'TENANT_FINANCE_001']
-const SAMPLE_DOMAINS = ['TestDomain', 'Finance', 'Healthcare', 'Retail']
+const SAMPLE_TENANTS = [
+  // Legacy test tenants
+  'tenant_001', 
+  'TENANT_001', 
+  'TENANT_002', 
+  'TENANT_FINANCE_001',
+  // Demo tenants (created by demo bootstrap)
+  'ACME_CAPITAL',
+  'SHIELDSURE_INSURANCE', 
+  'CAREBRIDGE_HEALTH',
+  'GLOBALRETAIL_LTD',
+  'CLOUDOPS_PRO',
+]
+const SAMPLE_DOMAINS = ['TestDomain', 'Finance', 'Healthcare', 'Retail', 'Insurance', 'SaaS', 'CapitalMarketsTrading']
 
 // Sample API keys for demo (matching backend test keys)
 // In production, these would come from a secure auth service
@@ -27,6 +39,12 @@ const SAMPLE_API_KEYS = [
   { key: 'test_api_key_tenant_001', tenant: 'TENANT_001', label: 'TENANT_001 (Admin)' },
   { key: 'test_api_key_tenant_002', tenant: 'TENANT_002', label: 'TENANT_002 (Operator)' },
   { key: 'test_api_key_tenant_finance', tenant: 'TENANT_FINANCE_001', label: 'TENANT_FINANCE_001 (Admin)' },
+  // Demo tenant API keys
+  { key: 'demo_acme_capital', tenant: 'ACME_CAPITAL', label: 'ACME_CAPITAL (Finance Demo)' },
+  { key: 'demo_shieldsure', tenant: 'SHIELDSURE_INSURANCE', label: 'SHIELDSURE_INSURANCE (Insurance Demo)' },
+  { key: 'demo_carebridge', tenant: 'CAREBRIDGE_HEALTH', label: 'CAREBRIDGE_HEALTH (Healthcare Demo)' },
+  { key: 'demo_globalretail', tenant: 'GLOBALRETAIL_LTD', label: 'GLOBALRETAIL_LTD (Retail Demo)' },
+  { key: 'demo_cloudops', tenant: 'CLOUDOPS_PRO', label: 'CLOUDOPS_PRO (SaaS/Ops Demo)' },
 ]
 
 export default function LoginPage() {

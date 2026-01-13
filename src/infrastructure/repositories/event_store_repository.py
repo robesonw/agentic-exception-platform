@@ -227,8 +227,12 @@ class EventStoreRepository(AbstractBaseRepository[EventLog]):
             if filters.event_type is not None:
                 conditions.append(EventLog.event_type == filters.event_type)
             
-            if filters.correlation_id is not None:
-                conditions.append(EventLog.correlation_id == filters.correlation_id)
+            # Don't apply correlation_id filter when querying by exception_id
+            # The base query already handles correlation_id via OR condition
+            # Adding AND correlation_id would exclude events with mismatched correlation_id
+            # even when exception_id matches (which is the primary identifier)
+            # if filters.correlation_id is not None:
+            #     conditions.append(EventLog.correlation_id == filters.correlation_id)
             
             if filters.start_timestamp is not None:
                 conditions.append(EventLog.timestamp >= filters.start_timestamp)

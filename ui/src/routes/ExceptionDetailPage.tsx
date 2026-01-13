@@ -8,7 +8,6 @@ import {
   Grid,
   Tabs,
   Tab,
-  Paper,
   IconButton,
 } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
@@ -22,6 +21,7 @@ import SimulationResult from '../components/exceptions/SimulationResult.tsx'
 import RecommendedPlaybookPanel from '../components/exceptions/RecommendedPlaybookPanel.tsx'
 import PipelineStatus from '../components/exceptions/PipelineStatus.tsx'
 import { SeverityChip } from '../components/common'
+import { PageShell, Card } from '../components/ui'
 import { useExceptionDetail, useReprocessException } from '../hooks/useExceptions.ts'
 import { useSnackbar } from '../components/common/SnackbarProvider.tsx'
 import { useNavigate } from 'react-router-dom'
@@ -114,83 +114,95 @@ export default function ExceptionDetailPage() {
   // Show error if tenantId or API key is missing (required for API call)
   if ((!tenantId || !apiKey) && !isLoading) {
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <Alert severity="warning">
-          {!tenantId && !apiKey 
-            ? 'Tenant ID and API key are required to view exception details. Please go to the login page to set them.'
-            : !tenantId 
-            ? 'Tenant ID is required to view exception details. Please select a tenant from the login page.'
-            : 'API key is required to view exception details. Please set your API key on the login page.'}
-        </Alert>
-        <Button component={Link} to="/login">
-          Go to Login
-        </Button>
-        <Button component={Link} to="/exceptions" variant="outlined">
-          Back to Exceptions List
-        </Button>
-      </Box>
+      <PageShell>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <Alert severity="warning">
+            {!tenantId && !apiKey 
+              ? 'Tenant ID and API key are required to view exception details. Please go to the login page to set them.'
+              : !tenantId 
+              ? 'Tenant ID is required to view exception details. Please select a tenant from the login page.'
+              : 'API key is required to view exception details. Please set your API key on the login page.'}
+          </Alert>
+          <Button component={Link} to="/login">
+            Go to Login
+          </Button>
+          <Button component={Link} to="/exceptions" variant="outlined">
+            Back to Exceptions List
+          </Button>
+        </Box>
+      </PageShell>
     )
   }
 
   // Handle 404 or missing ID
   if (!id) {
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <Alert severity="error">
-          Invalid exception ID. Please check the URL and try again.
-        </Alert>
-        <Button component={Link} to="/exceptions">
-          Back to Exceptions List
-        </Button>
-      </Box>
+      <PageShell>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <Alert severity="error">
+            Invalid exception ID. Please check the URL and try again.
+          </Alert>
+          <Button component={Link} to="/exceptions">
+            Back to Exceptions List
+          </Button>
+        </Box>
+      </PageShell>
     )
   }
 
   // Loading state
   if (isLoading) {
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <Typography>Loading...</Typography>
-      </Box>
+      <PageShell>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <Typography>Loading...</Typography>
+        </Box>
+      </PageShell>
     )
   }
 
   // Error state (non-404 errors) - check BEFORE trying to use exception
   if (isError && !error?.message?.includes('404')) {
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <Alert severity="error">
-          Failed to load exception: {error?.message || 'Unknown error'}
-        </Alert>
-        <Button component={Link} to="/exceptions">
-          Back to Exceptions List
-        </Button>
-      </Box>
+      <PageShell>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <Alert severity="error">
+            Failed to load exception: {error?.message || 'Unknown error'}
+          </Alert>
+          <Button component={Link} to="/exceptions">
+            Back to Exceptions List
+          </Button>
+        </Box>
+      </PageShell>
     )
   }
 
   // Handle 404 from API or no exception
   if (isError && error?.message?.includes('404')) {
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <Alert severity="error">
-          Exception not found. It may have been deleted or the ID is incorrect.
-        </Alert>
-        <Button component={Link} to="/exceptions">
-          Back to Exceptions List
-        </Button>
-      </Box>
+      <PageShell>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <Alert severity="error">
+            Exception not found. It may have been deleted or the ID is incorrect.
+          </Alert>
+          <Button component={Link} to="/exceptions">
+            Back to Exceptions List
+          </Button>
+        </Box>
+      </PageShell>
     )
   }
 
   if (!exception) {
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <Typography>No exception found.</Typography>
-        <Button component={Link} to="/exceptions">
-          Back to Exceptions List
-        </Button>
-      </Box>
+      <PageShell>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <Typography>No exception found.</Typography>
+          <Button component={Link} to="/exceptions">
+            Back to Exceptions List
+          </Button>
+        </Box>
+      </PageShell>
     )
   }
 
@@ -244,212 +256,214 @@ export default function ExceptionDetailPage() {
   }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      {/* Header */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-          pb: 2,
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <IconButton
-            component={Link}
-            to="/exceptions"
-            sx={{ color: 'text.secondary' }}
-          >
-            <ArrowBackIcon />
-          </IconButton>
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 0.5 }}>
-              <Typography variant="h5" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                {exception.exceptionId || id || 'Unknown'}
-              </Typography>
-              {exception.severity && (
-                <SeverityChip severity={exception.severity} size="small" />
-              )}
-            </Box>
-            <Typography variant="body2" color="text.secondary">
-              {exception.exceptionType || '—'} · {exception.normalizedContext?.domain != null ? String(exception.normalizedContext.domain) : '—'} · Owner: —
-            </Typography>
-          </Box>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <LoadingButton
-            variant="outlined"
-            color="info"
-            onClick={handleReprocess}
-            loading={reprocessMutation.isPending}
-            disabled={reprocessMutation.isPending}
-          >
-            Reprocess
-          </LoadingButton>
-          <Button
-            variant="outlined"
-            color="error"
-            onClick={handleEscalate}
-          >
-            Escalate
-          </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleApprove}
-          >
-            Approve Resolution
-          </Button>
-        </Box>
-      </Box>
-
-      {/* Main 3-column layout */}
-      <Grid container spacing={2}>
-        {/* LEFT: key attributes / RAG preview */}
-        <Grid item xs={12} md={3}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {/* Pipeline Status Widget */}
-            <PipelineStatus exceptionId={id!} />
-
-            <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Key Attributes
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
-                {exception.normalizedContext?.amount != null && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', display: 'block', mb: 0.5 }}>
-                      Amount
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                      {String(exception.normalizedContext.amount)}
-                    </Typography>
-                  </Box>
-                )}
-                {exception.normalizedContext?.counterparty != null && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', display: 'block', mb: 0.5 }}>
-                      Counterparty
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                      {String(exception.normalizedContext.counterparty)}
-                    </Typography>
-                  </Box>
-                )}
-                <Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', display: 'block', mb: 0.5 }}>
-                    Source System
-                  </Typography>
-                  <Typography variant="body2">
-                    {exception.sourceSystem || '—'}
-                  </Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', display: 'block', mb: 0.5 }}>
-                    Timestamp
-                  </Typography>
-                  <Typography variant="body2">
-                    {formatDateTime(exception.timestamp)}
-                  </Typography>
-                </Box>
-                {exception.normalizedContext?.domain != null && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', display: 'block', mb: 0.5 }}>
-                      Domain
-                    </Typography>
-                    <Typography variant="body2">
-                      {String(exception.normalizedContext.domain)}
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-            </Paper>
-
-            <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="subtitle2" gutterBottom>
-                RAG Evidence
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                No evidence loaded
-              </Typography>
-            </Paper>
-          </Box>
-        </Grid>
-
-        {/* CENTER: main tabbed content (Timeline/Evidence/Explanation/Audit) */}
-        <Grid item xs={12} md={6}>
-          <Paper
+    <PageShell>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {/* Header */}
+        <Card>
+          <Box
             sx={{
-              p: 2,
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: 'divider',
-              minHeight: 400,
               display: 'flex',
-              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'space-between',
             }}
           >
-            <Tabs value={activeTab} onChange={handleTabChange} aria-label="exception detail tabs">
-              <Tab label="Timeline" id="exception-tab-0" aria-controls="exception-tabpanel-0" />
-              <Tab label="Evidence" id="exception-tab-1" aria-controls="exception-tabpanel-1" />
-              <Tab label="Explanation" id="exception-tab-2" aria-controls="exception-tabpanel-2" />
-              <Tab label="Workflow" id="exception-tab-3" aria-controls="exception-tabpanel-3" />
-              <Tab label="Audit" id="exception-tab-4" aria-controls="exception-tabpanel-4" />
-            </Tabs>
-
-            <TabPanel value={activeTab} index={0}>
-              <ExceptionTimelineTab exceptionId={id!} />
-            </TabPanel>
-
-            <TabPanel value={activeTab} index={1}>
-              <ExceptionEvidenceTab exceptionId={id!} />
-            </TabPanel>
-
-            <TabPanel value={activeTab} index={2}>
-              <ExceptionExplanationTab exceptionId={id!} />
-            </TabPanel>
-
-            <TabPanel value={activeTab} index={3}>
-              <ExceptionWorkflowTab exceptionId={id!} isActive={activeTab === 3} />
-            </TabPanel>
-
-            <TabPanel value={activeTab} index={4}>
-              <ExceptionAuditTab exceptionId={id!} />
-            </TabPanel>
-          </Paper>
-        </Grid>
-
-        {/* RIGHT: Recommended playbook + collaborators */}
-        <Grid item xs={12} md={3}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <RecommendedPlaybookPanel exceptionId={id!} />
-
-            <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Collaborators
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                No collaborators yet
-              </Typography>
-            </Paper>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <IconButton
+                component={Link}
+                to="/exceptions"
+                sx={{ color: 'text.secondary' }}
+              >
+                <ArrowBackIcon />
+              </IconButton>
+              <Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 0.5 }}>
+                  <Typography variant="h5" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                    {exception.exceptionId || id || 'Unknown'}
+                  </Typography>
+                  {exception.severity && (
+                    <SeverityChip severity={exception.severity} size="small" />
+                  )}
+                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  {exception.exceptionType || '—'} · {exception.normalizedContext?.domain != null ? String(exception.normalizedContext.domain) : '—'} · Owner: —
+                </Typography>
+              </Box>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <LoadingButton
+                variant="outlined"
+                color="info"
+                onClick={handleReprocess}
+                loading={reprocessMutation.isPending}
+                disabled={reprocessMutation.isPending}
+              >
+                Reprocess
+              </LoadingButton>
+              <Button
+                variant="outlined"
+                color="error"
+                onClick={handleEscalate}
+              >
+                Escalate
+              </Button>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleApprove}
+              >
+                Approve Resolution
+              </Button>
+            </Box>
           </Box>
+        </Card>
+
+        {/* Main 3-column layout */}
+        <Grid container spacing={2}>
+          {/* LEFT: key attributes / RAG preview */}
+          <Grid item xs={12} md={3}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {/* Pipeline Status Widget */}
+              <PipelineStatus exceptionId={id!} />
+
+              <Card>
+                <Typography variant="subtitle2" gutterBottom>
+                  Key Attributes
+                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+                  {exception.normalizedContext?.amount != null && (
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', display: 'block', mb: 0.5 }}>
+                        Amount
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                        {String(exception.normalizedContext.amount)}
+                      </Typography>
+                    </Box>
+                  )}
+                  {exception.normalizedContext?.counterparty != null && (
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', display: 'block', mb: 0.5 }}>
+                        Counterparty
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                        {String(exception.normalizedContext.counterparty)}
+                      </Typography>
+                    </Box>
+                  )}
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', display: 'block', mb: 0.5 }}>
+                      Source System
+                    </Typography>
+                    <Typography variant="body2">
+                      {exception.sourceSystem || '—'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', display: 'block', mb: 0.5 }}>
+                      Timestamp
+                    </Typography>
+                    <Typography variant="body2">
+                      {formatDateTime(exception.timestamp)}
+                    </Typography>
+                  </Box>
+                  {exception.normalizedContext?.domain != null && (
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', display: 'block', mb: 0.5 }}>
+                        Domain
+                      </Typography>
+                      <Typography variant="body2">
+                        {String(exception.normalizedContext.domain)}
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+              </Card>
+
+              <Card>
+                <Typography variant="subtitle2" gutterBottom>
+                  RAG Evidence
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                  No evidence loaded
+                </Typography>
+              </Card>
+            </Box>
+          </Grid>
+
+          {/* CENTER: main tabbed content (Timeline/Evidence/Explanation/Audit) */}
+          <Grid item xs={12} md={6}>
+            <Card
+              noPadding
+              sx={{
+                minHeight: 400,
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              <Box sx={{ p: 2, pb: 0 }}>
+                <Tabs value={activeTab} onChange={handleTabChange} aria-label="exception detail tabs">
+                  <Tab label="Timeline" id="exception-tab-0" aria-controls="exception-tabpanel-0" />
+                  <Tab label="Evidence" id="exception-tab-1" aria-controls="exception-tabpanel-1" />
+                  <Tab label="Explanation" id="exception-tab-2" aria-controls="exception-tabpanel-2" />
+                  <Tab label="Workflow" id="exception-tab-3" aria-controls="exception-tabpanel-3" />
+                  <Tab label="Audit" id="exception-tab-4" aria-controls="exception-tabpanel-4" />
+                </Tabs>
+              </Box>
+
+              <Box sx={{ p: 2 }}>
+                <TabPanel value={activeTab} index={0}>
+                  <ExceptionTimelineTab exceptionId={id!} />
+                </TabPanel>
+
+                <TabPanel value={activeTab} index={1}>
+                  <ExceptionEvidenceTab exceptionId={id!} />
+                </TabPanel>
+
+                <TabPanel value={activeTab} index={2}>
+                  <ExceptionExplanationTab exceptionId={id!} />
+                </TabPanel>
+
+                <TabPanel value={activeTab} index={3}>
+                  <ExceptionWorkflowTab exceptionId={id!} isActive={activeTab === 3} />
+                </TabPanel>
+
+                <TabPanel value={activeTab} index={4}>
+                  <ExceptionAuditTab exceptionId={id!} />
+                </TabPanel>
+              </Box>
+            </Card>
+          </Grid>
+
+          {/* RIGHT: Recommended playbook + collaborators */}
+          <Grid item xs={12} md={3}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <RecommendedPlaybookPanel exceptionId={id!} />
+
+              <Card>
+                <Typography variant="subtitle2" gutterBottom>
+                  Collaborators
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                  No collaborators yet
+                </Typography>
+              </Card>
+            </Box>
+          </Grid>
         </Grid>
-      </Grid>
 
-      {/* Simulation Dialog */}
-      <SimulationDialog
-        open={simulationDialogOpen}
-        onClose={() => setSimulationDialogOpen(false)}
-        exceptionId={id!}
-        onSimulationComplete={handleSimulationComplete}
-      />
+        {/* Simulation Dialog */}
+        <SimulationDialog
+          open={simulationDialogOpen}
+          onClose={() => setSimulationDialogOpen(false)}
+          exceptionId={id!}
+          onSimulationComplete={handleSimulationComplete}
+        />
 
-      {/* Simulation Result Display */}
-      {simulationId && id && (
-        <SimulationResult exceptionId={id} simulationId={simulationId} />
-      )}
-    </Box>
+        {/* Simulation Result Display */}
+        {simulationId && id && (
+          <SimulationResult exceptionId={id} simulationId={simulationId} />
+        )}
+      </Box>
+    </PageShell>
   )
 }

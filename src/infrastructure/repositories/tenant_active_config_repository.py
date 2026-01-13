@@ -118,9 +118,12 @@ class TenantActiveConfigRepository(AbstractBaseRepository[TenantActiveConfig]):
         existing_config = await self.get_active_config(tenant_id)
         
         if existing_config:
-            # Update existing config
-            existing_config.active_domain_pack_version = domain_pack_version
-            existing_config.active_tenant_pack_version = tenant_pack_version
+            # Update existing config - only update fields that are provided (not None)
+            # This preserves existing values when activating only one pack type
+            if domain_pack_version is not None:
+                existing_config.active_domain_pack_version = domain_pack_version
+            if tenant_pack_version is not None:
+                existing_config.active_tenant_pack_version = tenant_pack_version
             existing_config.activated_by = activated_by
             # activated_at will be updated by database trigger or we update it explicitly
             from datetime import datetime, timezone

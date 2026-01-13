@@ -3,7 +3,6 @@ import { Link, useLocation } from 'react-router-dom'
 import {
   AppBar,
   Box,
-  CssBaseline,
   Drawer,
   IconButton,
   List,
@@ -22,6 +21,7 @@ import {
   Avatar,
   Divider,
   Badge,
+  Tooltip,
 } from '@mui/material'
 import MenuIcon from '@mui/icons-material/Menu'
 import DashboardIcon from '@mui/icons-material/Dashboard'
@@ -35,8 +35,12 @@ import MemoryIcon from '@mui/icons-material/Memory'
 import BugReportIcon from '@mui/icons-material/BugReport'
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
 import HistoryIcon from '@mui/icons-material/History'
+import DarkModeIcon from '@mui/icons-material/DarkMode'
+import LightModeIcon from '@mui/icons-material/LightMode'
+import ScienceIcon from '@mui/icons-material/Science'
 import { useTenant } from '../hooks/useTenant.tsx'
 import { themeColors } from '../theme/theme.ts'
+import { useThemeMode } from '../theme/ThemeModeProvider.tsx'
 import { AICopilotDock } from '../components/copilot'
 import { isOpsEnabled, isAdminEnabled } from '../utils/featureFlags'
 
@@ -192,6 +196,12 @@ const getNavSections = (): NavSection[] => {
           icon: <BuildIcon />,
           section: 'admin',
         },
+        {
+          label: 'Demo Settings',
+          to: '/admin/demo',
+          icon: <ScienceIcon />,
+          section: 'admin',
+        },
       ],
     })
   }
@@ -209,6 +219,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
   const [mobileOpen, setMobileOpen] = useState(false)
   const { tenantId, domain, setTenantId, setDomain } = useTenant()
+  const { mode, toggleMode } = useThemeMode()
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen)
@@ -391,7 +402,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      <CssBaseline />
       <Box
         component="nav"
         sx={{ width: { md: DRAWER_WIDTH }, flexShrink: { md: 0 } }}
@@ -442,7 +452,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
           flexGrow: 1,
           width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
           minHeight: '100vh',
-          background: `radial-gradient(ellipse at top right, ${themeColors.primary}26, ${themeColors.bgPrimary})`,
+          backgroundColor: 'background.default',
           display: 'flex',
           flexDirection: 'column',
         }}
@@ -452,10 +462,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
           sx={{
             zIndex: (theme) => theme.zIndex.drawer + 1,
             height: 64,
-            backgroundColor: `${themeColors.bgPrimary}E6`, // 90% opacity
+            backgroundColor: 'background.paper',
             backdropFilter: 'blur(12px)',
             borderBottom: '1px solid',
-            borderColor: themeColors.borderPrimary,
+            borderColor: 'divider',
             boxShadow: 'none',
           }}
         >
@@ -466,7 +476,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
               aria-label="open drawer"
               edge="start"
               onClick={handleDrawerToggle}
-              sx={{ mr: 2, display: { md: 'none' }, color: themeColors.textSecondary }}
+              sx={{ mr: 2, display: { md: 'none' }, color: 'text.secondary' }}
             >
               <MenuIcon />
             </IconButton>
@@ -496,32 +506,32 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 displayEmpty
                 renderValue={(value) => (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography variant="body2" sx={{ color: themeColors.textTertiary, fontSize: '0.875rem' }}>
+                    <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
                       Tenant:
                     </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.875rem', color: themeColors.textPrimary }}>
+                    <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.875rem', color: 'text.primary' }}>
                       {value || 'Global FinCo'}
                     </Typography>
-                    <KeyboardArrowDownIcon sx={{ fontSize: 16, color: themeColors.textTertiary, ml: 0.5 }} />
+                    <KeyboardArrowDownIcon sx={{ fontSize: 16, color: 'text.secondary', ml: 0.5 }} />
                   </Box>
                 )}
                 sx={{
-                  color: themeColors.textPrimary,
+                  color: 'text.primary',
                   fontSize: '0.875rem',
                   '& .MuiSelect-icon': {
                     display: 'none',
                   },
                   '&:hover': {
-                    color: themeColors.textPrimary,
+                    color: 'text.primary',
                   },
                   transition: 'color 0.2s',
                 }}
                 MenuProps={{
                   PaperProps: {
                     sx: {
-                      bgcolor: themeColors.bgSecondary,
+                      bgcolor: 'background.paper',
                       border: '1px solid',
-                      borderColor: themeColors.borderPrimary,
+                      borderColor: 'divider',
                       mt: 0.5,
                     },
                   },
@@ -531,7 +541,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   <em>None</em>
                 </MenuItem>
                 {SAMPLE_TENANTS.map((tenant) => (
-                  <MenuItem key={tenant} value={tenant} sx={{ color: themeColors.textPrimary }}>
+                  <MenuItem key={tenant} value={tenant} sx={{ color: 'text.primary' }}>
                     {tenant}
                   </MenuItem>
                 ))}
@@ -542,7 +552,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             <Divider
               orientation="vertical"
               flexItem
-              sx={{ borderColor: 'rgba(148, 163, 184, 0.1)', height: 20, alignSelf: 'center' }}
+              sx={{ borderColor: 'divider', height: 20, alignSelf: 'center' }}
             />
 
             {/* Domain Selector */}
@@ -570,32 +580,32 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 displayEmpty
                 renderValue={(value) => (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography variant="body2" sx={{ color: 'rgba(148, 163, 184, 0.7)', fontSize: '0.875rem' }}>
+                    <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
                       Domain:
                     </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.875rem', color: 'rgba(203, 213, 225, 0.9)' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.875rem', color: 'text.primary' }}>
                       {value || 'Capital Markets'}
                     </Typography>
-                    <KeyboardArrowDownIcon sx={{ fontSize: 16, color: 'rgba(148, 163, 184, 0.6)', ml: 0.5 }} />
+                    <KeyboardArrowDownIcon sx={{ fontSize: 16, color: 'text.secondary', ml: 0.5 }} />
                   </Box>
                 )}
                 sx={{
-                  color: themeColors.textPrimary,
+                  color: 'text.primary',
                   fontSize: '0.875rem',
                   '& .MuiSelect-icon': {
                     display: 'none',
                   },
                   '&:hover': {
-                    color: themeColors.textPrimary,
+                    color: 'text.primary',
                   },
                   transition: 'color 0.2s',
                 }}
                 MenuProps={{
                   PaperProps: {
                     sx: {
-                      bgcolor: themeColors.bgSecondary,
+                      bgcolor: 'background.paper',
                       border: '1px solid',
-                      borderColor: themeColors.borderPrimary,
+                      borderColor: 'divider',
                       mt: 0.5,
                     },
                   },
@@ -605,7 +615,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   <em>None</em>
                 </MenuItem>
                 {SAMPLE_DOMAINS.map((dom) => (
-                  <MenuItem key={dom} value={dom} sx={{ color: 'rgba(203, 213, 225, 0.9)' }}>
+                  <MenuItem key={dom} value={dom} sx={{ color: 'text.primary' }}>
                     {dom}
                   </MenuItem>
                 ))}
@@ -632,7 +642,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   left: 12,
                   top: '50%',
                   transform: 'translateY(-50%)',
-                  color: themeColors.textTertiary,
+                  color: 'text.secondary',
                   pointerEvents: 'none',
                 }}
               >
@@ -646,11 +656,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   pr: 2,
                   py: 1,
                   fontSize: '0.875rem',
-                  backgroundColor: themeColors.bgSecondary,
+                  backgroundColor: 'action.hover',
                   border: '1px solid',
-                  borderColor: themeColors.borderPrimary,
+                  borderColor: 'divider',
                   borderRadius: 20,
-                  color: themeColors.textPrimary,
+                  color: 'text.primary',
                   '&:focus': {
                     borderColor: 'primary.main',
                   },
@@ -659,11 +669,26 @@ export default function AppLayout({ children }: AppLayoutProps) {
               />
             </Box>
 
+            {/* Theme Toggle */}
+            <Tooltip title={mode === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}>
+              <IconButton
+                onClick={toggleMode}
+                data-testid="theme-toggle"
+                sx={{
+                  color: 'text.secondary',
+                  '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
+                  transition: 'all 0.2s',
+                }}
+              >
+                {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
+              </IconButton>
+            </Tooltip>
+
             {/* Notifications */}
             <IconButton
               sx={{
-                color: themeColors.textSecondary,
-                '&:hover': { color: themeColors.textPrimary, backgroundColor: themeColors.bgTertiary },
+                color: 'text.secondary',
+                '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
                 transition: 'all 0.2s',
               }}
             >
@@ -680,11 +705,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 gap: 1.5,
                 pl: 2,
                 borderLeft: '1px solid',
-                borderColor: themeColors.borderPrimary,
+                borderColor: 'divider',
               }}
             >
               <Box sx={{ display: { xs: 'none', md: 'flex' }, flexDirection: 'column', alignItems: 'flex-end' }}>
-                <Typography variant="body2" sx={{ fontSize: '0.875rem', fontWeight: 500, color: themeColors.textPrimary }}>
+                <Typography variant="body2" sx={{ fontSize: '0.875rem', fontWeight: 500, color: 'text.primary' }}>
                   User Name
                 </Typography>
                 <Chip
@@ -707,7 +732,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   height: 36,
                   bgcolor: 'primary.main',
                   border: '1px solid',
-                  borderColor: themeColors.borderSecondary,
+                  borderColor: 'divider',
                   cursor: 'pointer',
                   '&:hover': { borderColor: 'primary.main' },
                   transition: 'border-color 0.2s',
@@ -731,6 +756,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
         {/* AI Co-Pilot Dock - Available globally across all pages */}
         <AICopilotDock />
+        
+        {/* Dev-only debug overlay - disabled after design system verification */}
+        {/* <StyleProbe /> */}
       </Box>
     </Box>
   )

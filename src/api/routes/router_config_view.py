@@ -233,7 +233,7 @@ async def list_playbooks(
     config_service: ConfigViewService = Depends(get_config_view_service),
 ) -> ConfigListResponse:
     """
-    List playbooks.
+    List playbooks from database with optional filtering.
     
     Args:
         tenant_id: Optional tenant filter
@@ -245,15 +245,41 @@ async def list_playbooks(
         ConfigListResponse with list of playbooks
     """
     try:
-        configs = config_service.list_configs(
-            config_type=ConfigType.PLAYBOOK,
-            tenant_id=tenant_id,
-            domain=domain,
-        )
+        from src.infrastructure.repositories.playbook_repository import PlaybookRepository
+        from src.infrastructure.db.session import get_db_session_context
+        from src.repository.dto import PlaybookFilter
         
-        # Filter by exception_type if provided (simple string match on config_id)
+        configs = []
+        
+        # Query playbooks from database
+        async with get_db_session_context() as session:
+            repo = PlaybookRepository(session)
+            
+            if tenant_id:
+                # Get playbooks for specific tenant
+                playbooks = await repo.list_playbooks(
+                    tenant_id=tenant_id,
+                    filters=None
+                )
+                
+                for pb in playbooks:
+                    configs.append({
+                        "id": f"{pb.tenant_id}:playbook:{pb.playbook_id}",
+                        "name": pb.name,
+                        "version": str(pb.version),
+                        "tenant_id": pb.tenant_id,
+                        "domain": None,
+                        "exception_type": None,
+                        "timestamp": pb.created_at.isoformat() if pb.created_at else None,
+                    })
+            else:
+                # If no tenant specified, try to get all playbooks
+                # Note: This would require a different approach or permission check
+                pass
+        
+        # Filter by exception_type if provided (simple string match on name)
         if exception_type:
-            configs = [c for c in configs if exception_type in c.get("id", "")]
+            configs = [c for c in configs if exception_type in c.get("name", "").upper()]
         
         return ConfigListResponse(
             items=[ConfigListItem(**config) for config in configs],

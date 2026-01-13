@@ -113,6 +113,13 @@ class APIKeyAuth:
         self._api_keys["test_api_key_tenant_health"] = ("TENANT_HEALTH_001", Role.ADMIN)
         # Test API key used in test suites
         self._api_keys["test-api-key-123"] = ("tenant_001", Role.ADMIN)
+        
+        # Demo tenant API keys (for demo mode scenarios)
+        self._api_keys["demo_acme_capital"] = ("ACME_CAPITAL", Role.ADMIN)
+        self._api_keys["demo_shieldsure"] = ("SHIELDSURE_INSURANCE", Role.ADMIN)
+        self._api_keys["demo_carebridge"] = ("CAREBRIDGE_HEALTH", Role.ADMIN)
+        self._api_keys["demo_globalretail"] = ("GLOBALRETAIL_LTD", Role.ADMIN)
+        self._api_keys["demo_cloudops"] = ("CLOUDOPS_PRO", Role.ADMIN)
 
     def register_api_key(self, api_key: str, tenant_id: str, role: Role = Role.VIEWER) -> None:
         """
@@ -167,7 +174,9 @@ class APIKeyAuth:
         
         result = self.get_tenant_id_and_role(api_key)
         if result is None:
-            logger.warning("Authentication failed: Invalid API key provided")
+            # Log the received key (first 10 chars only for security) for debugging
+            key_preview = api_key[:10] + '...' if len(api_key) > 10 else api_key
+            logger.warning(f"Authentication failed: Invalid API key provided: {key_preview}")
             raise AuthenticationError("Invalid API key")
         
         tenant_id, role = result

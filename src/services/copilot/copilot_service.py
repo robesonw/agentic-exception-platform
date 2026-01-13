@@ -198,12 +198,24 @@ class CopilotService:
             
         except Exception as e:
             self.logger.error(f"Error processing copilot message: {e}", exc_info=True)
-            # Return safe fallback response
+            # Return helpful fallback response that still addresses the user's query
+            error_detail = str(e)[:200] if str(e) else "Unknown error"
+            fallback_answer = (
+                f"I'm having trouble processing your query right now. "
+                f"You can review the exception details, timeline, and status in the exception view. "
+                f"If this issue persists, please check the system logs or contact support."
+            )
+            
             return CopilotSessionResponse(
                 request_id=request_id,
                 session_id=request.session_id or str(uuid4()),
-                answer="I apologize, but I encountered an error processing your request. Please try rephrasing your question.",
-                bullets=[],
+                answer=fallback_answer,
+                bullets=[
+                    "Review the exception details view for timeline, status, and attributes",
+                    "Check the exception's pipeline status and current stage",
+                    "Review any available evidence or audit logs for this exception",
+                    "If the issue persists, check system logs or contact support"
+                ],
                 citations=[],
                 recommended_playbook=None,
                 similar_exceptions=None,
@@ -213,8 +225,8 @@ class CopilotService:
                 safety={
                     "mode": "READ_ONLY",
                     "actions_allowed": [],
-                    "violations": ["Processing error occurred"],
-                    "warnings": [],
+                    "violations": [f"Processing error: {error_detail}"],
+                    "warnings": ["Error occurred during processing - showing fallback response"],
                     "redacted_content": False
                 }
             )

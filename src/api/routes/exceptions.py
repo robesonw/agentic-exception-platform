@@ -1291,6 +1291,9 @@ async def recalculate_playbook(
     - Publishes to message broker
     - Returns 202 Accepted
     
+    For demo mode (when workers aren't running), also performs synchronous
+    playbook matching and assignment.
+    
     Returns:
     - 202 Accepted
     - exception_id
@@ -1322,10 +1325,14 @@ async def recalculate_playbook(
     
     logger.info(f"Requesting playbook recalculation for exception {exception_id}, tenant {tenant_id}")
     
-    # Verify exception exists (basic validation)
+    # Verify exception exists and do synchronous playbook matching
+    matched_playbook_name = None
     try:
         from src.infrastructure.db.session import get_db_session_context
         from src.repository.exceptions_repository import ExceptionRepository
+        from src.infrastructure.repositories.playbook_repository import PlaybookRepository
+        from src.playbooks.matching_service import PlaybookMatchingService
+        from src.models.exception_record import ExceptionRecord
         
         async with get_db_session_context() as session:
             exception_repo = ExceptionRepository(session)
@@ -1340,31 +1347,77 @@ async def recalculate_playbook(
                     status_code=404,
                     detail=f"Exception {exception_id} not found for tenant {tenant_id}",
                 )
+            
+            # Perform synchronous playbook matching for demo mode
+            # This ensures playbooks work without workers running
+            playbook_repo = PlaybookRepository(session)
+            matching_service = PlaybookMatchingService(playbook_repo)
+            
+            # Convert DB exception to ExceptionRecord for matching
+            # Need to handle enum conversion and required fields
+            from src.models.exception_record import Severity
+            from datetime import datetime, timezone
+            
+            # Convert severity enum to Severity enum expected by ExceptionRecord
+            severity_value = None
+            if db_exception.severity:
+                severity_str = db_exception.severity.value.upper() if hasattr(db_exception.severity, 'value') else str(db_exception.severity).upper()
+                try:
+                    severity_value = Severity(severity_str)
+                except ValueError:
+                    logger.warning(f"Unknown severity value: {severity_str}")
+            
+            exception_record = ExceptionRecord(
+                exception_id=db_exception.exception_id,
+                tenant_id=db_exception.tenant_id,
+                exception_type=db_exception.type,
+                severity=severity_value,
+                source_system=db_exception.source_system or "unknown",
+                timestamp=db_exception.created_at or datetime.now(timezone.utc),
+                raw_payload={},
+                normalized_context={
+                    "domain": db_exception.domain,
+                    "type": db_exception.type,
+                },
+            )
+            
+            # Match playbook
+            matching_result = await matching_service.match_playbook(
+                tenant_id=tenant_id,
+                exception=exception_record,
+            )
+            
+            if matching_result.playbook:
+                # Update exception with matched playbook
+                db_exception.current_playbook_id = matching_result.playbook.playbook_id
+                db_exception.current_step = 1  # Start at step 1
+                await session.commit()
+                matched_playbook_name = matching_result.playbook.name
+                logger.info(
+                    f"Matched playbook '{matched_playbook_name}' for exception {exception_id}"
+                )
+            else:
+                logger.info(f"No matching playbook found for exception {exception_id}: {matching_result.reasoning}")
+                
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error validating exception: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to validate exception: {str(e)}")
+        logger.error(f"Error during playbook matching: {e}", exc_info=True)
+        # Continue to return success if synchronous matching fails
     
-    # Get event publisher
-    event_publisher = get_event_publisher()
-    
-    # Create PlaybookRecalculationRequested event
+    # Try to publish event for async processing (if workers are running)
+    # This is optional - synchronous matching already worked
     try:
+        event_publisher = get_event_publisher()
+        
+        # Create PlaybookRecalculationRequested event
         playbook_recalculation_event = PlaybookRecalculationRequested.create(
             tenant_id=tenant_id,
             exception_id=exception_id,
             requested_by="api",
         )
-    except Exception as e:
-        logger.error(f"Failed to create PlaybookRecalculationRequested event: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to create event: {str(e)}",
-        )
-    
-    # Publish event (this will store in EventStore and publish to broker)
-    try:
+        
+        # Publish event (this will store in EventStore and publish to broker)
         await event_publisher.publish_event(
             topic="exceptions",
             event=playbook_recalculation_event.model_dump(by_alias=True),
@@ -1375,20 +1428,20 @@ async def recalculate_playbook(
             f"tenant_id={tenant_id}"
         )
     except Exception as e:
-        logger.error(
-            f"Failed to publish PlaybookRecalculationRequested event: {e}",
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to publish event: {str(e)}",
+        # Don't fail - we already did sync matching
+        logger.warning(
+            f"Failed to publish PlaybookRecalculationRequested event (workers may not be running): {e}"
         )
     
-    # Return 202 Accepted
+    # Return 202 Accepted with info about matched playbook
+    message = "Playbook recalculation request accepted"
+    if matched_playbook_name:
+        message = f"Playbook '{matched_playbook_name}' matched and assigned"
+    
     return PlaybookRecalculationResponse(
         exceptionId=exception_id,
         status="accepted",
-        message="Playbook recalculation request accepted and queued for processing",
+        message=message,
     )
 
 

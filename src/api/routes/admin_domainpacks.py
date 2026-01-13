@@ -28,7 +28,9 @@ from src.services.copilot.indexing.rebuild_service import IndexRebuildService, I
 from src.services.copilot.chunking_service import DocumentChunkingService
 from src.services.copilot.embedding_service import EmbeddingService
 from src.infrastructure.repositories.copilot_document_repository import CopilotDocumentRepository
+from src.infrastructure.repositories.playbook_repository import PlaybookRepository
 from src.infrastructure.db.session import get_db_session_context
+from src.repository.dto import PlaybookCreateDTO
 from src.audit.logger import AuditLogger
 
 logger = logging.getLogger(__name__)
@@ -124,6 +126,112 @@ class TestSuiteExecutionResponse(BaseModel):
     execution_time_seconds: float = Field(..., alias="executionTimeSeconds")
     test_results: list[dict[str, Any]] = Field(..., alias="testResults")
     errors: list[str] = Field(default_factory=list)
+
+
+async def _extract_and_persist_playbooks(
+    tenant_id: str,
+    pack: DomainPack,
+    pack_version: str,
+) -> int:
+    """
+    Extract playbooks from domain pack and persist them to the database.
+    
+    Args:
+        tenant_id: Tenant identifier
+        pack: DomainPack instance containing playbooks
+        pack_version: Version string of the domain pack
+        
+    Returns:
+        Number of playbooks persisted
+    """
+    playbooks_persisted = 0
+    
+    if not pack.playbooks:
+        return playbooks_persisted
+    
+    try:
+        async with get_db_session_context() as session:
+            playbook_repo = PlaybookRepository(session)
+            
+            from src.infrastructure.repositories.playbook_step_repository import PlaybookStepRepository
+            from src.repository.dto import PlaybookStepCreateDTO
+            
+            step_repo = PlaybookStepRepository(session)
+            
+            for playbook in pack.playbooks:
+                try:
+                    # Create playbook DTO with conditions as JSON
+                    playbook_dto = PlaybookCreateDTO(
+                        name=f"{pack.domain_name} - {playbook.exception_type}",
+                        version=int(pack_version.split(".")[0]),  # Major version as int
+                        conditions={
+                            "exception_type": playbook.exception_type,
+                            "domain": pack.domain_name,
+                        },
+                    )
+                    
+                    # Create playbook in database
+                    created_playbook = await playbook_repo.create_playbook(tenant_id, playbook_dto)
+                    playbooks_persisted += 1
+                    logger.info(
+                        f"Persisted playbook '{playbook.exception_type}' "
+                        f"for tenant '{tenant_id}' from domain pack '{pack.domain_name}'"
+                    )
+                    
+                    # Persist playbook steps
+                    if playbook.steps and created_playbook:
+                        for step_order, step in enumerate(playbook.steps, start=1):
+                            try:
+                                # Extract step details from domain pack PlaybookStep model
+                                # PlaybookStep has: action (required), parameters (optional), description (optional)
+                                # PlaybookStepCreateDTO needs: name (required), action_type (required), params (required)
+                                step_name = step.description if step.description else step.action[:100] if step.action else f"Step {step_order}"
+                                step_action_type = "call_tool"  # Default action type for domain pack steps
+                                step_params = step.parameters if step.parameters else {}
+                                
+                                # Create step DTO
+                                step_dto = PlaybookStepCreateDTO(
+                                    name=step_name,
+                                    action_type=step_action_type,
+                                    params=step_params,
+                                )
+                                
+                                # Create step in database
+                                await step_repo.create_step(
+                                    playbook_id=created_playbook.playbook_id,
+                                    tenant_id=tenant_id,
+                                    step_data=step_dto,
+                                )
+                                logger.debug(
+                                    f"Persisted playbook step {step_order} '{step_name}' "
+                                    f"for playbook '{playbook.exception_type}'"
+                                )
+                            except Exception as step_error:
+                                logger.error(
+                                    f"Failed to persist step {step_order} for playbook '{playbook.exception_type}': {step_error}",
+                                    exc_info=True,
+                                )
+                                # Continue with other steps even if one fails
+                                continue
+                    
+                except Exception as e:
+                    logger.error(
+                        f"Failed to persist playbook '{playbook.exception_type}' "
+                        f"for tenant '{tenant_id}': {e}",
+                        exc_info=True,
+                    )
+                    # Continue with other playbooks even if one fails
+                    continue
+            
+            await session.commit()
+    
+    except Exception as e:
+        logger.error(
+            f"Failed to extract and persist playbooks from domain pack '{pack.domain_name}' "
+            f"for tenant '{tenant_id}': {e}"
+        )
+    
+    return playbooks_persisted
 
 
 @router.post("/{tenant_id}", response_model=DomainPackUploadResponse)
@@ -240,6 +348,18 @@ async def upload_domain_pack(
             detail=f"Failed to register Domain Pack: {str(e)}"
         )
     
+    # Extract and persist playbooks from the domain pack to database
+    if registered:
+        playbooks_count = await _extract_and_persist_playbooks(
+            tenant_id=tenant_id,
+            pack=pack,
+            pack_version=pack_version,
+        )
+        logger.info(
+            f"Extracted and persisted {playbooks_count} playbooks from domain pack "
+            f"'{pack.domain_name}' version {pack_version} for tenant '{tenant_id}'"
+        )
+    
     # Trigger async policy docs indexing (non-blocking)
     if registered:
         asyncio.create_task(
@@ -250,50 +370,14 @@ async def upload_domain_pack(
                 operation="domain_pack_import"
             )
         )
-
-    storage = get_domain_pack_storage()
-    registry = get_domain_pack_registry()
     
-    # Get list of domains for tenant
-    domains = registry.list_domains(tenant_id=tenant_id)
-    
-    # Build pack info with versions and usage stats
-    pack_infos = []
-    for domain_name in domains:
-        # Get versions
-        versions = storage.list_versions(tenant_id=tenant_id, domain_name=domain_name)
-        if not versions:
-            continue
-        
-        # Get latest version
-        latest_version = versions[-1] if versions else None
-        
-        # Get usage stats from storage
-        usage_stats = storage.get_usage_stats(tenant_id=tenant_id, domain_name=domain_name)
-        
-        # Find stats for latest version
-        usage_count = 0
-        last_used = None
-        if latest_version:
-            stats_key = f"{domain_name}:{latest_version}"
-            if stats_key in usage_stats:
-                stats = usage_stats[stats_key]
-                usage_count = stats.get("usage_count", 0)
-                last_used = stats.get("last_used")
-        
-        pack_info = DomainPackInfo(
-            domainName=domain_name,
-            versions=sorted(versions),
-            latestVersion=latest_version or "unknown",
-            usageCount=usage_count,
-            lastUsedTimestamp=last_used,
-        )
-        pack_infos.append(pack_info)
-    
-    return DomainPackListResponse(
-        tenantId=tenant_id,
-        packs=pack_infos,
-        total=len(pack_infos),
+    # Return success response
+    return DomainPackUploadResponse(
+        domainName=pack.domain_name,
+        version=pack_version,
+        message=f"Domain Pack '{pack.domain_name}' uploaded successfully",
+        stored=stored,
+        registered=registered,
     )
 
 

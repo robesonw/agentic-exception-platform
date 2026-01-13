@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Box,
-  Paper,
   Typography,
   Alert,
   Stack,
@@ -28,6 +27,7 @@ import {
 import CardSkeleton from '../components/common/CardSkeleton.tsx'
 import { SeverityChip } from '../components/common'
 import { SupervisorKpiCard } from '../components/supervisor'
+import { PageShell, PageHeader, Card, Section, DataCard } from '../components/ui'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 import { useSupervisorOverview } from '../hooks/useSupervisor.ts'
 import { useTenant } from '../hooks/useTenant.tsx'
@@ -189,19 +189,15 @@ export default function SupervisorPage() {
   }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+    <PageShell>
       {/* Header */}
-      <Box>
-        <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5 }}>
-          Supervisor Dashboard
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Cross-tenant and cross-domain exception oversight
-        </Typography>
-      </Box>
+      <PageHeader
+        title="Supervisor Dashboard"
+        subtitle="Cross-tenant and cross-domain exception oversight"
+      />
 
       {/* Filters */}
-      <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+      <Card sx={{ mb: 3 }}>
         <Grid container spacing={2}>
           <Grid item xs={12} sm={6} md={2}>
             <TextField
@@ -277,16 +273,19 @@ export default function SupervisorPage() {
             </Box>
           </Grid>
         </Grid>
-      </Paper>
+      </Card>
 
       {/* Tabs */}
-      <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-          <Tabs value={activeTab} onChange={handleTabChange} aria-label="supervisor dashboard tabs">
-            <Tab label="Overview" id="supervisor-tab-0" aria-controls="supervisor-tabpanel-0" />
-            <Tab label="Escalations" id="supervisor-tab-1" aria-controls="supervisor-tabpanel-1" />
-            <Tab label="Policy Violations" id="supervisor-tab-2" aria-controls="supervisor-tabpanel-2" />
-          </Tabs>
+      <Card noPadding>
+          <Box sx={{ px: 3, pt: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+            <Tabs value={activeTab} onChange={handleTabChange} aria-label="supervisor dashboard tabs">
+              <Tab label="Overview" id="supervisor-tab-0" aria-controls="supervisor-tabpanel-0" />
+              <Tab label="Escalations" id="supervisor-tab-1" aria-controls="supervisor-tabpanel-1" />
+              <Tab label="Policy Violations" id="supervisor-tab-2" aria-controls="supervisor-tabpanel-2" />
+            </Tabs>
+          </Box>
 
+          <Box sx={{ p: 3 }}>
           {/* Overview Tab */}
           <TabPanel value={activeTab} index={0}>
             {/* Error State */}
@@ -299,197 +298,192 @@ export default function SupervisorPage() {
             {/* Loading State */}
             {isLoading && (
               <>
-                <Typography variant="h6" gutterBottom sx={{ mt: 3, mb: 2 }}>
-                  Status Summary
-                </Typography>
-                <Grid container spacing={2} sx={{ mb: 4 }}>
-                  {[1, 2, 3, 4].map((i) => (
-                    <Grid item xs={12} sm={6} md={3} key={i}>
-                      <CardSkeleton lines={3} />
-                    </Grid>
-                  ))}
-                </Grid>
+                <Section title="Status Summary">
+                  <Grid container spacing={2}>
+                    {[1, 2, 3, 4].map((i) => (
+                      <Grid item xs={12} sm={6} md={3} key={i}>
+                        <CardSkeleton lines={3} />
+                      </Grid>
+                    ))}
+                  </Grid>
+                </Section>
               </>
             )}
 
             {/* KPI Cards - Severity Counts */}
             {!isLoading && data && (
         <>
-          <Typography variant="h6" gutterBottom sx={{ mt: 3, mb: 2 }}>
-            Severity Overview
-          </Typography>
-          <Grid container spacing={2} sx={{ mb: 4 }}>
-            {severityLevels.map((severity) => {
-              const total = getSeverityTotal(counts, severity)
-              const severityCounts = counts[severity] || {}
-              return (
-                <Grid item xs={12} sm={6} md={3} key={severity}>
-                  <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-                    <Stack spacing={1}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Typography variant="h4">{total}</Typography>
-                        <SeverityChip severity={severity} size="small" />
-                      </Box>
-                      <Stack spacing={0.5}>
-                        {Object.entries(severityCounts).map(([status, count]) => (
-                          <Box key={status} sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Typography variant="caption" color="text.secondary">
-                              {status.replace('_', ' ')}:
-                            </Typography>
-                            <Typography variant="body2" fontWeight="medium">
-                              {count}
-                            </Typography>
-                          </Box>
-                        ))}
+          <Section title="Severity Overview">
+            <Grid container spacing={2}>
+              {severityLevels.map((severity) => {
+                const total = getSeverityTotal(counts, severity)
+                const severityCounts = counts[severity] || {}
+                return (
+                  <Grid item xs={12} sm={6} md={3} key={severity}>
+                    <Card>
+                      <Stack spacing={1}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Typography variant="h4" sx={{ fontWeight: 700 }}>{total}</Typography>
+                          <SeverityChip severity={severity} size="small" />
+                        </Box>
+                        <Stack spacing={0.5}>
+                          {Object.entries(severityCounts).map(([status, count]) => (
+                            <Box key={status} sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <Typography variant="caption" color="text.secondary">
+                                {status.replace('_', ' ')}:
+                              </Typography>
+                              <Typography variant="body2" fontWeight="medium">
+                                {count}
+                              </Typography>
+                            </Box>
+                          ))}
+                        </Stack>
                       </Stack>
-                    </Stack>
-                  </Paper>
-                </Grid>
-              )
-            })}
-          </Grid>
+                    </Card>
+                  </Grid>
+                )
+              })}
+            </Grid>
+          </Section>
 
           {/* KPI Cards - Status Summary */}
           {!isLoading && data && (
             <>
-              <Typography variant="h6" gutterBottom sx={{ mt: 3, mb: 2 }}>
-                Status Summary
-              </Typography>
-              <Grid container spacing={2} sx={{ mb: 4 }}>
-                <Grid item xs={12} sm={6} md={3}>
-                  <SupervisorKpiCard
-                    label="Open exceptions"
-                    value={getStatusTotal(counts, 'OPEN')}
-                    icon={<PendingIcon />}
-                    severity="normal"
-                  />
+              <Section title="Status Summary">
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <SupervisorKpiCard
+                      label="Open exceptions"
+                      value={getStatusTotal(counts, 'OPEN')}
+                      icon={<PendingIcon />}
+                      severity="normal"
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <SupervisorKpiCard
+                      label="Escalated exceptions"
+                      value={escalationsCount}
+                      icon={<ErrorIcon />}
+                      severity={escalationsCount > 0 ? 'critical' : 'normal'}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <SupervisorKpiCard
+                      label="Pending approvals"
+                      value={pendingApprovalsCount}
+                      icon={<WarningIcon />}
+                      severity={pendingApprovalsCount > 0 ? 'warning' : 'normal'}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <SupervisorKpiCard
+                      label="Resolved exceptions"
+                      value={getStatusTotal(counts, 'RESOLVED')}
+                      icon={<CheckCircleIcon />}
+                      severity="normal"
+                    />
+                  </Grid>
                 </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <SupervisorKpiCard
-                    label="Escalated exceptions"
-                    value={escalationsCount}
-                    icon={<ErrorIcon />}
-                    severity={escalationsCount > 0 ? 'critical' : 'normal'}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <SupervisorKpiCard
-                    label="Pending approvals"
-                    value={pendingApprovalsCount}
-                    icon={<WarningIcon />}
-                    severity={pendingApprovalsCount > 0 ? 'warning' : 'normal'}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6} md={3}>
-                  <SupervisorKpiCard
-                    label="Resolved exceptions"
-                    value={getStatusTotal(counts, 'RESOLVED')}
-                    icon={<CheckCircleIcon />}
-                    severity="normal"
-                  />
-                </Grid>
-              </Grid>
+              </Section>
             </>
           )}
 
           {/* Top Policy Violations */}
-          <Typography variant="h6" gutterBottom sx={{ mt: 3, mb: 2 }}>
-            Top Policy Violations
-          </Typography>
-          {topViolations.length > 0 ? (
-            <Paper sx={{ mb: 4, borderRadius: 2, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
-              <TableContainer>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell sx={{ backgroundColor: 'background.default', fontWeight: 600 }}>Rule</TableCell>
-                      <TableCell sx={{ backgroundColor: 'background.default', fontWeight: 600 }}>Violation Type</TableCell>
-                      <TableCell sx={{ backgroundColor: 'background.default', fontWeight: 600 }}>Exception ID</TableCell>
-                      <TableCell sx={{ backgroundColor: 'background.default', fontWeight: 600 }}>Tenant</TableCell>
-                      <TableCell sx={{ backgroundColor: 'background.default', fontWeight: 600 }}>Domain</TableCell>
-                      <TableCell sx={{ backgroundColor: 'background.default', fontWeight: 600 }}>Last Seen</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {topViolations.slice(0, 10).map((violation, index) => (
-                      <TableRow 
-                        key={`${violation.exception_id}-${index}`} 
-                        hover
-                        sx={{
-                          '&:hover': {
-                            backgroundColor: 'action.hover',
-                            cursor: 'pointer',
-                          },
-                          transition: 'background-color 0.2s ease',
-                        }}
-                      >
-                        <TableCell>
-                          <Typography variant="body2" fontWeight="medium">
-                            {violation.violated_rule}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={violation.violation_type}
-                            size="small"
-                            color="error"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                            {violation.exception_id}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2">{violation.tenant_id}</Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2">{violation.domain || '—'}</Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2" color="text.secondary">
-                            {formatDateTime(violation.timestamp)}
-                          </Typography>
-                        </TableCell>
+          <Section title="Top Policy Violations">
+            {topViolations.length > 0 ? (
+              <DataCard>
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ fontWeight: 600 }}>Rule</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>Violation Type</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>Exception ID</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>Tenant</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>Domain</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>Last Seen</TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Paper>
-          ) : (
-            <Alert severity="info" sx={{ mb: 4 }}>
-              No policy violations found for the selected filters.
-            </Alert>
-          )}
+                    </TableHead>
+                    <TableBody>
+                      {topViolations.slice(0, 10).map((violation, index) => (
+                        <TableRow 
+                          key={`${violation.exception_id}-${index}`} 
+                          hover
+                          sx={{
+                            '&:hover': {
+                              backgroundColor: 'action.hover',
+                              cursor: 'pointer',
+                            },
+                            transition: 'background-color 0.2s ease',
+                          }}
+                        >
+                          <TableCell>
+                            <Typography variant="body2" fontWeight="medium">
+                              {violation.violated_rule}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={violation.violation_type}
+                              size="small"
+                              color="error"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
+                              {violation.exception_id}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{violation.tenant_id}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{violation.domain || '—'}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {formatDateTime(violation.timestamp)}
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </DataCard>
+            ) : (
+              <Alert severity="info">
+                No policy violations found for the selected filters.
+              </Alert>
+            )}
+          </Section>
 
           {/* SLO & Quota Cards */}
           <SupervisorSloQuotaCards filters={filterProps} />
 
           {/* Optimization Suggestions */}
-          <Typography variant="h6" gutterBottom sx={{ mt: 3, mb: 2 }}>
-            Optimization Suggestions
-          </Typography>
-          {Object.keys(optimizationSuggestions).length > 0 ? (
-            <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-              <Stack spacing={1}>
-                {Object.entries(optimizationSuggestions).map(([key, value]) => (
-                  <Box key={key} sx={{ pl: 2, borderLeft: 2, borderColor: 'primary.main' }}>
-                    <Typography variant="body2">
-                      <strong>{key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}:</strong>{' '}
-                      {typeof value === 'object' && value !== null
-                        ? JSON.stringify(value, null, 2)
-                        : String(value)}
-                    </Typography>
-                  </Box>
-                ))}
-              </Stack>
-            </Paper>
-          ) : (
-            <Alert severity="info">
-              No optimization suggestions at this time.
-            </Alert>
-          )}
+          <Section title="Optimization Suggestions">
+            {Object.keys(optimizationSuggestions).length > 0 ? (
+              <Card>
+                <Stack spacing={1}>
+                  {Object.entries(optimizationSuggestions).map(([key, value]) => (
+                    <Box key={key} sx={{ pl: 2, borderLeft: 2, borderColor: 'primary.main' }}>
+                      <Typography variant="body2">
+                        <strong>{key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}:</strong>{' '}
+                        {typeof value === 'object' && value !== null
+                          ? JSON.stringify(value, null, 2)
+                          : String(value)}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              </Card>
+            ) : (
+              <Alert severity="info">
+                No optimization suggestions at this time.
+              </Alert>
+            )}
+          </Section>
             </>
             )}
 
@@ -510,7 +504,8 @@ export default function SupervisorPage() {
           <TabPanel value={activeTab} index={2}>
             <SupervisorPolicyViolationsTab filters={filterProps} />
           </TabPanel>
-        </Paper>
-    </Box>
+          </Box>
+        </Card>
+    </PageShell>
   )
 }

@@ -17,6 +17,7 @@ export interface Tenant {
   tenant_id: string
   name: string
   status: 'ACTIVE' | 'SUSPENDED'
+  industry?: string
   created_at: string
   created_by?: string
   updated_at: string

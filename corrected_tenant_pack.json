@@ -1,0 +1,52 @@
+{
+  "tenantId": "ACME_CAPITAL",
+  "domainName": "CapitalMarketsTrading",
+  "approvedTools": [
+    "getAllocationBreakdown",
+    "getCashMovementDetails",
+    "getPositionDetails",
+    "getRegulatoryReportStatus",
+    "getSettlementDetails",
+    "getTradeDetails",
+    "getTradeHistory",
+    "openCase",
+    "recalculatePosition",
+    "repairAllocation",
+    "submitRegulatoryReport",
+    "updateSSI",
+    "updateTradeAttributes"
+  ],
+  "customPlaybooks": [],
+  "customGuardrails": {
+    "allowLists": [],
+    "blockLists": [],
+    "humanApprovalThreshold": 0.75
+  },
+  "retentionPolicies": {
+    "dataTTL": 90
+  },
+  "humanApprovalRules": [
+    {
+      "severity": "CRITICAL",
+      "requireApproval": true
+    },
+    {
+      "severity": "HIGH",
+      "requireApproval": false
+    },
+    {
+      "severity": "MEDIUM",
+      "requireApproval": false
+    },
+    {
+      "severity": "LOW",
+      "requireApproval": false
+    }
+  ],
+  "customSeverityOverrides": [
+    {
+      "severity": "LOW",
+      "exceptionType": "FIN_SETTLEMENT_FAIL"
+    }
+  ]
+}

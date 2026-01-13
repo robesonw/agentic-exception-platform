@@ -9,7 +9,11 @@ import ErrorBoundary from './components/common/ErrorBoundary.tsx'
 import { setGlobalErrorHandler, normalizeError, formatErrorMessage } from './utils/errorHandling.ts'
 import { queryClient, setGlobalQueryErrorHandler } from './query/queryClient.ts'
 import App from './App.tsx'
-import { defaultTheme } from './theme/theme.ts'
+import { createAppTheme } from './theme/theme.ts'
+import { ThemeModeProvider, useThemeMode } from './theme/ThemeModeProvider.tsx'
+
+// Global Design System CSS (must be imported once at app bootstrap)
+import './theme/globalStyles.css'
 
 /**
  * Component that sets up global error handlers with snackbar
@@ -53,17 +57,31 @@ function AppWithProviders() {
   )
 }
 
+/**
+ * Inner component that consumes theme mode and provides MUI theme
+ */
+function ThemedApp() {
+  const { mode } = useThemeMode()
+  const theme = createAppTheme(mode)
+
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <QueryClientProvider client={queryClient}>
+        <TenantProvider>
+          <AppWithProviders />
+        </TenantProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
+  )
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <ThemeProvider theme={defaultTheme}>
-        <CssBaseline />
-        <QueryClientProvider client={queryClient}>
-          <TenantProvider>
-            <AppWithProviders />
-          </TenantProvider>
-        </QueryClientProvider>
-      </ThemeProvider>
+      <ThemeModeProvider>
+        <ThemedApp />
+      </ThemeModeProvider>
     </BrowserRouter>
   </React.StrictMode>,
 )

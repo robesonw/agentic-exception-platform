@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Box,
-  Paper,
   Tabs,
   Tab,
   TextField,
@@ -13,6 +12,7 @@ import DomainPacksList, { type CommonConfigFilters } from '../components/config/
 import TenantPoliciesList from '../components/config/TenantPoliciesList.tsx'
 import PlaybooksList from '../components/config/PlaybooksList.tsx'
 import ConfigRecommendationsTab from '../components/config/ConfigRecommendationsTab.tsx'
+import { PageShell, Card } from '../components/ui'
 import { useTenant } from '../hooks/useTenant.tsx'
 import { useDocumentTitle } from '../hooks/useDocumentTitle.ts'
 
@@ -150,74 +150,80 @@ export default function ConfigPage() {
   }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      {/* Header */}
-      <Box>
-        <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5 }}>
-          Config & Learning Console
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Browse domain packs, tenant policy packs, and playbooks
-        </Typography>
+    <PageShell>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {/* Header */}
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5 }}>
+            Config & Learning Console
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Browse domain packs, tenant policy packs, and playbooks
+          </Typography>
+        </Box>
+
+        {/* Filters */}
+        <Card>
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6} md={4}>
+              <TextField
+                fullWidth
+                label="Tenant ID"
+                value={tenantFilter}
+                onChange={(e) => setTenantFilter(e.target.value)}
+                placeholder="Filter by tenant ID"
+                size="small"
+                helperText="Leave empty to show all tenants"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={4}>
+              <TextField
+                fullWidth
+                label="Domain"
+                value={domainFilter}
+                onChange={(e) => setDomainFilter(e.target.value)}
+                placeholder="Filter by domain"
+                size="small"
+                helperText="Leave empty to show all domains"
+              />
+            </Grid>
+          </Grid>
+        </Card>
+
+        {/* Config Type Tabs */}
+        <Card noPadding>
+          <Box sx={{ p: 2, pb: 0 }}>
+            <Tabs value={activeTab} onChange={handleTabChange} aria-label="config type tabs">
+              <Tab label="Domain Packs" id="config-tab-0" aria-controls="config-tabpanel-0" />
+              <Tab label="Tenant Policy Packs" id="config-tab-1" aria-controls="config-tabpanel-1" />
+              <Tab label="Playbooks" id="config-tab-2" aria-controls="config-tabpanel-2" />
+              <Tab label="Recommendations" id="config-tab-3" aria-controls="config-tabpanel-3" />
+            </Tabs>
+          </Box>
+
+          <Box sx={{ p: 2 }}>
+            {/* Domain Packs Tab */}
+            <TabPanel value={activeTab} index={0}>
+              <DomainPacksList filters={filters} onSelectItem={handleSelectItem} />
+            </TabPanel>
+
+            {/* Tenant Policy Packs Tab */}
+            <TabPanel value={activeTab} index={1}>
+              <TenantPoliciesList filters={filters} onSelectItem={handleSelectItem} />
+            </TabPanel>
+
+            {/* Playbooks Tab */}
+            <TabPanel value={activeTab} index={2}>
+              <PlaybooksList filters={filters} onSelectItem={handleSelectItem} />
+            </TabPanel>
+
+            {/* Recommendations Tab */}
+            <TabPanel value={activeTab} index={3}>
+              <ConfigRecommendationsTab tenantId={filters.tenantId} domain={filters.domain} />
+            </TabPanel>
+          </Box>
+        </Card>
       </Box>
-
-      {/* Filters */}
-      <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-        <Grid container spacing={2}>
-          <Grid item xs={12} sm={6} md={4}>
-            <TextField
-              fullWidth
-              label="Tenant ID"
-              value={tenantFilter}
-              onChange={(e) => setTenantFilter(e.target.value)}
-              placeholder="Filter by tenant ID"
-              size="small"
-              helperText="Leave empty to show all tenants"
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={4}>
-            <TextField
-              fullWidth
-              label="Domain"
-              value={domainFilter}
-              onChange={(e) => setDomainFilter(e.target.value)}
-              placeholder="Filter by domain"
-              size="small"
-              helperText="Leave empty to show all domains"
-            />
-          </Grid>
-        </Grid>
-      </Paper>
-
-      {/* Config Type Tabs */}
-      <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
-          <Tabs value={activeTab} onChange={handleTabChange} aria-label="config type tabs">
-            <Tab label="Domain Packs" id="config-tab-0" aria-controls="config-tabpanel-0" />
-            <Tab label="Tenant Policy Packs" id="config-tab-1" aria-controls="config-tabpanel-1" />
-            <Tab label="Playbooks" id="config-tab-2" aria-controls="config-tabpanel-2" />
-            <Tab label="Recommendations" id="config-tab-3" aria-controls="config-tabpanel-3" />
-          </Tabs>
-
-          {/* Domain Packs Tab */}
-          <TabPanel value={activeTab} index={0}>
-            <DomainPacksList filters={filters} onSelectItem={handleSelectItem} />
-          </TabPanel>
-
-          {/* Tenant Policy Packs Tab */}
-          <TabPanel value={activeTab} index={1}>
-            <TenantPoliciesList filters={filters} onSelectItem={handleSelectItem} />
-          </TabPanel>
-
-          {/* Playbooks Tab */}
-          <TabPanel value={activeTab} index={2}>
-            <PlaybooksList filters={filters} onSelectItem={handleSelectItem} />
-          </TabPanel>
-
-          {/* Recommendations Tab */}
-          <TabPanel value={activeTab} index={3}>
-            <ConfigRecommendationsTab tenantId={filters.tenantId} domain={filters.domain} />
-          </TabPanel>
-        </Paper>
-    </Box>
+    </PageShell>
   )
 }

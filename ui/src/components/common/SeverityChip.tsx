@@ -1,13 +1,13 @@
 /**
  * Shared Severity Chip Component
  * 
- * Displays exception severity with consistent colors and optional icons.
- * Used across Exceptions list, detail, and Supervisor views.
+ * Displays exception severity with consistent muted colors.
+ * Colors are informative, not aggressive - used as badges only.
  */
 
 import { Chip, ChipProps } from '@mui/material'
-import { Error as ErrorIcon, Warning as WarningIcon } from '@mui/icons-material'
 import type { ExceptionSeverity } from '../../types'
+import { severityColors } from '../../theme/tokens'
 
 export interface SeverityChipProps {
   /** Severity level */
@@ -19,21 +19,15 @@ export interface SeverityChipProps {
 }
 
 /**
- * Get severity chip color
+ * Normalize severity to lowercase key
  */
-function getSeverityColor(severity: string | null | undefined): ChipProps['color'] {
-  switch (severity) {
-    case 'CRITICAL':
-      return 'error'
-    case 'HIGH':
-      return 'warning'
-    case 'MEDIUM':
-      return 'info'
-    case 'LOW':
-      return 'success'
-    default:
-      return 'default'
-  }
+function normalizeSeverity(severity: string | null | undefined): 'critical' | 'high' | 'medium' | 'low' {
+  if (!severity) return 'low'
+  const lower = severity.toLowerCase()
+  if (lower === 'critical') return 'critical'
+  if (lower === 'high') return 'high'
+  if (lower === 'medium') return 'medium'
+  return 'low'
 }
 
 /**
@@ -47,36 +41,28 @@ function formatSeverityLabel(severity: string | null | undefined): string {
 }
 
 /**
- * Get icon for severity (only for HIGH and CRITICAL)
- */
-function getSeverityIcon(severity: string | null | undefined) {
-  switch (severity) {
-    case 'CRITICAL':
-      return <ErrorIcon fontSize="small" />
-    case 'HIGH':
-      return <WarningIcon fontSize="small" />
-    default:
-      return undefined
-  }
-}
-
-/**
  * Severity Chip Component
  * 
- * Displays exception severity with color-coded chip and optional icons.
+ * Displays exception severity with muted, enterprise-friendly colors.
+ * No icons - clean badge style.
  */
 export default function SeverityChip({ severity, size = 'small', sx }: SeverityChipProps) {
-  const color = getSeverityColor(severity)
+  const level = normalizeSeverity(severity)
+  const colors = severityColors[level]
   const label = formatSeverityLabel(severity)
-  const icon = getSeverityIcon(severity)
 
   return (
     <Chip
       label={label}
-      color={color}
       size={size}
-      icon={icon}
-      sx={sx}
+      sx={{
+        backgroundColor: colors.bg,
+        color: colors.text,
+        border: `1px solid ${colors.border}`,
+        fontWeight: 500,
+        fontSize: size === 'small' ? '0.75rem' : '0.8125rem',
+        ...sx,
+      }}
     />
   )
 }

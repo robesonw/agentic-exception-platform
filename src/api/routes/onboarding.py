@@ -82,6 +82,7 @@ class TenantResponse(BaseModel):
     tenant_id: str
     name: str
     status: str
+    industry: Optional[str] = None
     created_at: datetime
     created_by: Optional[str]
     updated_at: datetime
@@ -1558,6 +1559,25 @@ async def activate_packs(
         try:
             # Update pack statuses to ACTIVE if they are currently DRAFT
             if domain_pack_validated:
+                # First, deactivate all other ACTIVE versions of the same domain
+                # This ensures only one version is active at a time for a given domain
+                existing_active_packs = await domain_pack_repo.list_domain_packs(
+                    domain=domain_name,
+                    status=PackStatus.ACTIVE,
+                )
+                for existing_pack in existing_active_packs:
+                    # Skip the pack we're about to activate
+                    if existing_pack.id != domain_pack_validated.id:
+                        await domain_pack_repo.update_pack_status(
+                            pack_id=existing_pack.id,
+                            status=PackStatus.DEPRECATED,
+                        )
+                        logger.info(
+                            f"Deactivated previous active domain pack: "
+                            f"id={existing_pack.id}, domain={existing_pack.domain}, "
+                            f"version={existing_pack.version}"
+                        )
+                
                 # Handle both enum and string status values
                 current_status = domain_pack_validated.status
                 status_value = current_status.value if hasattr(current_status, 'value') else str(current_status)
@@ -1580,7 +1600,12 @@ async def activate_packs(
                     # Refresh the validated pack with updated status
                     domain_pack_validated = updated_pack
                 else:
-                    logger.info(f"Domain pack status is already {status_value}, skipping status update")
+                    # If already ACTIVE, ensure it's the only active one (shouldn't happen due to deactivation above, but be safe)
+                    if status_value == PackStatus.ACTIVE.value or status_value == "active":
+                        logger.info(f"Domain pack status is already ACTIVE, ensuring it's the only active version")
+                        # The deactivation above should have handled this, but log for clarity
+                    else:
+                        logger.info(f"Domain pack status is {status_value}, skipping status update")
             
             if tenant_pack_validated:
                 # Handle both enum and string status values

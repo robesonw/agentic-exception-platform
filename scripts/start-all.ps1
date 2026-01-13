@@ -54,7 +54,13 @@ if (Test-Path "$ProjectRoot\.env") {
 
 Write-Host ""
 Write-Host "Step 1: Starting Infrastructure (PostgreSQL, Kafka)..." -ForegroundColor Green
-docker-compose up -d postgres kafka kafka-ui
+$ErrorActionPreference = "Continue"
+docker-compose up -d postgres kafka kafka-ui 2>&1 | Out-Host
+$ErrorActionPreference = "Stop"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Error: Failed to start infrastructure services" -ForegroundColor Red
+    exit 1
+}
 
 Write-Host ""
 Write-Host "Waiting for PostgreSQL to be ready..."
@@ -63,9 +69,13 @@ $counter = 0
 do {
     Start-Sleep -Seconds 1
     $counter++
-    $result = docker exec sentinai-postgres pg_isready -U sentinai 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        break
+    try {
+        $result = docker exec sentinai-postgres pg_isready -U sentinai 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            break
+        }
+    } catch {
+        # Container may not be ready yet
     }
     if ($counter -ge $timeout) {
         Write-Host "Error: PostgreSQL failed to start within $timeout seconds" -ForegroundColor Red
@@ -81,9 +91,13 @@ $counter = 0
 do {
     Start-Sleep -Seconds 2
     $counter += 2
-    $result = docker exec sentinai-kafka /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        break
+    try {
+        $result = docker exec sentinai-kafka /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            break
+        }
+    } catch {
+        # Container may not be ready yet
     }
     if ($counter -ge $timeout) {
         Write-Host "Error: Kafka failed to start within $timeout seconds" -ForegroundColor Red
@@ -93,10 +107,96 @@ do {
 Write-Host "Kafka is ready" -ForegroundColor Green
 
 Write-Host ""
+Write-Host "Initializing Kafka topics..." -ForegroundColor Green
+$ErrorActionPreference = "Continue"
+docker-compose run --rm kafka-init 2>&1 | Out-Host
+$ErrorActionPreference = "Stop"
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "Kafka topics initialized" -ForegroundColor Green
+} else {
+    Write-Host "Warning: Kafka topic initialization may have failed. Continuing..." -ForegroundColor Yellow
+}
+
+Write-Host ""
 Write-Host "Step 2: Running Database Migrations..." -ForegroundColor Green
-if (Get-Command alembic -ErrorAction SilentlyContinue) {
-    alembic upgrade head
-    Write-Host "Database migrations completed" -ForegroundColor Green
+
+# Verify database is accessible before running migrations
+Write-Host "Verifying database connection..." -ForegroundColor Cyan
+$dbCheck = docker exec sentinai-postgres psql -U sentinai -d sentinai -c "SELECT 1;" 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Warning: Database connection check failed. Migrations may fail." -ForegroundColor Yellow
+} else {
+    Write-Host "Database connection verified" -ForegroundColor Green
+}
+
+# Check for virtual environment
+$venvPath = Join-Path $ProjectRoot ".venv"
+$venvAlembic = Join-Path $venvPath "Scripts\alembic.exe"
+
+if (Test-Path $venvAlembic) {
+    Write-Host "Using alembic from virtual environment..." -ForegroundColor Cyan
+    # Ensure DATABASE_URL is set
+    if (-not $env:DATABASE_URL) {
+        Write-Host "Warning: DATABASE_URL not set. Using default..." -ForegroundColor Yellow
+        $env:DATABASE_URL = "postgresql+asyncpg://sentinai:sentinai@localhost:5432/sentinai"
+    }
+    
+    # Run migrations
+    Write-Host "Running migrations..." -ForegroundColor Cyan
+    $oldErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        # Run alembic directly - INFO messages go to stderr, which is normal
+        & $venvAlembic upgrade head 2>&1 | ForEach-Object {
+            if ($_ -is [System.Management.Automation.ErrorRecord]) {
+                # Stderr output (INFO messages) - display as info
+                Write-Host $_.ToString() -ForegroundColor Gray
+            } else {
+                Write-Host $_ -ForegroundColor Gray
+            }
+        }
+        $exitCode = $LASTEXITCODE
+        $ErrorActionPreference = $oldErrorAction
+        if ($exitCode -eq 0) {
+            Write-Host "Database migrations completed" -ForegroundColor Green
+        } else {
+            Write-Host "Migrations exited with code $exitCode. Continuing anyway..." -ForegroundColor Yellow
+        }
+    } catch {
+        $ErrorActionPreference = $oldErrorAction
+        Write-Host "Error running migrations: $_" -ForegroundColor Red
+        Write-Host "Continuing anyway..." -ForegroundColor Yellow
+    }
+} elseif (Get-Command alembic -ErrorAction SilentlyContinue) {
+    Write-Host "Using system alembic..." -ForegroundColor Cyan
+    # Ensure DATABASE_URL is set
+    if (-not $env:DATABASE_URL) {
+        Write-Host "Warning: DATABASE_URL not set. Using default..." -ForegroundColor Yellow
+        $env:DATABASE_URL = "postgresql+asyncpg://sentinai:sentinai@localhost:5432/sentinai"
+    }
+    
+    $oldErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        alembic upgrade head 2>&1 | ForEach-Object {
+            if ($_ -is [System.Management.Automation.ErrorRecord]) {
+                Write-Host $_.ToString() -ForegroundColor Gray
+            } else {
+                Write-Host $_ -ForegroundColor Gray
+            }
+        }
+        $exitCode = $LASTEXITCODE
+        $ErrorActionPreference = $oldErrorAction
+        if ($exitCode -eq 0) {
+            Write-Host "Database migrations completed" -ForegroundColor Green
+        } else {
+            Write-Host "Migrations exited with code $exitCode. Continuing anyway..." -ForegroundColor Yellow
+        }
+    } catch {
+        $ErrorActionPreference = $oldErrorAction
+        Write-Host "Error running migrations: $_" -ForegroundColor Red
+        Write-Host "Continuing anyway..." -ForegroundColor Yellow
+    }
 } else {
     Write-Host "Warning: alembic not found. Skipping migrations." -ForegroundColor Yellow
     Write-Host "Run 'alembic upgrade head' manually if needed."
@@ -104,7 +204,12 @@ if (Get-Command alembic -ErrorAction SilentlyContinue) {
 
 Write-Host ""
 Write-Host "Step 3: Starting Backend API..." -ForegroundColor Green
-docker-compose up -d backend
+$ErrorActionPreference = "Continue"
+docker-compose up -d backend 2>&1 | Out-Host
+$ErrorActionPreference = "Stop"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Warning: Failed to start backend service. It may already be running." -ForegroundColor Yellow
+}
 
 Write-Host ""
 Write-Host "Waiting for Backend API to be ready..."
@@ -152,7 +257,12 @@ if (Test-Path $uiEnvPath) {
     Write-Host "  Create ui/.env with VITE_OPS_ENABLED, VITE_ADMIN_ENABLED, etc. if needed." -ForegroundColor Yellow
 }
 
-docker-compose up -d ui
+$ErrorActionPreference = "Continue"
+docker-compose up -d ui 2>&1 | Out-Host
+$ErrorActionPreference = "Stop"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Warning: Failed to start UI service. It may already be running." -ForegroundColor Yellow
+}
 
 Write-Host ""
 Write-Host "Waiting for UI to be ready..."
@@ -177,12 +287,62 @@ do {
 Write-Host "UI is starting" -ForegroundColor Green
 
 Write-Host ""
-Write-Host "Step 5: Starting Workers (optional)..." -ForegroundColor Green
-Write-Host "Workers can be started manually using:"
-Write-Host "  `$env:WORKER_TYPE='intake'; `$env:CONCURRENCY='2'; `$env:GROUP_ID='intake-workers'; python -m src.workers"
+Write-Host "Step 5: Starting Workers..." -ForegroundColor Green
+$ErrorActionPreference = "Continue"
+docker-compose up -d intake-worker triage-worker policy-worker playbook-worker feedback-worker tool-worker sla-monitor 2>&1 | Out-Host
+$ErrorActionPreference = "Stop"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Warning: Some workers may have failed to start. Check logs for details." -ForegroundColor Yellow
+}
+
 Write-Host ""
-Write-Host "Or use the worker startup script:"
-Write-Host "  .\scripts\start-workers.ps1"
+Write-Host "Waiting for workers to be ready..."
+$workerServices = @(
+    @{Name="intake-worker"; Port=9001},
+    @{Name="triage-worker"; Port=9002},
+    @{Name="policy-worker"; Port=9003},
+    @{Name="playbook-worker"; Port=9004},
+    @{Name="tool-worker"; Port=9005},
+    @{Name="feedback-worker"; Port=9006},
+    @{Name="sla-monitor"; Port=9007}
+)
+
+$allWorkersReady = $false
+$timeout = 60
+$counter = 0
+
+do {
+    Start-Sleep -Seconds 2
+    $counter += 2
+    $readyCount = 0
+    
+    foreach ($worker in $workerServices) {
+        try {
+            $response = Invoke-WebRequest -Uri "http://localhost:$($worker.Port)/readyz" -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+            if ($response.StatusCode -eq 200) {
+                $readyCount++
+            }
+        } catch {
+            # Worker not ready yet
+        }
+    }
+    
+    if ($readyCount -eq $workerServices.Count) {
+        $allWorkersReady = $true
+        break
+    }
+    
+    if ($counter -ge $timeout) {
+        Write-Host "Warning: Some workers may not be ready yet. $readyCount/$($workerServices.Count) workers are ready." -ForegroundColor Yellow
+        break
+    }
+} while ($true)
+
+if ($allWorkersReady) {
+    Write-Host "All workers are ready" -ForegroundColor Green
+} else {
+    Write-Host "Workers are starting (some may still be initializing)" -ForegroundColor Yellow
+}
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
@@ -197,6 +357,15 @@ Write-Host "  - Backend API:    http://localhost:8000"
 Write-Host "  - UI:             http://localhost:3000"
 Write-Host "  - API Docs:       http://localhost:8000/docs"
 Write-Host "  - Metrics:        http://localhost:8000/metrics"
+Write-Host ""
+Write-Host "Workers:"
+Write-Host "  - Intake Worker:  http://localhost:9001/healthz"
+Write-Host "  - Triage Worker:  http://localhost:9002/healthz"
+Write-Host "  - Policy Worker:  http://localhost:9003/healthz"
+Write-Host "  - Playbook Worker: http://localhost:9004/healthz"
+Write-Host "  - Tool Worker:    http://localhost:9005/healthz"
+Write-Host "  - Feedback Worker: http://localhost:9006/healthz"
+Write-Host "  - SLA Monitor:    http://localhost:9007/healthz"
 Write-Host ""
 Write-Host "To view logs:"
 Write-Host "  docker-compose logs -f [service_name]"

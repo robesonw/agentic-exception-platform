@@ -202,6 +202,24 @@ axiosInstance.interceptors.response.use(
     // Normalize error using errorHandling utility
     const normalizedError = normalizeError(error)
     
+    // Handle 401 Unauthorized - redirect to login
+    if (normalizedError.status === 401) {
+      console.error('[httpClient] 401 Unauthorized - redirecting to login')
+      // Clear stored credentials as they may be invalid
+      if (typeof window !== 'undefined') {
+        // Don't clear localStorage immediately - let the login page handle it
+        // This preserves the tenant/domain selection for better UX
+      }
+      // Redirect to login page if not already there
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        window.location.href = '/login'
+        // Don't show error snackbar for 401 since we're redirecting
+        const errorObj = new Error('Session expired. Please log in again.') as Error & Partial<ApiError>
+        errorObj.status = 401
+        throw errorObj
+      }
+    }
+    
     // Call global error handler if available (will show snackbar)
     handleError(normalizedError)
     

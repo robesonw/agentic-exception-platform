@@ -120,7 +120,11 @@ export default function SupervisorEscalationsTab({ filters }: SupervisorEscalati
         id: 'timestamp',
         label: 'Timestamp',
         minWidth: 150,
-        accessor: (row) => formatDateTime(row.timestamp),
+        accessor: (row) => (
+          <Box component="span" sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
+            {formatDateTime(row.timestamp)}
+          </Box>
+        ),
       },
       {
         id: 'escalation_reason',

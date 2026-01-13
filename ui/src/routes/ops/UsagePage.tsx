@@ -150,7 +150,7 @@ export default function UsagePage() {
           <CircularProgress />
         </Box>
       ) : (
-        <Grid container spacing={3} sx={{ mb: 3 }}>
+        <Grid container spacing={2} sx={{ mb: 3 }}>
           {summaryData?.summary.map((item: UsageSummary) => (
             <Grid item xs={12} sm={6} md={3} key={item.resourceType}>
               <Card>

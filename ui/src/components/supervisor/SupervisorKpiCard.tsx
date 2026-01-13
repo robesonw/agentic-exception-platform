@@ -3,9 +3,11 @@
  * 
  * Reusable card component for displaying key performance indicators
  * in the Supervisor Dashboard. Provides consistent styling and layout.
+ * Uses MUI theme tokens for automatic light/dark mode support.
  */
 
 import { Card, CardContent, Typography, Box, Stack, useTheme } from '@mui/material'
+import { severityColors, typographyScale } from '../../theme/tokens'
 
 export interface SupervisorKpiCardProps {
   /** KPI label/description */
@@ -20,6 +22,19 @@ export interface SupervisorKpiCardProps {
   icon?: React.ReactNode
   /** Additional CSS styling */
   sx?: Record<string, unknown>
+}
+
+// Muted border colors from design tokens
+const severityBorderColors = {
+  normal: 'transparent',
+  warning: severityColors.high.border,      // Amber
+  critical: severityColors.critical.border, // Red
+}
+
+const severityTextColors = {
+  normal: '', // Will use theme text.secondary
+  warning: severityColors.high.text,        // Amber
+  critical: severityColors.critical.text,   // Red
 }
 
 /**
@@ -37,30 +52,10 @@ export default function SupervisorKpiCard({
   sx,
 }: SupervisorKpiCardProps) {
   const theme = useTheme()
-
-  // Determine border color based on severity
-  const getBorderColor = () => {
-    switch (severity) {
-      case 'warning':
-        return theme.palette.warning.main
-      case 'critical':
-        return theme.palette.error.main
-      default:
-        return 'transparent'
-    }
-  }
-
-  // Determine text color for trend label based on severity
-  const getTrendColor = () => {
-    switch (severity) {
-      case 'warning':
-        return theme.palette.warning.main
-      case 'critical':
-        return theme.palette.error.main
-      default:
-        return theme.palette.text.secondary
-    }
-  }
+  const borderColor = severityBorderColors[severity]
+  const trendColor = severity === 'normal' 
+    ? theme.palette.text.secondary 
+    : severityTextColors[severity]
 
   // Build accessible label for screen readers
   const ariaLabel = trendLabel
@@ -71,18 +66,25 @@ export default function SupervisorKpiCard({
     <Card
       sx={{
         height: '100%',
-        borderLeft: severity !== 'normal' ? 4 : 0,
-        borderLeftColor: getBorderColor(),
+        backgroundColor: 'background.paper',
+        border: '1px solid',
+        borderColor: 'divider',
+        borderLeft: severity !== 'normal' ? `4px solid ${borderColor}` : undefined,
+        boxShadow: 'none',
         ...sx,
       }}
       aria-label={ariaLabel}
       role="region"
     >
-      <CardContent>
+      <CardContent sx={{ p: 2.5 }}>
         <Stack spacing={1}>
           {/* Header: Value and Icon */}
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <Typography variant="h4" component="div" sx={{ fontWeight: 600 }} aria-label={`Value: ${value}`}>
+            <Typography 
+              component="div" 
+              sx={{ ...typographyScale.kpiValue, color: 'text.primary' }}
+              aria-label={`Value: ${value}`}
+            >
               {typeof value === 'number' ? value.toLocaleString() : value}
             </Typography>
             {icon && (
@@ -96,7 +98,7 @@ export default function SupervisorKpiCard({
           </Box>
 
           {/* Label */}
-          <Typography variant="caption" color="text.secondary" component="div">
+          <Typography sx={{ ...typographyScale.kpiLabel, color: 'text.secondary' }} component="div">
             {label}
           </Typography>
 
@@ -105,7 +107,7 @@ export default function SupervisorKpiCard({
             <Typography
               variant="body2"
               sx={{
-                color: getTrendColor(),
+                color: trendColor,
                 fontSize: '0.75rem',
                 fontWeight: severity !== 'normal' ? 600 : 400,
               }}

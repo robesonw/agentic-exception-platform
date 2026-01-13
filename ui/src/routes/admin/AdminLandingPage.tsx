@@ -1,17 +1,19 @@
 import { useQuery } from '@tanstack/react-query'
-import { Box, Grid, Card, CardContent, Typography, Link, CircularProgress, Alert } from '@mui/material'
+import { Box, Grid, Typography, Link, CircularProgress, Alert } from '@mui/material'
 import { Link as RouterLink } from 'react-router-dom'
 import { useTenant } from '../../hooks/useTenant'
 import { listConfigChanges } from '../../api/admin'
 import PageHeader from '../../components/common/PageHeader'
 import NotAuthorizedPage from '../../components/common/NotAuthorizedPage'
 import AdminWarningBanner from '../../components/common/AdminWarningBanner'
+import { PageShell, Card, Section } from '../../components/ui'
 import SettingsIcon from '@mui/icons-material/Settings'
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
 import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck'
 import BuildIcon from '@mui/icons-material/Build'
 import HistoryIcon from '@mui/icons-material/History'
 import BusinessIcon from '@mui/icons-material/Business'
+import ScienceIcon from '@mui/icons-material/Science'
 
 interface QuickLinkCardProps {
   title: string
@@ -24,48 +26,37 @@ interface QuickLinkCardProps {
 function QuickLinkCard({ title, description, to, icon, badge }: QuickLinkCardProps) {
   return (
     <Card
-      component={RouterLink}
-      to={to}
-      sx={{
-        height: '100%',
-        textDecoration: 'none',
-        transition: 'transform 0.2s, box-shadow 0.2s',
-        '&:hover': {
-          transform: 'translateY(-4px)',
-          boxShadow: 4,
-        },
-        cursor: 'pointer',
-      }}
+      hoverable
+      onClick={() => window.location.href = to}
+      sx={{ height: '100%' }}
     >
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-          {icon}
-          {badge !== undefined && badge > 0 && (
-            <Box
-              sx={{
-                bgcolor: 'error.main',
-                color: 'white',
-                borderRadius: '50%',
-                width: 24,
-                height: 24,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-              }}
-            >
-              {badge}
-            </Box>
-          )}
-        </Box>
-        <Typography variant="h6" gutterBottom>
-          {title}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          {description}
-        </Typography>
-      </CardContent>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        {icon}
+        {badge !== undefined && badge > 0 && (
+          <Box
+            sx={{
+              bgcolor: 'error.main',
+              color: 'white',
+              borderRadius: '50%',
+              width: 24,
+              height: 24,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+            }}
+          >
+            {badge}
+          </Box>
+        )}
+      </Box>
+      <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+        {title}
+      </Typography>
+      <Typography variant="body2" color="text.secondary">
+        {description}
+      </Typography>
     </Card>
   )
 }
@@ -90,7 +81,7 @@ export default function AdminLandingPage() {
   // Handle 429 rate limit errors
   if (isError && error && 'status' in error && error.status === 429) {
     return (
-      <Box>
+      <PageShell>
         <PageHeader
           title="Admin Dashboard"
           subtitle="Governance and configuration management"
@@ -103,12 +94,12 @@ export default function AdminLandingPage() {
             Too many requests. Please wait a minute before trying again.
           </Typography>
         </Alert>
-      </Box>
+      </PageShell>
     )
   }
 
   return (
-    <Box>
+    <PageShell>
       <PageHeader
         title="Admin Dashboard"
         subtitle="Governance and configuration management"
@@ -135,60 +126,70 @@ export default function AdminLandingPage() {
           )}
 
           {/* Quick Links */}
-          <Grid container spacing={3}>
-            <Grid item xs={12} sm={6} md={4}>
-              <QuickLinkCard
-                title="Config Changes"
-                description="Review and approve configuration change requests"
-                to="/admin/config-changes"
-                icon={<SettingsIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
-                badge={pendingCount}
-              />
+          <Section title="Quick Access">
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6} md={4}>
+                <QuickLinkCard
+                  title="Config Changes"
+                  description="Review and approve configuration change requests"
+                  to="/admin/config-changes"
+                  icon={<SettingsIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
+                  badge={pendingCount}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
+                <QuickLinkCard
+                  title="Packs"
+                  description="Manage Domain Packs and Tenant Policy Packs"
+                  to="/admin/packs"
+                  icon={<AdminPanelSettingsIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
+                <QuickLinkCard
+                  title="Playbooks"
+                  description="View and manage playbook configurations"
+                  to="/admin/playbooks"
+                  icon={<PlaylistAddCheckIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
+                <QuickLinkCard
+                  title="Tools"
+                  description="Manage tool registry and tenant enablement"
+                  to="/admin/tools"
+                  icon={<BuildIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
+                <QuickLinkCard
+                  title="Tenants"
+                  description="Create and manage tenant organizations"
+                  to="/admin/tenants"
+                  icon={<BusinessIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
+                <QuickLinkCard
+                  title="Audit Trail"
+                  description="View governance and configuration audit events"
+                  to="/admin/audit"
+                  icon={<HistoryIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
+                <QuickLinkCard
+                  title="Demo Settings"
+                  description="Configure demo mode and generate demo exceptions"
+                  to="/admin/demo"
+                  icon={<ScienceIcon sx={{ fontSize: 40, color: 'secondary.main' }} />}
+                />
+              </Grid>
             </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <QuickLinkCard
-                title="Packs"
-                description="Manage Domain Packs and Tenant Policy Packs"
-                to="/admin/packs"
-                icon={<AdminPanelSettingsIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <QuickLinkCard
-                title="Playbooks"
-                description="View and manage playbook configurations"
-                to="/admin/playbooks"
-                icon={<PlaylistAddCheckIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <QuickLinkCard
-                title="Tools"
-                description="Manage tool registry and tenant enablement"
-                to="/admin/tools"
-                icon={<BuildIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <QuickLinkCard
-                title="Tenants"
-                description="Create and manage tenant organizations"
-                to="/admin/tenants"
-                icon={<BusinessIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={4}>
-              <QuickLinkCard
-                title="Audit Trail"
-                description="View governance and configuration audit events"
-                to="/admin/audit"
-                icon={<HistoryIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
-              />
-            </Grid>
-          </Grid>
+          </Section>
         </>
       )}
-    </Box>
+    </PageShell>
   )
 }
 

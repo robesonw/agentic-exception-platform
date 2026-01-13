@@ -8,6 +8,16 @@ It reads the DATABASE_URL from environment variables and uses asyncpg for Postgr
 import asyncio
 import os
 from logging.config import fileConfig
+from pathlib import Path
+
+# Load .env file before anything else
+from dotenv import load_dotenv
+
+# Find the project root (where alembic.ini is located)
+project_root = Path(__file__).resolve().parent.parent
+env_file = project_root / ".env"
+if env_file.exists():
+    load_dotenv(env_file)
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection

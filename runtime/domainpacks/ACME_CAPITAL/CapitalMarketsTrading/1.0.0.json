@@ -1,0 +1,421 @@
+{
+  "domainName": "CapitalMarketsTrading",
+  "exceptionTypes": {
+    "FIN_POSITION_BREAK": {
+      "name": "FIN_POSITION_BREAK",
+      "description": "Position reconciliation break between internal books and counterparty/exchange records"
+    },
+    "FIN_NOSTRO_MISMATCH": {
+      "name": "FIN_NOSTRO_MISMATCH",
+      "description": "Cash account (nostro) balance mismatch with custodian or bank statement"
+    },
+    "FIN_SETTLEMENT_FAIL": {
+      "name": "FIN_SETTLEMENT_FAIL",
+      "description": "Trade settlement failure due to insufficient securities, cash, or SSI issues"
+    },
+    "FIN_FAILED_ALLOCATION": {
+      "name": "FIN_FAILED_ALLOCATION",
+      "description": "Block trade allocation failed - unable to distribute execution to client accounts"
+    },
+    "FIN_CASH_MOVEMENT_ERROR": {
+      "name": "FIN_CASH_MOVEMENT_ERROR",
+      "description": "Corporate action payment, dividend, or interest payment processing error"
+    },
+    "FIN_REG_REPORT_REJECTED": {
+      "name": "FIN_REG_REPORT_REJECTED",
+      "description": "Regulatory report (EMIR, MiFID II, CAT, etc.) rejected by regulator"
+    },
+    "FIN_TRADE_VALIDATION_ERROR": {
+      "name": "FIN_TRADE_VALIDATION_ERROR",
+      "description": "Trade booking validation error - price, quantity, or reference data mismatch"
+    }
+  },
+  "entities": {
+    "TradeOrder": {
+      "attributes": {
+        "orderId": {"type": "string", "required": true},
+        "tradeDate": {"type": "string", "required": true},
+        "trader": {"type": "string", "required": false},
+        "buySell": {"type": "string", "required": false},
+        "cusip": {"type": "string", "required": false},
+        "isin": {"type": "string", "required": false},
+        "price": {"type": "number", "required": false},
+        "quantity": {"type": "number", "required": false},
+        "broker": {"type": "string", "required": false},
+        "portfolio": {"type": "string", "required": false}
+      },
+      "relations": []
+    },
+    "Position": {
+      "attributes": {
+        "accountId": {"type": "string", "required": true},
+        "cusip": {"type": "string", "required": true},
+        "quantity": {"type": "number", "required": false},
+        "asOfDate": {"type": "string", "required": false}
+      },
+      "relations": []
+    },
+    "Settlement": {
+      "attributes": {
+        "settleId": {"type": "string", "required": true},
+        "orderId": {"type": "string", "required": true},
+        "status": {"type": "string", "required": false},
+        "failReason": {"type": "string", "required": false}
+      },
+      "relations": ["TradeOrder"]
+    }
+  },
+  "severityRules": [
+    { "condition": "exceptionType == 'FIN_POSITION_BREAK'", "severity": "CRITICAL" },
+    { "condition": "exceptionType == 'FIN_NOSTRO_MISMATCH'", "severity": "HIGH" },
+    { "condition": "exceptionType == 'FIN_SETTLEMENT_FAIL'", "severity": "HIGH" },
+    { "condition": "exceptionType == 'FIN_FAILED_ALLOCATION'", "severity": "MEDIUM" },
+    { "condition": "exceptionType == 'FIN_CASH_MOVEMENT_ERROR'", "severity": "MEDIUM" },
+    { "condition": "exceptionType == 'FIN_REG_REPORT_REJECTED'", "severity": "CRITICAL" },
+    { "condition": "exceptionType == 'FIN_TRADE_VALIDATION_ERROR'", "severity": "HIGH" }
+  ],
+  "playbooks": [
+    {
+      "exceptionType": "FIN_POSITION_BREAK",
+      "steps": [
+        {
+          "action": "Retrieve position records from internal books and counterparty using getPositionDetails",
+          "parameters": {},
+          "description": "Fetch position evidence for reconciliation"
+        },
+        {
+          "action": "Analyze trade history using getTradeHistory to identify missing or duplicate bookings",
+          "parameters": {},
+          "description": "Review all trades affecting this position"
+        },
+        {
+          "action": "Check for corporate actions (splits, dividends) that may affect position quantity",
+          "parameters": {},
+          "description": "Verify corporate action impact"
+        },
+        {
+          "action": "Run position recalculation engine to rebuild position from trade history",
+          "parameters": {},
+          "description": "Attempt automated position repair"
+        },
+        {
+          "action": "If break persists, escalate to senior reconciliation team with full evidence package",
+          "parameters": {},
+          "description": "Human escalation for complex breaks"
+        }
+      ]
+    },
+    {
+      "exceptionType": "FIN_NOSTRO_MISMATCH",
+      "steps": [
+        {
+          "action": "Retrieve internal nostro balance and custodian statement balance",
+          "parameters": {},
+          "description": "Fetch nostro reconciliation data"
+        },
+        {
+          "action": "Identify missing transactions, duplicates, or timing differences (in-transit items)",
+          "parameters": {},
+          "description": "Find unmatched items"
+        },
+        {
+          "action": "Categorize breaks by type: missing internal, missing external, amount difference, or timing item",
+          "parameters": {},
+          "description": "Classify break category"
+        },
+        {
+          "action": "Automatically mark in-transit items for monitoring until settlement completes",
+          "parameters": {},
+          "description": "Auto-resolve timing items"
+        },
+        {
+          "action": "Escalate material breaks (above threshold) to treasury operations team",
+          "parameters": {},
+          "description": "Human review for material discrepancies"
+        }
+      ]
+    },
+    {
+      "exceptionType": "FIN_SETTLEMENT_FAIL",
+      "steps": [
+        {
+          "action": "Fetch settlement instruction, counterparty details, and fail reason code",
+          "parameters": {},
+          "description": "Retrieve settlement failure details"
+        },
+        {
+          "action": "Classify fail reason: SSI mismatch, insufficient securities/cash, or counterparty fail",
+          "parameters": {},
+          "description": "Determine root cause category"
+        },
+        {
+          "action": "If SSI mismatch, update settlement standing instructions and trigger retry",
+          "parameters": {},
+          "description": "Remediate SSI issues automatically"
+        },
+        {
+          "action": "Check securities inventory to verify availability for settlement",
+          "parameters": {},
+          "description": "Verify inventory position"
+        },
+        {
+          "action": "Escalate fails aged beyond 3 days to settlements specialist team",
+          "parameters": {},
+          "description": "Escalate aged settlement fails"
+        }
+      ]
+    },
+    {
+      "exceptionType": "FIN_FAILED_ALLOCATION",
+      "steps": [
+        {
+          "action": "Fetch block trade execution and intended client account allocations",
+          "parameters": {},
+          "description": "Retrieve allocation breakdown"
+        },
+        {
+          "action": "Validate that sum of child allocations equals parent block quantity",
+          "parameters": {},
+          "description": "Check allocation math"
+        },
+        {
+          "action": "Check if any client accounts have restrictions preventing this allocation",
+          "parameters": {},
+          "description": "Validate account eligibility"
+        },
+        {
+          "action": "Attempt auto-repair if issue is quantity rounding or account eligibility",
+          "parameters": {},
+          "description": "Automated allocation repair"
+        },
+        {
+          "action": "If auto-repair fails, create case for allocations operations team with full context",
+          "parameters": {},
+          "description": "Human intervention required"
+        }
+      ]
+    },
+    {
+      "exceptionType": "FIN_CASH_MOVEMENT_ERROR",
+      "steps": [
+        {
+          "action": "Fetch corporate action details (dividend, interest, etc.) and expected vs actual amounts",
+          "parameters": {},
+          "description": "Retrieve cash event details"
+        },
+        {
+          "action": "Recalculate expected entitlement based on position as of record date",
+          "parameters": {},
+          "description": "Validate entitlement calculation"
+        },
+        {
+          "action": "Verify payment received from custodian/agent and compare to expected amount",
+          "parameters": {},
+          "description": "Check payment source"
+        },
+        {
+          "action": "For immaterial variances (rounding, FX), auto-adjust cash balance and document reason",
+          "parameters": {},
+          "description": "Auto-correct minor variances"
+        },
+        {
+          "action": "Escalate material payment discrepancies to income operations for investigation",
+          "parameters": {},
+          "description": "Human review for material differences"
+        }
+      ]
+    },
+    {
+      "exceptionType": "FIN_REG_REPORT_REJECTED",
+      "steps": [
+        {
+          "action": "Fetch rejection code, missing fields, and regulatory requirement details",
+          "parameters": {},
+          "description": "Retrieve rejection details"
+        },
+        {
+          "action": "Identify specific missing or invalid data fields (LEI, UTI, venue, timestamps, ISIN)",
+          "parameters": {},
+          "description": "Parse rejection reason"
+        },
+        {
+          "action": "Attempt to enrich trade record with missing fields from reference data sources",
+          "parameters": {},
+          "description": "Auto-enrich missing data"
+        },
+        {
+          "action": "Resubmit corrected report to regulatory reporting system",
+          "parameters": {},
+          "description": "Re-file regulatory report"
+        },
+        {
+          "action": "If approaching deadline or auto-enrichment failed, escalate to compliance team as CRITICAL",
+          "parameters": {},
+          "description": "Critical escalation for regulatory deadlines"
+        }
+      ]
+    },
+    {
+      "exceptionType": "FIN_TRADE_VALIDATION_ERROR",
+      "steps": [
+        {
+          "action": "Fetch trade booking details and execution confirmation from broker",
+          "parameters": {},
+          "description": "Retrieve trade details"
+        },
+        {
+          "action": "Compare price, quantity, CUSIP, trade date, and counterparty between execution and booking",
+          "parameters": {},
+          "description": "Identify discrepancies"
+        },
+        {
+          "action": "Classify as economic impact (price/qty) or non-economic (formatting/reference data)",
+          "parameters": {},
+          "description": "Categorize discrepancy type"
+        },
+        {
+          "action": "Auto-correct non-economic issues like CUSIP format or counterparty name standardization",
+          "parameters": {},
+          "description": "Automated correction for non-economic breaks"
+        },
+        {
+          "action": "Escalate economic breaks to middle office with confirmation and execution report attachments",
+          "parameters": {},
+          "description": "Trader review required for economic impacts"
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "getPositionDetails": {
+      "description": "Retrieve position records from internal system and counterparty",
+      "endpoint": "https://api.acmecapital.com/positions/details",
+      "parameters": {}
+    },
+    "getTradeHistory": {
+      "description": "Fetch trade history for account and security",
+      "endpoint": "https://api.acmecapital.com/trades/history",
+      "parameters": {}
+    },
+    "getCorporateActions": {
+      "description": "Retrieve corporate actions (splits, dividends, mergers)",
+      "endpoint": "https://api.acmecapital.com/corporate-actions",
+      "parameters": {}
+    },
+    "recalculatePosition": {
+      "description": "Run position recalculation engine",
+      "endpoint": "https://api.acmecapital.com/positions/recalculate",
+      "parameters": {}
+    },
+    "openCase": {
+      "description": "Create case and assign to operations team",
+      "endpoint": "https://api.acmecapital.com/cases/create",
+      "parameters": {}
+    },
+    "getNostroBalance": {
+      "description": "Get nostro account balance and statement",
+      "endpoint": "https://api.acmecapital.com/nostro/balance",
+      "parameters": {}
+    },
+    "compareTransactions": {
+      "description": "Compare internal transactions with external statement",
+      "endpoint": "https://api.acmecapital.com/nostro/compare",
+      "parameters": {}
+    },
+    "markAsInTransit": {
+      "description": "Mark transaction as in-transit",
+      "endpoint": "https://api.acmecapital.com/nostro/mark-in-transit",
+      "parameters": {}
+    },
+    "getSettlementDetails": {
+      "description": "Retrieve settlement instruction and status",
+      "endpoint": "https://api.acmecapital.com/settlements/details",
+      "parameters": {}
+    },
+    "updateSSI": {
+      "description": "Update settlement standing instructions",
+      "endpoint": "https://api.acmecapital.com/settlements/update-ssi",
+      "parameters": {}
+    },
+    "checkInventory": {
+      "description": "Check securities inventory availability",
+      "endpoint": "https://api.acmecapital.com/inventory/check",
+      "parameters": {}
+    },
+    "getAllocationBreakdown": {
+      "description": "Get block trade allocation details",
+      "endpoint": "https://api.acmecapital.com/allocations/breakdown",
+      "parameters": {}
+    },
+    "validateAccountEligibility": {
+      "description": "Validate account eligibility for security",
+      "endpoint": "https://api.acmecapital.com/accounts/validate",
+      "parameters": {}
+    },
+    "repairAllocation": {
+      "description": "Attempt auto-repair of allocation",
+      "endpoint": "https://api.acmecapital.com/allocations/repair",
+      "parameters": {}
+    },
+    "getCashMovementDetails": {
+      "description": "Fetch corporate action payment details",
+      "endpoint": "https://api.acmecapital.com/cash/movements",
+      "parameters": {}
+    },
+    "calculateEntitlement": {
+      "description": "Calculate expected entitlement for corporate action",
+      "endpoint": "https://api.acmecapital.com/cash/calculate-entitlement",
+      "parameters": {}
+    },
+    "getPaymentSource": {
+      "description": "Get payment source details from custodian",
+      "endpoint": "https://api.acmecapital.com/cash/payment-source",
+      "parameters": {}
+    },
+    "adjustCashBalance": {
+      "description": "Adjust cash balance with reason code",
+      "endpoint": "https://api.acmecapital.com/cash/adjust",
+      "parameters": {}
+    },
+    "getRegulatoryReportStatus": {
+      "description": "Get regulatory report submission status and rejection details",
+      "endpoint": "https://api.acmecapital.com/regulatory/report-status",
+      "parameters": {}
+    },
+    "enrichTradeData": {
+      "description": "Enrich trade data with missing regulatory fields",
+      "endpoint": "https://api.acmecapital.com/regulatory/enrich-trade",
+      "parameters": {}
+    },
+    "submitRegulatoryReport": {
+      "description": "Submit regulatory report",
+      "endpoint": "https://api.acmecapital.com/regulatory/submit",
+      "parameters": {}
+    },
+    "getTradeDetails": {
+      "description": "Retrieve trade booking and execution details",
+      "endpoint": "https://api.acmecapital.com/trades/details",
+      "parameters": {}
+    },
+    "updateTradeAttributes": {
+      "description": "Update trade attributes (non-economic corrections)",
+      "endpoint": "https://api.acmecapital.com/trades/update",
+      "parameters": {}
+    }
+  },
+  "guardrails": {
+    "allowLists": [
+      "getPositionDetails",
+      "getTradeHistory",
+      "recalculatePosition",
+      "getNostroBalance",
+      "getSettlementDetails",
+      "getAllocationBreakdown",
+      "getCashMovementDetails",
+      "getRegulatoryReportStatus",
+      "getTradeDetails"
+    ],
+    "blockLists": [],
+    "humanApprovalThreshold": 0.7
+  }
+}

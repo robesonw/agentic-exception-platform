@@ -91,7 +91,7 @@ export default function SupervisorPolicyViolationsTab({ filters }: SupervisorPol
         label: 'Tenant ID',
         minWidth: 120,
         accessor: (row) => (
-          <Box sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
+          <Box component="span" sx={{ fontFamily: 'monospace', fontWeight: 500, color: 'primary.main', fontSize: '0.8125rem' }}>
             {row.tenant_id}
           </Box>
         ),
@@ -106,7 +106,11 @@ export default function SupervisorPolicyViolationsTab({ filters }: SupervisorPol
         id: 'timestamp',
         label: 'Timestamp',
         minWidth: 150,
-        accessor: (row) => formatDateTime(row.timestamp),
+        accessor: (row) => (
+          <Box component="span" sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>
+            {formatDateTime(row.timestamp)}
+          </Box>
+        ),
       },
       {
         id: 'violation_type',

@@ -200,7 +200,7 @@ export default function SLAPage() {
       />
 
       {/* Compliance Summary Card */}
-      <Grid container spacing={3} sx={{ mb: 3 }}>
+      <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12} md={4}>
           <Card>
             <CardContent>

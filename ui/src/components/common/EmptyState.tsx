@@ -3,10 +3,12 @@
  * 
  * Displays a friendly, consistent empty state message when no data is available.
  * Used across lists, tables, and detail views to provide helpful guidance.
+ * Uses MUI theme tokens for automatic light/dark mode support.
  */
 
 import { Box, Typography, Button } from '@mui/material'
 import { Inbox as InboxIcon } from '@mui/icons-material'
+import { typographyScale } from '../../theme/tokens'
 
 export interface EmptyStateProps {
   /** Main title/heading */
@@ -41,7 +43,7 @@ export default function EmptyState({
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        py: 6,
+        py: 8,
         px: 3,
         textAlign: 'center',
         ...sx,
@@ -49,10 +51,10 @@ export default function EmptyState({
       role="status"
       aria-live="polite"
     >
-      {/* Icon */}
+      {/* Icon - muted, not too large */}
       <Box
         sx={{
-          color: 'text.secondary',
+          color: 'text.disabled',
           mb: 2,
           display: 'flex',
           alignItems: 'center',
@@ -60,17 +62,30 @@ export default function EmptyState({
         }}
         aria-hidden="true"
       >
-        {icon || <InboxIcon sx={{ fontSize: 64, opacity: 0.5 }} />}
+        {icon || <InboxIcon sx={{ fontSize: 48 }} />}
       </Box>
 
-      {/* Title */}
-      <Typography variant="h6" color="text.primary" gutterBottom sx={{ fontWeight: 500 }}>
+      {/* Title - concise */}
+      <Typography 
+        sx={{ 
+          ...typographyScale.cardTitle,
+          color: 'text.secondary',
+          mb: description ? 1 : 0,
+        }}
+      >
         {title}
       </Typography>
 
-      {/* Description */}
+      {/* Description - optional, muted */}
       {description && (
-        <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 400, mb: action ? 3 : 0 }}>
+        <Typography 
+          sx={{ 
+            ...typographyScale.bodySmall,
+            color: 'text.secondary',
+            maxWidth: 360,
+            mb: action ? 3 : 0,
+          }}
+        >
           {description}
         </Typography>
       )}

@@ -24,6 +24,7 @@ from src.messaging.broker import Broker
 from src.messaging.event_publisher import EventPublisherService
 from src.models.domain_pack import DomainPack
 from src.models.exception_record import ExceptionRecord
+from src.models.tenant_policy import TenantPolicyPack
 from src.repository.dto import ExceptionUpdateDTO
 from src.repository.exceptions_repository import ExceptionRepository
 from src.workers.base import AgentWorker
@@ -56,6 +57,7 @@ class TriageWorker(AgentWorker):
         memory_index: Optional[MemoryIndexRegistry] = None,
         llm_client: Optional[LLMClient] = None,
         event_processing_repo: Optional[EventProcessingRepository] = None,
+        tenant_policy: Optional[TenantPolicyPack] = None,
     ):
         """
         Initialize TriageWorker.
@@ -71,6 +73,7 @@ class TriageWorker(AgentWorker):
             memory_index: Optional MemoryIndexRegistry for RAG similarity search
             llm_client: Optional LLMClient for LLM-enhanced reasoning
             event_processing_repo: Optional EventProcessingRepository for idempotency
+            tenant_policy: Optional Tenant Policy Pack for custom severity overrides
         """
         super().__init__(
             broker=broker,
@@ -86,6 +89,7 @@ class TriageWorker(AgentWorker):
         self.audit_logger = audit_logger
         self.memory_index = memory_index
         self.llm_client = llm_client
+        self.tenant_policy = tenant_policy
         
         # Initialize TriageAgent
         self.triage_agent = TriageAgent(
@@ -93,6 +97,7 @@ class TriageWorker(AgentWorker):
             audit_logger=audit_logger,
             memory_index=memory_index,
             llm_client=llm_client,
+            tenant_policy=tenant_policy,
         )
         
         logger.info(
@@ -154,9 +159,52 @@ class TriageWorker(AgentWorker):
             )
             # Continue processing even if event emission fails
         
+        # Load tenant policy from database for this tenant
+        tenant_policy = None
+        try:
+            from src.infrastructure.db.session import get_db_session_context
+            from src.infrastructure.repositories.active_config_loader import ActiveConfigLoader
+            
+            async with get_db_session_context() as session:
+                config_loader = ActiveConfigLoader(session=session)
+                tenant_policy = await config_loader.load_tenant_pack(tenant_id)
+                if tenant_policy:
+                    logger.info(
+                        f"TriageWorker: Loaded tenant policy for tenant {tenant_id}: "
+                        f"has {len(tenant_policy.custom_severity_overrides)} severity overrides"
+                    )
+                    # Log override details for debugging
+                    if tenant_policy.custom_severity_overrides:
+                        for override in tenant_policy.custom_severity_overrides:
+                            logger.info(
+                                f"TriageWorker: Tenant policy override: {override.exception_type} -> {override.severity}"
+                            )
+                else:
+                    logger.warning(
+                        f"TriageWorker: No tenant policy loaded for tenant {tenant_id}"
+                    )
+        except Exception as e:
+            logger.warning(
+                f"TriageWorker failed to load tenant policy for tenant {tenant_id}: {e}. "
+                f"Using default/stub tenant policy."
+            )
+            # Continue with stub/None tenant policy - severity overrides won't apply
+        
+        # Create TriageAgent instance with loaded tenant policy (or use instance tenant policy as fallback)
+        triage_agent = self.triage_agent
+        if tenant_policy:
+            # Create new TriageAgent instance with loaded tenant policy
+            triage_agent = TriageAgent(
+                domain_pack=self.domain_pack,
+                audit_logger=self.audit_logger,
+                memory_index=self.memory_index,
+                llm_client=self.llm_client,
+                tenant_policy=tenant_policy,
+            )
+        
         # Perform triage analysis using TriageAgent
         try:
-            decision = await self.triage_agent.process(exception)
+            decision = await triage_agent.process(exception)
         except Exception as e:
             logger.error(
                 f"TriageWorker failed to perform triage analysis: {e}",
@@ -299,6 +347,18 @@ class TriageWorker(AgentWorker):
                             parts = item.lower().split("classified as")
                             if len(parts) > 1:
                                 exception_type = parts[-1].strip()
+        
+        # DEFENSIVE NORMALIZATION: Clean exception_type before updating database
+        # This prevents colon-prefixed or lowercase values from overwriting clean values
+        if exception_type:
+            # Strip ALL leading colons (handles ":value", "::value", etc.)
+            while exception_type.startswith(':'):
+                exception_type = exception_type[1:]
+            # Strip leading/trailing whitespace
+            exception_type = exception_type.strip()
+            # Convert to uppercase if all lowercase (preserve mixed case like "FIN_SETTLEMENT_FAIL")
+            if exception_type and exception_type.islower():
+                exception_type = exception_type.upper()
         
         # Default severity if not found
         if severity is None:
