@@ -347,6 +347,8 @@ class UIQueryService:
                     raw_payload={},
                     normalized_context=normalized_context,
                     resolution_status=resolution_status,
+                    current_playbook_id=db_exception.current_playbook_id,
+                    current_step=db_exception.current_step,
                 )
                 
                 # Get events from event_log table (EventStore) using TraceService

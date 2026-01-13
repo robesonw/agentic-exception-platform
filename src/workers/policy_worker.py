@@ -223,13 +223,86 @@ class PolicyWorker(AgentWorker):
         
         # Try to find playbook from domain pack if we have exception type
         if not playbook_id and exception.exception_type:
-            for playbook in self.domain_pack.playbooks:
-                if playbook.exception_type == exception.exception_type:
-                    # Use exception_type as playbook_id for MVP
-                    playbook_id = playbook.exception_type
-                    playbook_name = playbook.exception_type  # Use type as name for MVP
+            # Normalize exception type: remove leading colons/spaces and convert to uppercase
+            normalized_exc_type = exception.exception_type.strip().lstrip(":").strip().upper()
+            logger.info(f"Looking for playbook - original type: '{exception.exception_type}', normalized: '{normalized_exc_type}'")
+            
+            # First try to load domain pack from database
+            domain_pack_playbooks = []
+            try:
+                async with get_db_session_context() as session:
+                    from sqlalchemy import select, text
+                    # Try to get the domain pack for this exception's domain
+                    exception_domain = exception.domain if hasattr(exception, 'domain') else None
+                    
+                    # Query domain_packs table for active pack
+                    if exception_domain and exception_domain != 'default':
+                        result = await session.execute(
+                            text("""
+                                SELECT content_json->'playbooks' as playbooks 
+                                FROM domain_packs 
+                                WHERE domain = :domain AND status = 'active'
+                                ORDER BY created_at DESC LIMIT 1
+                            """),
+                            {"domain": exception_domain}
+                        )
+                        row = result.fetchone()
+                        if row and row[0]:
+                            domain_pack_playbooks = row[0]
+                            logger.info(f"Loaded {len(domain_pack_playbooks)} playbooks from domain pack '{exception_domain}'")
+                    
+                    # If no domain-specific pack found, try CapitalMarketsTrading as default for finance exceptions
+                    if not domain_pack_playbooks and normalized_exc_type.startswith("FIN_"):
+                        result = await session.execute(
+                            text("""
+                                SELECT content_json->'playbooks' as playbooks 
+                                FROM domain_packs 
+                                WHERE domain = 'CapitalMarketsTrading' AND status = 'active'
+                                ORDER BY created_at DESC LIMIT 1
+                            """)
+                        )
+                        row = result.fetchone()
+                        if row and row[0]:
+                            domain_pack_playbooks = row[0]
+                            logger.info(f"Loaded {len(domain_pack_playbooks)} playbooks from default CapitalMarketsTrading domain pack")
+                    
+                    # If still no playbooks and we have an exception, try any active domain pack
+                    if not domain_pack_playbooks:
+                        result = await session.execute(
+                            text("""
+                                SELECT content_json->'playbooks' as playbooks, domain 
+                                FROM domain_packs 
+                                WHERE status = 'active' AND jsonb_array_length(content_json->'playbooks') > 0
+                                ORDER BY created_at DESC LIMIT 1
+                            """)
+                        )
+                        row = result.fetchone()
+                        if row and row[0]:
+                            domain_pack_playbooks = row[0]
+                            logger.info(f"Loaded {len(domain_pack_playbooks)} playbooks from fallback domain pack '{row[1]}'")
+            except Exception as e:
+                logger.warning(f"Failed to load domain pack from database: {e}")
+            
+            # Search in loaded playbooks from database
+            for playbook in domain_pack_playbooks:
+                playbook_exc_type = playbook.get("exceptionType", "")
+                normalized_playbook_type = playbook_exc_type.strip().upper()
+                if normalized_playbook_type == normalized_exc_type:
+                    playbook_id = playbook_exc_type
+                    playbook_name = playbook.get("name", playbook_exc_type)
                     match_reason = f"Matched by exception type: {exception.exception_type}"
+                    logger.info(f"Found matching playbook '{playbook_name}' for exception type {exception.exception_type}")
                     break
+            
+            # Fall back to self.domain_pack if database lookup failed
+            if not playbook_id:
+                for playbook in self.domain_pack.playbooks:
+                    if playbook.exception_type.upper() == normalized_exc_type:
+                        # Use exception_type as playbook_id for MVP
+                        playbook_id = playbook.exception_type
+                        playbook_name = playbook.exception_type  # Use type as name for MVP
+                        match_reason = f"Matched by exception type: {exception.exception_type}"
+                        break
         
         # Update exception with policy results and playbook assignment
         try:
@@ -384,18 +457,52 @@ class PolicyWorker(AgentWorker):
         
         # Set playbook_id and current_step if playbook is assigned
         if playbook_id:
-            # For MVP, playbook_id might be a string (exception_type) or integer
-            # Try to convert to integer if it's numeric, otherwise leave as None
-            # In production, this would query the playbook repository to get the actual ID
-            try:
-                # If playbook_id is numeric string, convert to int
-                playbook_id_int = int(playbook_id) if playbook_id.isdigit() else None
+            # Look up actual playbook database ID if playbook_id is a string (exception_type)
+            playbook_id_int = None
+            if isinstance(playbook_id, str) and not playbook_id.isdigit():
+                # playbook_id is a string (exception_type), need to look up database ID
+                try:
+                    from src.infrastructure.db.session import get_db_session_context
+                    from src.infrastructure.repositories.playbook_repository import PlaybookRepository
+                    
+                    async with get_db_session_context() as session:
+                        playbook_repo = PlaybookRepository(session)
+                        # Look up playbook by exception type
+                        candidate_playbooks = await playbook_repo.get_candidate_playbooks(
+                            tenant_id=tenant_id,
+                            exception_type=playbook_id,
+                        )
+                        if candidate_playbooks:
+                            # Use the first matching playbook (they're ordered by priority/created_at desc)
+                            playbook_id_int = candidate_playbooks[0].playbook_id
+                            logger.info(
+                                f"Found playbook database ID {playbook_id_int} for exception type '{playbook_id}'"
+                            )
+                        else:
+                            logger.warning(
+                                f"No playbook found in database for exception type '{playbook_id}', "
+                                f"cannot set current_playbook_id"
+                            )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to look up playbook database ID for '{playbook_id}': {e}",
+                        exc_info=True,
+                    )
+            else:
+                # playbook_id is already numeric or numeric string, convert to int
+                try:
+                    playbook_id_int = int(playbook_id) if isinstance(playbook_id, str) else playbook_id
+                except (ValueError, TypeError):
+                    logger.warning(
+                        f"Playbook ID {playbook_id} is not numeric, cannot set current_playbook_id"
+                    )
+            
+            if playbook_id_int:
                 update_fields["current_playbook_id"] = playbook_id_int
-            except (ValueError, AttributeError):
-                # If not numeric, we can't set the database ID
-                # For MVP, we'll set current_step but not playbook_id
+            else:
                 logger.warning(
-                    f"Playbook ID {playbook_id} is not numeric, cannot set current_playbook_id"
+                    f"Could not determine playbook database ID for '{playbook_id}', "
+                    f"current_playbook_id will not be set"
                 )
             
             update_fields["current_step"] = 1  # Start at step 1

@@ -4,6 +4,7 @@ Normalizes raw exception payloads to canonical ExceptionRecord schema.
 Matches specification from docs/04-agent-templates.md
 """
 
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -12,6 +13,8 @@ from src.audit.logger import AuditLogger
 from src.models.agent_contracts import AgentDecision
 from src.models.domain_pack import DomainPack
 from src.models.exception_record import ExceptionRecord, ResolutionStatus
+
+logger = logging.getLogger(__name__)
 
 
 class IntakeAgentError(Exception):
@@ -124,7 +127,23 @@ class IntakeAgent:
         raw_payload = raw_exception.get("rawPayload") or raw_exception.get("raw_payload") or raw_exception.copy()
         
         # Extract optional fields
-        exception_type = raw_exception.get("exceptionType") or raw_exception.get("exception_type")
+        # IMPORTANT: exceptionType may be in raw_exception OR in raw_payload (from Kafka event structure)
+        exception_type = (
+            raw_exception.get("exceptionType") 
+            or raw_exception.get("exception_type")
+            or (raw_payload.get("exceptionType") if isinstance(raw_payload, dict) else None)
+            or (raw_payload.get("exception_type") if isinstance(raw_payload, dict) else None)
+        )
+        # Normalize exception type: strip any leading colon(s) and whitespace, then uppercase if all lowercase
+        # Handles cases like: ":fin_settlement_fail", ": fin_settlement_fail", "fin_settlement_fail"
+        if exception_type:
+            # Strip ALL leading colons (handles ":value", "::value", etc.)
+            while exception_type.startswith(':'):
+                exception_type = exception_type[1:]
+            # Strip leading/trailing whitespace
+            exception_type = exception_type.strip()
+            if exception_type and exception_type.islower():
+                exception_type = exception_type.upper()
         
         # Build normalized context from extracted fields
         normalized_context = {

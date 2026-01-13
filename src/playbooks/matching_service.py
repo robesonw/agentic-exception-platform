@@ -236,19 +236,40 @@ class PlaybookMatchingService:
                     "reason": f"Domain mismatch: {failed_conditions[0]}"
                 }
         
-        # Check exception_type match
-        if "exception_type" in match_conditions:
+        # Check exception_type match (supports both singular and plural forms)
+        if "exception_type" in match_conditions or "exception_types" in match_conditions:
             checked_conditions.append("exception_type")
-            required_type = match_conditions["exception_type"]
-            if exception_type != required_type:
-                failed_conditions.append(
-                    f"exception_type: expected '{required_type}', got '{exception_type}'"
-                )
-                return {
-                    "matches": False,
-                    "priority": priority,
-                    "reason": f"Exception type mismatch: {failed_conditions[0]}"
-                }
+            
+            if "exception_types" in match_conditions:
+                # Plural form - array of allowed exception types
+                allowed_types = match_conditions["exception_types"]
+                if not isinstance(allowed_types, list):
+                    logger.warning(
+                        f"Invalid exception_types format in playbook {playbook.playbook_id}: "
+                        f"expected list, got {type(allowed_types)}"
+                    )
+                    allowed_types = []
+                if exception_type not in allowed_types:
+                    failed_conditions.append(
+                        f"exception_types: expected one of {allowed_types}, got '{exception_type}'"
+                    )
+                    return {
+                        "matches": False,
+                        "priority": priority,
+                        "reason": f"Exception type mismatch: {failed_conditions[0]}"
+                    }
+            elif "exception_type" in match_conditions:
+                # Singular form - exact match
+                required_type = match_conditions["exception_type"]
+                if exception_type != required_type:
+                    failed_conditions.append(
+                        f"exception_type: expected '{required_type}', got '{exception_type}'"
+                    )
+                    return {
+                        "matches": False,
+                        "priority": priority,
+                        "reason": f"Exception type mismatch: {failed_conditions[0]}"
+                    }
         
         # Check severity match (supports severity_in array)
         if "severity" in match_conditions or "severity_in" in match_conditions:

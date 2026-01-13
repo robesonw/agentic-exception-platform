@@ -89,6 +89,11 @@ services:
       DB_POOL_TIMEOUT: 30
       DB_ECHO: "false"
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-${OPENROUTER_API_KEY:-}}
+      EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-}
     ports:
       - "8000:8000"
     depends_on:
@@ -103,6 +108,10 @@ services:
       - ./src:/app/src
       - ./alembic:/app/alembic
       - ./alembic.ini:/app/alembic.ini
+      # Mount runtime directory for domain packs, tenant packs, etc.
+      - ./runtime:/app/runtime
+      - ./domainpacks:/app/domainpacks
+      - ./tenantpacks:/app/tenantpacks
 
   ui:
     build:
@@ -130,6 +139,245 @@ services:
       - ./ui/tsconfig.node.json:/app/tsconfig.node.json
       # Mount .env file so Vite can read it (if it exists)
       - ./ui/.env:/app/.env:ro
+
+  # Worker Services
+  intake-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sentinai-intake-worker
+    environment:
+      WORKER_TYPE: intake
+      CONCURRENCY: 1
+      GROUP_ID: intake-workers-v3
+      DATABASE_URL: postgresql+asyncpg://sentinai:sentinai@postgres:5432/sentinai
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-${OPENROUTER_API_KEY:-}}
+      EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./src:/app/src
+    command: python -m src.workers
+    ports:
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9001/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  triage-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sentinai-triage-worker
+    environment:
+      WORKER_TYPE: triage
+      CONCURRENCY: 1
+      GROUP_ID: triage-workers-v2
+      DATABASE_URL: postgresql+asyncpg://sentinai:sentinai@postgres:5432/sentinai
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-${OPENROUTER_API_KEY:-}}
+      EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./src:/app/src
+    command: python -m src.workers
+    ports:
+      - "9002:9002"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9002/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  policy-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sentinai-policy-worker
+    environment:
+      WORKER_TYPE: policy
+      CONCURRENCY: 1
+      GROUP_ID: policy-workers-v2
+      DATABASE_URL: postgresql+asyncpg://sentinai:sentinai@postgres:5432/sentinai
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-${OPENROUTER_API_KEY:-}}
+      EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./src:/app/src
+    command: python -m src.workers
+    ports:
+      - "9003:9003"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9003/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  playbook-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sentinai-playbook-worker
+    environment:
+      WORKER_TYPE: playbook
+      CONCURRENCY: 1
+      GROUP_ID: playbook-workers-v2
+      DATABASE_URL: postgresql+asyncpg://sentinai:sentinai@postgres:5432/sentinai
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-${OPENROUTER_API_KEY:-}}
+      EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./src:/app/src
+    command: python -m src.workers
+    ports:
+      - "9004:9004"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9004/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  feedback-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sentinai-feedback-worker
+    environment:
+      WORKER_TYPE: feedback
+      CONCURRENCY: 1
+      GROUP_ID: feedback-workers-v2
+      DATABASE_URL: postgresql+asyncpg://sentinai:sentinai@postgres:5432/sentinai
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-${OPENROUTER_API_KEY:-}}
+      EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./src:/app/src
+    command: python -m src.workers
+    ports:
+      - "9006:9006"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9006/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  tool-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sentinai-tool-worker
+    environment:
+      WORKER_TYPE: tool
+      CONCURRENCY: 1
+      GROUP_ID: tool-workers-v2
+      DATABASE_URL: postgresql+asyncpg://sentinai:sentinai@postgres:5432/sentinai
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-${OPENROUTER_API_KEY:-}}
+      EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./src:/app/src
+    command: python -m src.workers
+    ports:
+      - "9005:9005"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9005/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  sla-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sentinai-sla-monitor
+    environment:
+      WORKER_TYPE: sla_monitor
+      CONCURRENCY: 1
+      GROUP_ID: sla-monitors
+      DATABASE_URL: postgresql+asyncpg://sentinai:sentinai@postgres:5432/sentinai
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-${OPENROUTER_API_KEY:-}}
+      EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./src:/app/src
+    command: python -m src.workers
+    ports:
+      - "9007:9007"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9007/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
 
 volumes:
   postgres_data:

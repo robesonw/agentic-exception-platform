@@ -1,0 +1,809 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2026-01-01T00:00:00Z",
+  "demo_tenants": [
+    {
+      "tenant_key": "ACME_CAPITAL",
+      "display_name": "Acme Capital Management",
+      "industry": "finance",
+      "tags": [
+        "demo",
+        "finance"
+      ],
+      "domain_pack_refs": [
+        {
+          "pack_key": "CapitalMarketsTrading",
+          "version": "1.0.0"
+        }
+      ],
+      "seed_plan": {
+        "min_exceptions": 25,
+        "max_exceptions": 100,
+        "lookback_days": 14
+      },
+      "metadata": {
+        "region": "Americas",
+        "asset_classes": [
+          "Equities",
+          "Fixed Income",
+          "Derivatives"
+        ]
+      }
+    },
+    {
+      "tenant_key": "SHIELDSURE_INSURANCE",
+      "display_name": "ShieldSure Insurance Co",
+      "industry": "insurance",
+      "tags": [
+        "demo",
+        "insurance"
+      ],
+      "domain_pack_refs": [
+        {
+          "pack_key": "InsuranceClaimsProcessing",
+          "version": "1.0.0"
+        }
+      ],
+      "seed_plan": {
+        "min_exceptions": 20,
+        "max_exceptions": 80,
+        "lookback_days": 14
+      }
+    },
+    {
+      "tenant_key": "CAREBRIDGE_HEALTH",
+      "display_name": "CareBridge Health Systems",
+      "industry": "healthcare",
+      "tags": [
+        "demo",
+        "healthcare"
+      ],
+      "domain_pack_refs": [
+        {
+          "pack_key": "HealthcareClaimsAndCareOps",
+          "version": "1.0.0"
+        }
+      ],
+      "seed_plan": {
+        "min_exceptions": 20,
+        "max_exceptions": 80,
+        "lookback_days": 14
+      }
+    },
+    {
+      "tenant_key": "GLOBALRETAIL_LTD",
+      "display_name": "GlobalRetail Ltd",
+      "industry": "retail",
+      "tags": [
+        "demo",
+        "retail"
+      ],
+      "domain_pack_refs": [
+        {
+          "pack_key": "RetailOperations",
+          "version": "1.0.0"
+        }
+      ],
+      "seed_plan": {
+        "min_exceptions": 15,
+        "max_exceptions": 60,
+        "lookback_days": 7
+      }
+    },
+    {
+      "tenant_key": "CLOUDOPS_PRO",
+      "display_name": "CloudOps Pro Services",
+      "industry": "saas_ops",
+      "tags": [
+        "demo",
+        "saas_ops"
+      ],
+      "domain_pack_refs": [
+        {
+          "pack_key": "SaaSOperations",
+          "version": "1.0.0"
+        }
+      ],
+      "seed_plan": {
+        "min_exceptions": 15,
+        "max_exceptions": 60,
+        "lookback_days": 7
+      }
+    }
+  ],
+  "domain_packs": [
+    {
+      "domain_name": "CapitalMarketsTrading",
+      "version": "1.0.0",
+      "industry": "finance",
+      "exception_types": [
+        "FIN_SETTLEMENT_FAIL",
+        "FIN_FAILED_ALLOCATION",
+        "FIN_POSITION_BREAK",
+        "FIN_NOSTRO_MISMATCH",
+        "FIN_REG_REPORT_REJECTED",
+        "FIN_TRADE_VALIDATION_ERROR",
+        "FIN_CASH_MOVEMENT_ERROR"
+      ],
+      "tools": [],
+      "playbooks": []
+    },
+    {
+      "domain_name": "InsuranceClaimsProcessing",
+      "version": "1.0.0",
+      "industry": "insurance",
+      "exception_types": [
+        "INS_CLAIM_VALIDATION_ERROR",
+        "INS_POLICY_COVERAGE_MISMATCH",
+        "INS_PREMIUM_CALCULATION_ERROR",
+        "INS_FRAUD_DETECTION_ALERT",
+        "INS_DOCUMENT_MISSING"
+      ],
+      "tools": [],
+      "playbooks": []
+    },
+    {
+      "domain_name": "HealthcareClaimsAndCareOps",
+      "version": "1.0.0",
+      "industry": "healthcare",
+      "exception_types": [
+        "HLTH_CLAIM_MISSING_AUTH",
+        "HLTH_CLAIM_CODE_MISMATCH",
+        "HLTH_PROVIDER_CREDENTIAL_EXPIRED",
+        "HLTH_PATIENT_DEMOGRAPHIC_CONFLICT",
+        "HLTH_PHARMACY_DUPLICATE_THERAPY",
+        "HLTH_ELIGIBILITY_COVERAGE_LAPSE"
+      ],
+      "tools": [],
+      "playbooks": []
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "FIN_SCN_SETTLEMENT_STORM",
+      "name": "Settlement Failure Storm",
+      "description": "High volume of settlement failures typical during market volatility",
+      "industry": "finance",
+      "weights": {
+        "exception_types": [
+          {
+            "value": "FIN_SETTLEMENT_FAIL",
+            "weight": 0.7
+          },
+          {
+            "value": "FIN_FAILED_ALLOCATION",
+            "weight": 0.2
+          },
+          {
+            "value": "FIN_CASH_MOVEMENT_ERROR",
+            "weight": 0.1
+          }
+        ],
+        "sources": [
+          {
+            "value": "Murex",
+            "weight": 0.3
+          },
+          {
+            "value": "Calypso",
+            "weight": 0.25
+          },
+          {
+            "value": "Broadridge",
+            "weight": 0.2
+          },
+          {
+            "value": "SWIFT",
+            "weight": 0.15
+          },
+          {
+            "value": "InternalTMS",
+            "weight": 0.1
+          }
+        ],
+        "severities": [
+          {
+            "value": "low",
+            "weight": 0.1
+          },
+          {
+            "value": "medium",
+            "weight": 0.3
+          },
+          {
+            "value": "high",
+            "weight": 0.4
+          },
+          {
+            "value": "critical",
+            "weight": 0.2
+          }
+        ],
+        "statuses": [
+          {
+            "value": "open",
+            "weight": 0.5
+          },
+          {
+            "value": "analyzing",
+            "weight": 0.3
+          },
+          {
+            "value": "resolved",
+            "weight": 0.1
+          },
+          {
+            "value": "escalated",
+            "weight": 0.1
+          }
+        ]
+      },
+      "entity_templates": {
+        "trade_prefix": "TRD",
+        "settlement_prefix": "SETL",
+        "generate_chain": true
+      },
+      "playbook_bindings": [
+        {
+          "exception_type": "FIN_SETTLEMENT_FAIL",
+          "playbook_key": "PB_SETTLEMENT_FAIL_RESOLUTION"
+        },
+        {
+          "exception_type": "FIN_FAILED_ALLOCATION",
+          "playbook_key": "PB_ALLOCATION_REPAIR"
+        }
+      ],
+      "tool_bindings": [
+        {
+          "playbook_key": "PB_SETTLEMENT_FAIL_RESOLUTION",
+          "tool_keys": [
+            "ValidateConfirmation",
+            "CheckHolidayCalendar",
+            "RebookTrade",
+            "RequeueSettlementMsg"
+          ]
+        }
+      ],
+      "timeline_template": [
+        {
+          "event_type": "ExceptionCreated",
+          "actor_type": "system",
+          "delay_seconds_min": 0,
+          "delay_seconds_max": 0
+        },
+        {
+          "event_type": "TriageCompleted",
+          "actor_type": "agent",
+          "actor_id": "TriageAgent",
+          "delay_seconds_min": 2,
+          "delay_seconds_max": 10
+        },
+        {
+          "event_type": "PlaybookStarted",
+          "actor_type": "agent",
+          "actor_id": "ResolutionAgent",
+          "delay_seconds_min": 5,
+          "delay_seconds_max": 15
+        },
+        {
+          "event_type": "ToolExecutionCompleted",
+          "actor_type": "agent",
+          "delay_seconds_min": 3,
+          "delay_seconds_max": 8
+        },
+        {
+          "event_type": "PlaybookStepCompleted",
+          "actor_type": "agent",
+          "delay_seconds_min": 2,
+          "delay_seconds_max": 5
+        }
+      ],
+      "tags": [
+        "high-volume",
+        "settlement",
+        "market-stress"
+      ]
+    },
+    {
+      "scenario_id": "FIN_SCN_POSITION_BREAK_CHAIN",
+      "name": "Position Break Investigation Chain",
+      "description": "Position breaks linked to missing allocations requiring investigation",
+      "industry": "finance",
+      "weights": {
+        "exception_types": [
+          {
+            "value": "FIN_POSITION_BREAK",
+            "weight": 0.6
+          },
+          {
+            "value": "FIN_FAILED_ALLOCATION",
+            "weight": 0.25
+          },
+          {
+            "value": "FIN_NOSTRO_MISMATCH",
+            "weight": 0.15
+          }
+        ],
+        "sources": [
+          {
+            "value": "Calypso",
+            "weight": 0.35
+          },
+          {
+            "value": "Bloomberg",
+            "weight": 0.25
+          },
+          {
+            "value": "BNY Mellon",
+            "weight": 0.2
+          },
+          {
+            "value": "State Street",
+            "weight": 0.2
+          }
+        ],
+        "severities": [
+          {
+            "value": "low",
+            "weight": 0.15
+          },
+          {
+            "value": "medium",
+            "weight": 0.45
+          },
+          {
+            "value": "high",
+            "weight": 0.3
+          },
+          {
+            "value": "critical",
+            "weight": 0.1
+          }
+        ]
+      },
+      "entity_templates": {
+        "position_prefix": "POS",
+        "account_prefix": "ACCT"
+      },
+      "playbook_bindings": [
+        {
+          "exception_type": "FIN_POSITION_BREAK",
+          "playbook_key": "PB_POSITION_BREAK_INVESTIGATION"
+        }
+      ],
+      "tags": [
+        "reconciliation",
+        "custodian",
+        "positions"
+      ]
+    },
+    {
+      "scenario_id": "FIN_SCN_REG_REJECTS",
+      "name": "Regulatory Reporting Rejects",
+      "description": "Regulatory report rejections requiring schema fixes and resubmission",
+      "industry": "finance",
+      "weights": {
+        "exception_types": [
+          {
+            "value": "FIN_REG_REPORT_REJECTED",
+            "weight": 0.85
+          },
+          {
+            "value": "FIN_TRADE_VALIDATION_ERROR",
+            "weight": 0.15
+          }
+        ],
+        "sources": [
+          {
+            "value": "SEC-EDGAR",
+            "weight": 0.3
+          },
+          {
+            "value": "CFTC-SDR",
+            "weight": 0.25
+          },
+          {
+            "value": "MiFID-ARM",
+            "weight": 0.25
+          },
+          {
+            "value": "EMIR-TR",
+            "weight": 0.2
+          }
+        ],
+        "severities": [
+          {
+            "value": "medium",
+            "weight": 0.3
+          },
+          {
+            "value": "high",
+            "weight": 0.5
+          },
+          {
+            "value": "critical",
+            "weight": 0.2
+          }
+        ]
+      },
+      "playbook_bindings": [
+        {
+          "exception_type": "FIN_REG_REPORT_REJECTED",
+          "playbook_key": "PB_REG_REPORT_FIX"
+        }
+      ],
+      "tags": [
+        "regulatory",
+        "compliance",
+        "reporting"
+      ]
+    },
+    {
+      "scenario_id": "FIN_SCN_NOSTRO_MISMATCH",
+      "name": "Nostro/Cash Reconciliation Issues",
+      "description": "Cash position mismatches between internal records and custodian",
+      "industry": "finance",
+      "weights": {
+        "exception_types": [
+          {
+            "value": "FIN_NOSTRO_MISMATCH",
+            "weight": 0.7
+          },
+          {
+            "value": "FIN_CASH_MOVEMENT_ERROR",
+            "weight": 0.3
+          }
+        ],
+        "sources": [
+          {
+            "value": "BNY Mellon",
+            "weight": 0.3
+          },
+          {
+            "value": "State Street",
+            "weight": 0.25
+          },
+          {
+            "value": "JP Morgan",
+            "weight": 0.25
+          },
+          {
+            "value": "Citi",
+            "weight": 0.2
+          }
+        ],
+        "severities": [
+          {
+            "value": "medium",
+            "weight": 0.4
+          },
+          {
+            "value": "high",
+            "weight": 0.45
+          },
+          {
+            "value": "critical",
+            "weight": 0.15
+          }
+        ]
+      },
+      "tags": [
+        "cash",
+        "nostro",
+        "custodian"
+      ]
+    },
+    {
+      "scenario_id": "INS_SCN_CLAIMS_BACKLOG",
+      "name": "Insurance Claims Processing Backlog",
+      "description": "Surge in claims requiring validation and fraud checks",
+      "industry": "insurance",
+      "weights": {
+        "exception_types": [
+          {
+            "value": "INS_CLAIM_VALIDATION_ERROR",
+            "weight": 0.4
+          },
+          {
+            "value": "INS_POLICY_COVERAGE_MISMATCH",
+            "weight": 0.25
+          },
+          {
+            "value": "INS_DOCUMENT_MISSING",
+            "weight": 0.2
+          },
+          {
+            "value": "INS_FRAUD_DETECTION_ALERT",
+            "weight": 0.15
+          }
+        ],
+        "sources": [
+          {
+            "value": "ClaimsPortal",
+            "weight": 0.4
+          },
+          {
+            "value": "PolicyAdmin",
+            "weight": 0.3
+          },
+          {
+            "value": "UnderwritingSystem",
+            "weight": 0.3
+          }
+        ],
+        "severities": [
+          {
+            "value": "low",
+            "weight": 0.2
+          },
+          {
+            "value": "medium",
+            "weight": 0.45
+          },
+          {
+            "value": "high",
+            "weight": 0.25
+          },
+          {
+            "value": "critical",
+            "weight": 0.1
+          }
+        ]
+      },
+      "tags": [
+        "claims",
+        "backlog",
+        "fraud"
+      ]
+    },
+    {
+      "scenario_id": "HLTH_SCN_AUTH_ISSUES",
+      "name": "Healthcare Authorization Issues",
+      "description": "Claims with missing or expired authorizations",
+      "industry": "healthcare",
+      "weights": {
+        "exception_types": [
+          {
+            "value": "HLTH_CLAIM_MISSING_AUTH",
+            "weight": 0.5
+          },
+          {
+            "value": "HLTH_CLAIM_CODE_MISMATCH",
+            "weight": 0.25
+          },
+          {
+            "value": "HLTH_ELIGIBILITY_COVERAGE_LAPSE",
+            "weight": 0.25
+          }
+        ],
+        "sources": [
+          {
+            "value": "ClaimsApp",
+            "weight": 0.4
+          },
+          {
+            "value": "EHRSystem",
+            "weight": 0.35
+          },
+          {
+            "value": "BillingSystem",
+            "weight": 0.25
+          }
+        ],
+        "severities": [
+          {
+            "value": "low",
+            "weight": 0.15
+          },
+          {
+            "value": "medium",
+            "weight": 0.4
+          },
+          {
+            "value": "high",
+            "weight": 0.35
+          },
+          {
+            "value": "critical",
+            "weight": 0.1
+          }
+        ]
+      },
+      "tags": [
+        "authorization",
+        "claims",
+        "eligibility"
+      ]
+    },
+    {
+      "scenario_id": "HLTH_SCN_CREDENTIAL_ALERTS",
+      "name": "Provider Credential Alerts",
+      "description": "Expired or expiring provider credentials requiring renewal",
+      "industry": "healthcare",
+      "weights": {
+        "exception_types": [
+          {
+            "value": "HLTH_PROVIDER_CREDENTIAL_EXPIRED",
+            "weight": 0.7
+          },
+          {
+            "value": "HLTH_CLAIM_CODE_MISMATCH",
+            "weight": 0.3
+          }
+        ],
+        "sources": [
+          {
+            "value": "ProviderPortal",
+            "weight": 0.5
+          },
+          {
+            "value": "CredentialingSystem",
+            "weight": 0.5
+          }
+        ],
+        "severities": [
+          {
+            "value": "medium",
+            "weight": 0.3
+          },
+          {
+            "value": "high",
+            "weight": 0.5
+          },
+          {
+            "value": "critical",
+            "weight": 0.2
+          }
+        ]
+      },
+      "tags": [
+        "credentialing",
+        "provider",
+        "compliance"
+      ]
+    }
+  ],
+  "finance_templates": {
+    "trade_id_prefix": "TRD",
+    "order_id_prefix": "ORD",
+    "allocation_id_prefix": "ALLOC",
+    "settlement_id_prefix": "SETL",
+    "account_id_prefix": "ACCT",
+    "booking_systems": [
+      "Murex",
+      "Calypso",
+      "Broadridge",
+      "Bloomberg",
+      "InternalTMS"
+    ],
+    "custodians": [
+      "BNY Mellon",
+      "State Street",
+      "Northern Trust",
+      "JP Morgan",
+      "Citi"
+    ],
+    "counterparties": [
+      "Goldman Sachs",
+      "Morgan Stanley",
+      "Citadel",
+      "Blackrock",
+      "Vanguard",
+      "Fidelity"
+    ],
+    "securities": [
+      {
+        "cusip": "037833100",
+        "ticker": "AAPL",
+        "name": "Apple Inc"
+      },
+      {
+        "cusip": "594918104",
+        "ticker": "MSFT",
+        "name": "Microsoft Corp"
+      },
+      {
+        "cusip": "88160R101",
+        "ticker": "TSLA",
+        "name": "Tesla Inc"
+      },
+      {
+        "cusip": "02079K305",
+        "ticker": "GOOGL",
+        "name": "Alphabet Inc"
+      },
+      {
+        "cusip": "023135106",
+        "ticker": "AMZN",
+        "name": "Amazon.com Inc"
+      },
+      {
+        "cusip": "912828ZT7",
+        "ticker": "UST10Y",
+        "name": "US Treasury 10Y"
+      },
+      {
+        "cusip": "78462F103",
+        "ticker": "SPY",
+        "name": "SPDR S&P 500"
+      },
+      {
+        "cusip": "464287150",
+        "ticker": "IWM",
+        "name": "iShares Russell 2000"
+      }
+    ]
+  },
+  "healthcare_templates": {
+    "patient_id_prefix": "PAT",
+    "encounter_id_prefix": "ENC",
+    "claim_id_prefix": "CLM",
+    "auth_id_prefix": "AUTH",
+    "provider_id_prefix": "PRV",
+    "facilities": [
+      "Main Hospital",
+      "Urgent Care Center",
+      "Specialty Clinic",
+      "Imaging Center",
+      "Surgery Center"
+    ],
+    "payers": [
+      "Blue Cross",
+      "Aetna",
+      "UnitedHealth",
+      "Cigna",
+      "Humana",
+      "Medicare",
+      "Medicaid"
+    ]
+  },
+  "insurance_templates": {
+    "claim_id_prefix": "INS-CLM",
+    "policy_id_prefix": "POL",
+    "premium_id_prefix": "PREM",
+    "member_id_prefix": "MBR",
+    "coverage_types": [
+      "Auto",
+      "Home",
+      "Life",
+      "Health",
+      "Commercial",
+      "Workers Comp"
+    ]
+  },
+  "retail_templates": {
+    "order_id_prefix": "RET-ORD",
+    "payment_id_prefix": "PAY",
+    "shipment_id_prefix": "SHIP",
+    "refund_id_prefix": "REF",
+    "customer_id_prefix": "CUST",
+    "channels": [
+      "Web",
+      "Mobile",
+      "Store",
+      "Marketplace",
+      "Call Center"
+    ]
+  },
+  "saas_templates": {
+    "incident_id_prefix": "INC",
+    "alert_id_prefix": "ALT",
+    "cluster_id_prefix": "CLU",
+    "deployment_id_prefix": "DEP",
+    "services": [
+      "api-gateway",
+      "auth-service",
+      "payment-service",
+      "user-service",
+      "notification-service",
+      "search-service"
+    ],
+    "regions": [
+      "us-east-1",
+      "us-west-2",
+      "eu-west-1",
+      "ap-southeast-1",
+      "ap-northeast-1"
+    ]
+  }
+}

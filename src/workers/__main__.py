@@ -190,6 +190,7 @@ def create_worker(config: WorkerConfig) -> AgentWorker:
                 event_publisher=event_publisher,
                 exception_repository=exception_repository,
                 domain_pack=domain_pack,
+                tenant_policy=tenant_policy,
                 event_processing_repo=event_processing_repo,
             )
         elif config.worker_type.lower() == "playbook":

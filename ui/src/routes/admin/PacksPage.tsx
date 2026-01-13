@@ -29,6 +29,7 @@ import {
   listTenantPacks,
   getDomainPack,
   getTenantPack,
+  getTenant,
   importDomainPack,
   importTenantPack,
   validatePack,
@@ -53,6 +54,15 @@ import { formatDateTime } from '../../utils/dateFormat'
 import { useSnackbar } from '../../components/common/SnackbarProvider'
 
 type PackType = 'domain' | 'tenant'
+
+// Map tenant industry to domain pack name
+const INDUSTRY_TO_DOMAIN: Record<string, string> = {
+  finance: 'CapitalMarketsTrading',
+  healthcare: 'HealthcareClaimsAndCareOps',
+  insurance: 'InsuranceClaimsProcessing',
+  retail: 'RetailOperations',
+  saas_ops: 'SaaSOperations',
+}
 
 export default function PacksPage() {
   const { tenantId } = useTenant()
@@ -84,11 +94,24 @@ export default function PacksPage() {
 
   const isAdmin = isAdminEnabled()
 
+  // Fetch current tenant info to get industry for filtering domain packs
+  const { data: tenantInfo } = useQuery({
+    queryKey: ['tenant-info', tenantId],
+    queryFn: () => tenantId ? getTenant(tenantId) : null,
+    enabled: !!tenantId,
+  })
+
+  // Get the domain name for the current tenant's industry
+  const tenantDomain = tenantInfo?.industry 
+    ? INDUSTRY_TO_DOMAIN[tenantInfo.industry.toLowerCase()] 
+    : undefined
+
   const { data: domainPacksData, isLoading: domainPacksLoading, isError: domainPacksError, error: domainPacksErrorObj } = useQuery({
-    queryKey: ['domain-packs', filters.domain, statusFilter, page, pageSize],
+    queryKey: ['domain-packs', tenantDomain, filters.domain, statusFilter, page, pageSize],
     queryFn: () =>
       listDomainPacks({
-        domain: filters.domain,
+        // Filter by tenant's industry domain if available, otherwise use filter
+        domain: tenantDomain || filters.domain,
         status: statusFilter || undefined,
         page: page + 1,
         page_size: pageSize,
@@ -642,7 +665,7 @@ export default function PacksPage() {
               !importData.version ||
               !importData.content ||
               (tab === 'domain' && !importData.domain) ||
-              (tab === 'tenant' && !importData.tenant_id && (isAdmin || !tenantId)) ||
+              (tab === 'tenant' && !(importData.tenant_id || tenantId)) ||
               importMutation.isPending
             }
           >

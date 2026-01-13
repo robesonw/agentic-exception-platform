@@ -7,6 +7,7 @@ import SupervisorPage from './routes/SupervisorPage.tsx'
 import DeprecatedPage from './routes/DeprecatedPage.tsx'
 import NotFoundPage from './routes/NotFoundPage.tsx'
 import ProtectedRoute from './components/common/ProtectedRoute.tsx'
+import RequireAuth from './components/common/RequireAuth.tsx'
 import OpsOverviewPage from './routes/ops/OpsOverviewPage.tsx'
 import UsagePage from './routes/ops/UsagePage.tsx'
 import RateLimitsPage from './routes/ops/RateLimitsPage.tsx'
@@ -17,6 +18,7 @@ import PacksPage from './routes/admin/PacksPage.tsx'
 import PlaybooksPage from './routes/admin/PlaybooksPage.tsx'
 import AdminToolsPage from './routes/admin/ToolsPage.tsx'
 import AuditPage from './routes/admin/AuditPage.tsx'
+import DemoSettingsPage from './routes/admin/DemoSettingsPage.tsx'
 import WorkersPage from './routes/ops/WorkersPage.tsx'
 import SLAPage from './routes/ops/SLAPage.tsx'
 import DLQPage from './routes/ops/DLQPage.tsx'
@@ -39,9 +41,10 @@ function App() {
 
   // Render other pages with AppLayout
   return (
-    <AppLayout>
-      <Routes>
-        <Route path="/exceptions" element={<ExceptionsPage />} />
+    <RequireAuth>
+      <AppLayout>
+        <Routes>
+          <Route path="/exceptions" element={<ExceptionsPage />} />
         <Route path="/exceptions/:id" element={<ExceptionDetailPage />} />
         <Route path="/supervisor" element={<SupervisorPage />} />
         
@@ -188,11 +191,20 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/admin/demo"
+          element={
+            <ProtectedRoute requireAdmin>
+              <DemoSettingsPage />
+            </ProtectedRoute>
+          }
+        />
 
         <Route path="/" element={<ExceptionsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
-    </AppLayout>
+      </AppLayout>
+    </RequireAuth>
   )
 }
 

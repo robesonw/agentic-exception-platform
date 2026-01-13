@@ -13,6 +13,7 @@ import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck'
 import BuildIcon from '@mui/icons-material/Build'
 import HistoryIcon from '@mui/icons-material/History'
 import BusinessIcon from '@mui/icons-material/Business'
+import ScienceIcon from '@mui/icons-material/Science'
 
 interface QuickLinkCardProps {
   title: string
@@ -174,6 +175,14 @@ export default function AdminLandingPage() {
                   description="View governance and configuration audit events"
                   to="/admin/audit"
                   icon={<HistoryIcon sx={{ fontSize: 40, color: 'primary.main' }} />}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
+                <QuickLinkCard
+                  title="Demo Settings"
+                  description="Configure demo mode and generate demo exceptions"
+                  to="/admin/demo"
+                  icon={<ScienceIcon sx={{ fontSize: 40, color: 'secondary.main' }} />}
                 />
               </Grid>
             </Grid>

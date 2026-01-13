@@ -152,7 +152,7 @@ class CopilotResponseGenerator:
         if intent == "summary":
             return self._generate_summary_answer(evidence_items, similar_cases)
         elif intent == "explain":
-            return self._generate_explanation_answer(evidence_items)
+            return self._generate_explanation_answer(evidence_items, user_query)
         elif intent == "similar":
             return self._generate_similar_cases_answer(similar_cases)
         elif intent == "recommend":
@@ -162,7 +162,8 @@ class CopilotResponseGenerator:
             if evidence_items:
                 return f"Based on the available evidence, here's what I found regarding '{user_query}'. Please review the citations below for detailed information."
             else:
-                return f"I couldn't find specific evidence to answer '{user_query}'. Consider checking your tenant configuration or refining your query."
+                # More helpful generic response
+                return f"I'm processing your query about '{user_query}'. While I don't have indexed documentation available right now, you can review the exception details, timeline, and status in the exception view. To enable more detailed responses, ensure that policy documents and resolved exceptions are indexed."
     
     def _generate_summary_answer(
         self,
@@ -181,10 +182,15 @@ class CopilotResponseGenerator:
             
         return "Summary: " + " ".join(summary_parts) + " Review the citations and bullets below for actionable insights."
     
-    def _generate_explanation_answer(self, evidence_items: Optional[List[EvidenceItem]] = None) -> str:
+    def _generate_explanation_answer(self, evidence_items: Optional[List[EvidenceItem]] = None, user_query: Optional[str] = None) -> str:
         """Generate explanation-focused answer text."""
         if not evidence_items:
-            return "No explanatory evidence available. This may require manual investigation."
+            # Provide a more helpful message that acknowledges the query
+            base_msg = "I don't have indexed documentation available to explain this exception in detail."
+            if user_query and ("EXC-" in user_query.upper() or "exception" in user_query.lower()):
+                base_msg += " However, you can check the exception's timeline, status, and attributes in the exception details view."
+            base_msg += " To enable detailed explanations, please ensure that policy documents and resolved exceptions are indexed in the system."
+            return base_msg
         
         return f"Based on {len(evidence_items)} documentation sources, this appears to be related to established policies and procedures. Review the cited evidence for detailed explanations."
     
@@ -246,9 +252,10 @@ class CopilotResponseGenerator:
         
         # Fallback bullets if no evidence
         if not bullets:
-            bullets.append("Review tenant configuration for applicable policies")
-            bullets.append("Check domain pack settings for this exception type")
-            bullets.append("Consider manual investigation if automated guidance is insufficient")
+            bullets.append("Review the exception details view for timeline, status, and attributes")
+            bullets.append("Check tenant configuration for applicable policies and domain pack settings")
+            bullets.append("To enable detailed explanations, ensure policy documents are indexed in the system")
+            bullets.append("Consider manual investigation based on the exception type and source system")
         
         return bullets
     

@@ -87,6 +87,24 @@ class ToolExecutionStatus(PyEnum):
     FAILED = "failed"
 
 
+class ToolExecutionMode(PyEnum):
+    """Tool execution mode for simulation support."""
+    
+    SIMULATE = "simulate"
+    HTTP = "http"
+    WEBHOOK = "webhook"
+    QUEUE = "queue"
+
+
+class SimulateProfile(PyEnum):
+    """Simulation profile for tool execution."""
+    
+    SUCCESS = "success"
+    FAIL = "fail"
+    DELAYED = "delayed"
+    FLAKY = "flaky"
+
+
 # ============================================================================
 # Models
 # ============================================================================
@@ -114,6 +132,25 @@ class Tenant(Base):
         nullable=False,
         default=TenantStatus.ACTIVE,
         doc="Tenant lifecycle status",
+    )
+    # Demo system fields
+    tags = Column(
+        JSONB,
+        nullable=True,
+        server_default="[]",
+        doc="Tags array (e.g., ['demo', 'finance'])",
+    )
+    industry = Column(
+        String(100),
+        nullable=True,
+        doc="Industry type: finance, insurance, healthcare, retail, saas_ops",
+    )
+    tenant_metadata = Column(
+        "metadata",  # DB column name stays as "metadata"
+        JSONB,
+        nullable=True,
+        server_default="{}",
+        doc="Additional tenant metadata",
     )
     created_at = Column(
         DateTime(timezone=True),
@@ -557,6 +594,40 @@ class ToolDefinition(Base):
         JSONB,
         nullable=False,
         doc="Tool configuration (endpoint, auth, schema) as JSON",
+    )
+    # Simulation support fields
+    execution_mode = Column(
+        Enum(
+            ToolExecutionMode,
+            name="tool_execution_mode",
+            create_constraint=True,
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=True,
+        server_default="http",
+        doc="Execution mode: simulate, http, webhook, queue",
+    )
+    simulate_profile = Column(
+        Enum(
+            SimulateProfile,
+            name="simulate_profile",
+            create_constraint=True,
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=True,
+        doc="Simulation profile: success, fail, delayed, flaky",
+    )
+    simulate_latency_ms = Column(
+        JSONB,
+        nullable=True,
+        doc="Simulation latency range: {min: number, max: number}",
+    )
+    simulate_result_template = Column(
+        JSONB,
+        nullable=True,
+        doc="Template for simulated response",
     )
     created_at = Column(
         DateTime(timezone=True),
@@ -2538,3 +2609,206 @@ class CopilotIndexJob(Base):
             f"status={self.status!r}, sources={self.sources})>"
         )
 
+
+# ============================================================================
+# Demo System Models (Platform Settings and Demo Run)
+# ============================================================================
+
+
+class DemoRunStatus(PyEnum):
+    """Demo run status values."""
+    
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
+
+class DemoRunMode(PyEnum):
+    """Demo run mode values."""
+    
+    BURST = "burst"
+    SCHEDULED = "scheduled"
+    CONTINUOUS = "continuous"
+
+
+class PlatformSetting(Base):
+    """
+    Platform-wide settings stored in database.
+    
+    DB is source of truth; env vars provide defaults/bootstrap values.
+    """
+    
+    __tablename__ = "platform_settings"
+    
+    key = Column(
+        String(255),
+        primary_key=True,
+        nullable=False,
+        doc="Setting key (e.g., demo.enabled, demo.scenarios.mode)",
+    )
+    value_json = Column(
+        JSONB,
+        nullable=True,
+        doc="JSON value for complex settings",
+    )
+    value_text = Column(
+        String,
+        nullable=True,
+        doc="Text value for simple string settings",
+    )
+    value_type = Column(
+        String(50),
+        nullable=False,
+        default="string",
+        doc="Type hint: string, boolean, number, json, timestamp",
+    )
+    description = Column(
+        sa.Text,
+        nullable=True,
+        doc="Human-readable description of the setting",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    updated_by = Column(
+        String(255),
+        nullable=True,
+        doc="User/system that last updated this setting",
+    )
+    audit_reason = Column(
+        sa.Text,
+        nullable=True,
+        doc="Reason for the last change",
+    )
+    
+    def __repr__(self) -> str:
+        return f"<PlatformSetting(key={self.key!r}, type={self.value_type!r})>"
+
+
+class DemoRun(Base):
+    """
+    Demo scenario run tracking.
+    
+    Tracks active and historical demo runs with status and progress.
+    Only one run can be active at a time (enforced by service layer).
+    """
+    
+    __tablename__ = "demo_run"
+    
+    run_id = Column(
+        PostgresUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        doc="Unique run identifier",
+    )
+    status = Column(
+        Enum(
+            DemoRunStatus,
+            name="demo_run_status",
+            create_constraint=True,
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=False,
+        default=DemoRunStatus.PENDING,
+        doc="Status: pending, running, completed, cancelled, failed",
+    )
+    mode = Column(
+        Enum(
+            DemoRunMode,
+            name="demo_run_mode",
+            create_constraint=True,
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=False,
+        doc="Mode: burst, scheduled, continuous",
+    )
+    scenario_ids = Column(
+        JSONB,
+        nullable=False,
+        default=list,
+        doc="Array of scenario IDs being run",
+    )
+    tenant_keys = Column(
+        JSONB,
+        nullable=False,
+        default=list,
+        doc="Array of tenant keys (empty = all demo tenants)",
+    )
+    frequency_seconds = Column(
+        Integer,
+        nullable=True,
+        doc="Generation frequency in seconds",
+    )
+    duration_seconds = Column(
+        Integer,
+        nullable=True,
+        doc="Scheduled run duration in seconds",
+    )
+    burst_count = Column(
+        Integer,
+        nullable=True,
+        doc="Number of exceptions for burst mode",
+    )
+    intensity_multiplier = Column(
+        sa.Float,
+        nullable=True,
+        default=1.0,
+        doc="Exception count multiplier",
+    )
+    started_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When the run started",
+    )
+    ends_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When the scheduled run should end",
+    )
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="When the run completed/cancelled/failed",
+    )
+    generated_count = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        doc="Number of exceptions generated so far",
+    )
+    last_tick_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="Timestamp of last generation tick",
+    )
+    error = Column(
+        sa.Text,
+        nullable=True,
+        doc="Error message if failed",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    created_by = Column(
+        String(255),
+        nullable=True,
+    )
+    
+    __table_args__ = (
+        Index("idx_demo_run_status", "status"),
+    )
+    
+    def __repr__(self) -> str:
+        return (
+            f"<DemoRun(run_id={self.run_id}, mode={self.mode.value}, "
+            f"status={self.status.value}, generated={self.generated_count})>"
+        )

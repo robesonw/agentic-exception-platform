@@ -83,6 +83,7 @@ from src.api.routes import (
     onboarding,
     playbooks,
     rate_limits,
+    router_demo,
     run,
     router_config_view,
     router_copilot,
@@ -178,6 +179,7 @@ app.include_router(usage.router)  # Phase 10: Usage Metering API (P10-18 to P10-
 app.include_router(ops_dashboard.router)  # Phase 10: Ops Dashboard API (P10-21 to P10-28)
 app.include_router(onboarding.router)  # Phase 12: Tenant & Pack Onboarding APIs (P12-10 to P12-21)
 app.include_router(admin_audit.router)  # Phase 12+: Governance Audit APIs
+app.include_router(router_demo.router)  # Demo Mode: Demo data generation and management
 
 
 @app.get("/health")

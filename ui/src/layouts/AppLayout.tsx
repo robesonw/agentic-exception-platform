@@ -37,6 +37,7 @@ import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
 import HistoryIcon from '@mui/icons-material/History'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
 import LightModeIcon from '@mui/icons-material/LightMode'
+import ScienceIcon from '@mui/icons-material/Science'
 import { useTenant } from '../hooks/useTenant.tsx'
 import { themeColors } from '../theme/theme.ts'
 import { useThemeMode } from '../theme/ThemeModeProvider.tsx'
@@ -193,6 +194,12 @@ const getNavSections = (): NavSection[] => {
           label: 'Tools',
           to: '/admin/tools',
           icon: <BuildIcon />,
+          section: 'admin',
+        },
+        {
+          label: 'Demo Settings',
+          to: '/admin/demo',
+          icon: <ScienceIcon />,
           section: 'admin',
         },
       ],

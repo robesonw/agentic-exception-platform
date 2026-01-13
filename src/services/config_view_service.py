@@ -179,11 +179,15 @@ class ConfigViewService:
                     # Get latest domain pack to extract playbooks
                     pack = self.domain_pack_storage.get_pack(current_tenant_id, current_domain)
                     if pack and pack.playbooks:
+                        # Get the version from storage (packs don't have embedded version)
+                        versions = self.domain_pack_storage.list_versions(current_tenant_id, current_domain)
+                        pack_version = versions[-1] if versions else "1.0.0"
+                        
                         for playbook in pack.playbooks:
                             configs.append({
                                 "id": f"{current_tenant_id}:{current_domain}:{playbook.exception_type}",
                                 "name": f"Playbook for {playbook.exception_type}",
-                                "version": pack.version,
+                                "version": pack_version,
                                 "tenant_id": current_tenant_id,
                                 "domain": current_domain,
                                 "exception_type": playbook.exception_type,

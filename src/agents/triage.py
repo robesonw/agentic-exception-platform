@@ -18,6 +18,7 @@ from src.llm.provider import LLMClient
 from src.models.agent_contracts import AgentDecision
 from src.models.domain_pack import DomainPack, ExceptionTypeDefinition
 from src.models.exception_record import ExceptionRecord, Severity
+from src.models.tenant_policy import TenantPolicyPack
 from src.memory.index import MemoryIndexRegistry
 from src.memory.rag import HybridSearchFilters, HybridSearchResult, hybrid_search
 
@@ -58,6 +59,7 @@ class TriageAgent:
         memory_index: Optional[MemoryIndexRegistry] = None,
         llm_client: Optional[LLMClient] = None,
         playbook_matching_service: Optional[Any] = None,
+        tenant_policy: Optional[TenantPolicyPack] = None,
     ):
         """
         Initialize TriageAgent.
@@ -68,12 +70,14 @@ class TriageAgent:
             memory_index: Optional MemoryIndexRegistry for RAG similarity search
             llm_client: Optional LLMClient for Phase 3 LLM-enhanced reasoning
             playbook_matching_service: Optional PlaybookMatchingService for playbook suggestions (Phase 7)
+            tenant_policy: Optional Tenant Policy Pack for custom severity overrides
         """
         self.domain_pack = domain_pack
         self.audit_logger = audit_logger
         self.memory_index = memory_index
         self.llm_client = llm_client
         self.playbook_matching_service = playbook_matching_service
+        self.tenant_policy = tenant_policy
 
     async def process(
         self,
@@ -325,10 +329,13 @@ class TriageAgent:
         self, exception: ExceptionRecord, exception_type: str
     ) -> Severity:
         """
-        Evaluate severity using domain pack severity rules.
+        Evaluate severity using domain pack severity rules, then apply tenant policy overrides.
         
-        Selects the highest matching severity from rules, or falls back to
-        defaultSeverity from exception type definition.
+        Process:
+        1. Evaluate domain pack severity rules to get base severity
+        2. Check tenant policy customSeverityOverrides for matching exception type
+        3. If override exists, use override severity; otherwise use domain pack severity
+        4. Fall back to inferred severity if no rules match
         
         Args:
             exception: ExceptionRecord to evaluate
@@ -339,22 +346,47 @@ class TriageAgent:
         """
         matching_severities = []
         
-        # Evaluate each severity rule
+        # Step 1: Evaluate domain pack severity rules
         for rule in self.domain_pack.severity_rules:
             if self._evaluate_rule_condition(rule.condition, exception, exception_type):
                 matching_severities.append(rule.severity)
         
-        # Select highest severity from matching rules
+        # Select highest severity from matching domain pack rules
+        domain_severity = None
         if matching_severities:
             highest = max(matching_severities, key=lambda s: SEVERITY_PRIORITY.get(s.upper(), 0))
-            return Severity(highest.upper())
+            domain_severity = Severity(highest.upper())
         
-        # Fall back to defaultSeverity from exception type definition
-        # Note: The sample JSON files have defaultSeverity, but our model doesn't capture it yet
-        # For MVP, we'll use a severity priority mapping based on common patterns
-        # or default to MEDIUM if no rules match
+        # Step 2: Check tenant policy customSeverityOverrides
+        logger.debug(f"_evaluate_severity: exception_type={repr(exception_type)}, domain_severity={domain_severity}, has_tenant_policy={self.tenant_policy is not None}")
+        if self.tenant_policy and self.tenant_policy.custom_severity_overrides:
+            # Normalize exception type for matching (uppercase, no leading colons/spaces)
+            normalized_exc_type = exception_type.strip().lstrip(":").strip().upper()
+            logger.debug(f"_evaluate_severity: normalized_exc_type={repr(normalized_exc_type)}, num_overrides={len(self.tenant_policy.custom_severity_overrides)}")
+            
+            for override in self.tenant_policy.custom_severity_overrides:
+                # Normalize override exception type for matching
+                override_type = override.exception_type.strip().upper()
+                logger.debug(f"_evaluate_severity: checking override {repr(override_type)} -> {override.severity} (matches: {override_type == normalized_exc_type})")
+                
+                if override_type == normalized_exc_type:
+                    # Match found - use override severity
+                    override_severity = Severity(override.severity.upper())
+                    logger.info(
+                        f"Applied tenant policy severity override: {exception_type} -> {override.severity} "
+                        f"(domain pack would have been: {domain_severity})"
+                    )
+                    return override_severity
+        elif self.tenant_policy is None:
+            logger.warning(f"_evaluate_severity: No tenant policy available for severity override check")
+        elif not self.tenant_policy.custom_severity_overrides:
+            logger.debug(f"_evaluate_severity: Tenant policy exists but has no custom_severity_overrides")
         
-        # Try to infer from exception type name patterns
+        # Step 3: Use domain pack severity if we found one
+        if domain_severity:
+            return domain_severity
+        
+        # Step 4: Fall back to inferred severity from exception type name patterns
         exc_type_upper = exception_type.upper()
         if "CRITICAL" in exc_type_upper or "BREAK" in exc_type_upper:
             return Severity.CRITICAL

@@ -65,6 +65,36 @@ class PlaybookRepository(AbstractBaseRepository[Playbook]):
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
+    async def get_playbook_by_name(
+        self,
+        tenant_id: str,
+        name: str,
+    ) -> Optional[Playbook]:
+        """
+        Get a playbook by exact name with tenant isolation.
+        
+        Args:
+            tenant_id: Tenant identifier (required for isolation)
+            name: Exact playbook name to match
+            
+        Returns:
+            Playbook instance or None if not found
+            
+        Raises:
+            ValueError: If tenant_id or name is None/empty
+        """
+        if not tenant_id or not tenant_id.strip():
+            raise ValueError("tenant_id is required for tenant isolation")
+        if not name or not name.strip():
+            raise ValueError("name is required")
+        
+        query = select(Playbook).where(
+            Playbook.tenant_id == tenant_id,
+            Playbook.name == name,
+        )
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
     async def list_playbooks(
         self,
         tenant_id: str,

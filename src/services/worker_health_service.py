@@ -74,14 +74,15 @@ class WorkerHealthService:
     """
 
     # Default worker configuration (ports 9001-9007)
+    # Updated to use Docker container hostnames when running in containers
     DEFAULT_WORKERS = [
-        WorkerInstance("intake", "intake-1", "localhost", 9001),
-        WorkerInstance("triage", "triage-1", "localhost", 9002),
-        WorkerInstance("policy", "policy-1", "localhost", 9003),
-        WorkerInstance("playbook", "playbook-1", "localhost", 9004),
-        WorkerInstance("tool", "tool-1", "localhost", 9005),
-        WorkerInstance("feedback", "feedback-1", "localhost", 9006),
-        WorkerInstance("sla_monitor", "sla_monitor-1", "localhost", 9007),
+        WorkerInstance("intake", "intake-1", "sentinai-intake-worker", 9001),
+        WorkerInstance("triage", "triage-1", "sentinai-triage-worker", 9002),
+        WorkerInstance("policy", "policy-1", "sentinai-policy-worker", 9003),
+        WorkerInstance("playbook", "playbook-1", "sentinai-playbook-worker", 9004),
+        WorkerInstance("tool", "tool-1", "sentinai-tool-worker", 9005),
+        WorkerInstance("feedback", "feedback-1", "sentinai-feedback-worker", 9006),
+        WorkerInstance("sla_monitor", "sla_monitor-1", "sentinai-sla-monitor", 9007),
     ]
 
     def __init__(
